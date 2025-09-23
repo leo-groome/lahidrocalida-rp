@@ -63,62 +63,72 @@ El diseño visual de todas las interfaces se basará en la identidad de marca de
 * **Logotipo:** El logo de "La Hidrocálida" se integrará en las interfaces donde sea apropiado, como la pantalla de bienvenida del POS y la pantalla de notificación para clientes.  
 * **Legibilidad:** Se priorizará una tipografía clara y de alto contraste para asegurar que los pedidos y los estados sean fáciles de leer en las diferentes pantallas, especialmente en el ambiente de una cocina y en la pantalla pública.
 
-## **5\. Modelo de Datos (Diseño Basado en ERD)**
+## **5\. Modelo de Datos (según initial.sql)**
 
-**Recomendación para ID de Pedido:** Se recomienda usar un número secuencial simple que se reinicie diariamente (ej: 101, 102, 103...).  
-branches (Sucursales)  
-| Column | Type | Notes |  
+Sucursales (`sucursales`)  
+| Columna | Tipo | Notas |  
 |---|---|---|  
 | id | SERIAL | Primary Key |  
-| name | VARCHAR(100) | "Pozolería Centro" |  
-| address | TEXT | |  
-users (Usuarios/Empleados)  
-| Column | Type | Notes |  
+| nombre | VARCHAR(100) | |  
+| direccion | TEXT | |
+
+Usuarios/Empleados (`usuarios`)  
+| Columna | Tipo | Notas |  
 |---|---|---|  
 | id | SERIAL | Primary Key |  
-| name | VARCHAR(100) | |  
-| role | VARCHAR(50) | 'cashier', 'kitchen', 'admin' |  
-| pin | VARCHAR(255) | Hash para login rápido |  
-| branch\_id | INTEGER | Foreign Key \-\> branches.id |  
-products (Platillos) \- Basado en tu tabla Platillos  
-| Column | Type | Notes |  
-|---|---|---|  
-| id | SERIAL | Primary Key (Equivale a Id\_Platillo) |  
-| name | VARCHAR(100) | Nombre del platillo |  
-| description | TEXT | Ingredientes o detalles |  
-| price | DECIMAL(10, 2\) | Precio\_Unitario |  
-| category | VARCHAR(50) | "Pozoles", "Tacos", "Bebidas" (Para organizar el POS) |  
-| status | VARCHAR(50) | 'available', 'sold\_out' (Para disponibilidad) |  
-orders (Pedidos) \- Basado en tu tabla Pedidos  
-| Column | Type | Notes |  
-|---|---|---|  
-| id | SERIAL | Primary Key (Equivale a Id\_Pedido) |  
-| display\_id | VARCHAR(10) | "101" (ID secuencial para el cliente) |  
-| customer\_name| VARCHAR(100) | Nombre\_cliente |  
-| total\_amount | DECIMAL(10, 2\) | Precio\_Total |  
-| status | VARCHAR(50) | 'pending', 'preparing', 'ready', 'completed' |  
-| payment\_method| VARCHAR(50) | 'cash', 'card' |  
-| created\_at | TIMESTAMP | Time (Fecha y hora de creación) |  
-| branch\_id | INTEGER | Foreign Key \-\> branches.id |  
-| user\_id | INTEGER | Foreign Key \-\> users.id (Quién tomó la orden) |  
-order\_items (Info\_Pedidos) \- Basado en tu tabla Info\_Pedidos  
-| Column | Type | Notes |  
+| nombre | VARCHAR(100) | |  
+| rol | VARCHAR(20) | CHECK (rol IN ('cajero','cocina','administrador','compras')) |  
+| pin | VARCHAR(6) | |  
+| activo | BOOLEAN | DEFAULT TRUE |  
+| sucursal_id | INTEGER | Foreign Key -> sucursales.id |
+
+Platillos del menú (`platillos`)  
+| Columna | Tipo | Notas |  
 |---|---|---|  
 | id | SERIAL | Primary Key |  
-| order\_id | INTEGER | Foreign Key \-\> orders.id (Id\_Pedido) |  
-| product\_id | INTEGER | Foreign Key \-\> products.id (Id\_Platillo) |  
-| quantity | INTEGER | Cantidad |  
-| unit\_price | DECIMAL(10, 2\) | Precio al momento de la venta |  
-| modifications| TEXT | Especificaciones ("Sin cebolla, extra aguacate") |  
-expenses (Gastos)  
-| Column | Type | Notes |  
+| nombre | VARCHAR(100) | |  
+| descripcion | TEXT | |  
+| precio | DECIMAL(8,2) | CHECK (precio >= 0) |  
+| categoria | VARCHAR(50) | |  
+| estado | VARCHAR(20) | DEFAULT 'disponible' CHECK (estado IN ('disponible','no_disponible')) |
+
+Pedidos (`pedidos`)  
+| Columna | Tipo | Notas |  
 |---|---|---|  
 | id | SERIAL | Primary Key |  
-| description | VARCHAR(255) | "Nómina semana 37", "Compra de aguacate" |  
-| amount | DECIMAL(10, 2\) | |  
-| category | VARCHAR(50) | "sueldos", "proveedores", "servicios" |  
-| expense\_date| TIMESTAMP | |  
-| branch\_id | INTEGER | Foreign Key \-\> branches.id |
+| numero_display | VARCHAR(10) | UNIQUE (p. ej. "101") |  
+| nombre_cliente | VARCHAR(100) | |  
+| total | DECIMAL(8,2) | CHECK (total >= 0) |  
+| estado | VARCHAR(20) | DEFAULT 'pendiente' CHECK (estado IN ('pendiente','preparando','listo','completado')) |  
+| metodo_pago | VARCHAR(20) | CHECK (metodo_pago IN ('efectivo','tarjeta','transferencia')) |  
+| fecha_creacion | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |  
+| sucursal_id | INTEGER | Foreign Key -> sucursales.id |  
+| usuario_id | INTEGER | Foreign Key -> usuarios.id |
+
+Artículos de pedido (`articulos_pedido`)  
+| Columna | Tipo | Notas |  
+|---|---|---|  
+| id | SERIAL | Primary Key |  
+| pedido_id | INTEGER | FK -> pedidos.id ON DELETE CASCADE |  
+| platillo_id | INTEGER | FK -> platillos.id |  
+| cantidad | INTEGER | CHECK (cantidad > 0) |  
+| precio_cobrado | DECIMAL(8,2) | CHECK (precio_cobrado >= 0) |  
+| modificaciones | TEXT | |
+
+Gastos (`gastos`)  
+| Columna | Tipo | Notas |  
+|---|---|---|  
+| id | SERIAL | Primary Key |  
+| descripcion | VARCHAR(255) | |  
+| monto | DECIMAL(8,2) | CHECK (monto >= 0) |  
+| categoria | VARCHAR(50) | |  
+| fecha_gasto | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |  
+| sucursal_id | INTEGER | Foreign Key -> sucursales.id |
+
+Índices principales  
+- `pedidos(estado)`, `pedidos(fecha_creacion)`, `pedidos(numero_display)`  
+- `articulos_pedido(pedido_id)`  
+- `platillos(categoria)`
 
 ## **6\. Fases de Desarrollo**
 
