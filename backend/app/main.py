@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy import text
-from app.core.config import settings
 from app.db.session import get_db
 from sqlalchemy.orm import Session
 
@@ -10,13 +9,6 @@ app = FastAPI(title="La Hidrocálida POS API")
 def root():
     return {"message": "La Hidrocálida POS API"}
 
-@app.get("/config")
-def get_config():
-    return {
-        "app_name": settings.APP_NAME,
-        "database_url": settings.DATABASE_URL[:50] + "..." if settings.DATABASE_URL else "No configurado",
-        "debug": settings.DEBUG
-    }
 
 @app.get("/health/database")
 def check_database_connection(db: Session = Depends(get_db)):
@@ -26,14 +18,14 @@ def check_database_connection(db: Session = Depends(get_db)):
     """
     try:
         # Ejecutar una consulta simple
-        result = db.execute(text("SELECT 1 as test"))
+        result = db.execute(text("SELECT 5 as test"))
         test_value = result.fetchone()
         
         return {
             "status": "success",
             "message": "Conexión a la base de datos exitosa",
             "database": "PostgreSQL (Neon)",
-            "test_query": "SELECT 1",
+            "test_query": "SELECT 5",
             "result": test_value[0] if test_value else None
         }
     except Exception as e:
