@@ -1,9 +1,30 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from app.db.session import get_db
+from app.db.session import get_db, engine
+from app.models import Base
+from app.routers import auth
+from app.routers import users, products
 from sqlalchemy.orm import Session
 
+# Crear todas las tablas
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="La Hidrocálida POS API")
+
+# Configurar CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En producción, especificar dominios exactos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Incluir routers
+app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(products.router)
 
 @app.get("/")
 def root():
