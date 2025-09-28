@@ -61,8 +61,10 @@ class ArticuloPedidoBase(BaseModel):
     precio_cobrado: Decimal
     modificaciones: Optional[str] = None
 
-class ArticuloPedidoCreate(ArticuloPedidoBase):
-    pass
+class ArticuloPedidoCreate(BaseModel):
+    platillo_id: int
+    cantidad: int
+    modificaciones: Optional[str] = None
 
 class ArticuloPedidoResponse(ArticuloPedidoBase):
     id: int
@@ -80,8 +82,13 @@ class PedidoBase(BaseModel):
     sucursal_id: int
     usuario_id: int
 
-class PedidoCreate(PedidoBase):
+class PedidoCreate(BaseModel):
+    nombre_cliente: str
+    metodo_pago: str
     articulos: List[ArticuloPedidoCreate]
+
+class PedidoUpdate(BaseModel):
+    estado: str
 
 class PedidoResponse(PedidoBase):
     id: int

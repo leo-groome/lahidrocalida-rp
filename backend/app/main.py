@@ -4,7 +4,7 @@ from sqlalchemy import text
 from app.db.session import get_db, engine
 from app.models import Base
 from app.routers import auth
-from app.routers import users, products
+from app.routers import users, products, pedidos
 from sqlalchemy.orm import Session
 
 # Crear todas las tablas
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(products.router)
+app.include_router(pedidos.router)
 
 @app.get("/")
 def root():
