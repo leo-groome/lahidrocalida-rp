@@ -55,6 +55,12 @@ def create_pedido(
             status_code=403, 
             detail="Solo cajeros y administradores pueden crear pedidos"
         )
+    # Validar tipo_orden
+    if data.tipo_orden not in ["aqui", "llevar", "uber_eats"]:
+        raise HTTPException(
+            status_code=400,
+            detail="tipo_orden inválido. Valores permitidos: aqui, llevar, uber_eats"
+        )
     
     # Validar que nombre_cliente no esté vacío
     if not data.nombre_cliente or data.nombre_cliente.strip() == "":
@@ -119,6 +125,7 @@ def create_pedido(
         total=total_calculado,
         estado="pendiente",
         metodo_pago=data.metodo_pago,
+        tipo_orden=data.tipo_orden,
         sucursal_id=current_user.sucursal_id,
         usuario_id=current_user.id
     )

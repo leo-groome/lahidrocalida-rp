@@ -79,12 +79,14 @@ class PedidoBase(BaseModel):
     total: Decimal
     estado: str = 'pendiente'
     metodo_pago: Optional[str] = None
+    tipo_orden: str = 'aqui'
     sucursal_id: int
     usuario_id: int
 
 class PedidoCreate(BaseModel):
     nombre_cliente: str
     metodo_pago: str
+    tipo_orden: str = 'aqui'
     articulos: List[ArticuloPedidoCreate]
 
 class PedidoUpdate(BaseModel):

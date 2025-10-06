@@ -52,6 +52,7 @@ class Pedido(Base):
     total = Column(DECIMAL(8, 2), nullable=False)
     estado = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'completado'
     metodo_pago = Column(String(20))  # 'efectivo', 'tarjeta', 'transferencia'
+    tipo_orden = Column(String(20), default='aqui')  # 'aqui', 'llevar', 'uber_eats'
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
