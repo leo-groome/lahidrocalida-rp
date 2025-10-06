@@ -78,7 +78,7 @@ Usuarios/Empleados (`usuarios`)
 | id | SERIAL | Primary Key |  
 | nombre | VARCHAR(100) | |  
 | rol | VARCHAR(20) | CHECK (rol IN ('cajero','cocina','administrador','compras')) |  
-| pin | VARCHAR(6) | |  
+| password | VARCHAR(255) | Hash Argon2id |  
 | activo | BOOLEAN | DEFAULT TRUE |  
 | sucursal_id | INTEGER | Foreign Key -> sucursales.id |
 
@@ -99,7 +99,7 @@ Pedidos (`pedidos`)
 | numero_display | VARCHAR(10) | UNIQUE (p. ej. "101") |  
 | nombre_cliente | VARCHAR(100) | |  
 | total | DECIMAL(8,2) | CHECK (total >= 0) |  
-| estado | VARCHAR(20) | DEFAULT 'pendiente' CHECK (estado IN ('pendiente','preparando','listo','completado')) |  
+| estado | VARCHAR(20) | DEFAULT 'pendiente' CHECK (estado IN ('pendiente','preparando','listo','completado','cancelado')) |  
 | metodo_pago | VARCHAR(20) | CHECK (metodo_pago IN ('efectivo','tarjeta','transferencia')) |  
 | fecha_creacion | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |  
 | sucursal_id | INTEGER | Foreign Key -> sucursales.id |  
