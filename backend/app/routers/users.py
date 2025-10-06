@@ -24,8 +24,8 @@ def create_usuario(
     usuario = Usuario(
         nombre=data.nombre,
         rol=data.rol,
-        # Guardar como texto plano para simplicidad temporal; si deseas hash, usa get_password_hash
-        password=data.password,
+        # Guardar contraseña hasheada
+        password=get_password_hash(data.password),
         activo=data.activo,
         sucursal_id=data.sucursal_id,
     )

@@ -10,7 +10,12 @@ from app.models import Usuario
 from app.core.config import settings
 
 # Configuración para hash de contraseñas
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Usamos argon2 como esquema principal (sin límite de 72 bytes),
+# con compatibilidad para bcrypt_sha256/bcrypt ya almacenados
+pwd_context = CryptContext(
+    schemes=["argon2", "bcrypt_sha256", "bcrypt"],
+    deprecated="auto",
+)
 
 # Configuración para JWT
 SECRET_KEY = settings.SECRET_KEY
@@ -21,18 +26,18 @@ ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 security = HTTPBearer()
 
 def verify_password(plain_password: str, stored_password: str) -> bool:
-    """Verifica contraseña permitiendo compatibilidad con texto plano temporalmente."""
-    # Si parece un hash bcrypt ($2...), verificamos con bcrypt
-    if stored_password.startswith("$2"):
-        try:
+    """Verifica contraseña hash (bcrypt_sha256/bcrypt) o texto plano legado."""
+    try:
+        # Passlib detecta el esquema según el prefijo del hash
+        if stored_password.startswith("$"):
             return pwd_context.verify(plain_password, stored_password)
-        except Exception:
-            return False
-    # De lo contrario, comparamos como texto plano (modo simple temporal)
-    return plain_password == stored_password
+        # Compatibilidad temporal con texto plano
+        return plain_password == stored_password
+    except Exception:
+        return False
 
 def get_password_hash(password: str) -> str:
-    """Genera el hash de una contraseña"""
+    """Genera el hash de una contraseña usando argon2 por defecto"""
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
