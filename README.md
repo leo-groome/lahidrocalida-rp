@@ -179,3 +179,25 @@ Gastos (`gastos`)
 ## **7\. Próximos Pasos**
 
 Con este plan de desarrollo actualizado y validado, el siguiente paso es comenzar con la **Fase 1: Cimientos y Backend**. El equipo de desarrollo puede proceder con el diseño final de la base de datos y la configuración inicial del proyecto FastAPI, mientras que el equipo de frontend puede comenzar a crear los primeros *mockups* basados en la identidad visual definida.
+
+## **Guía Rápida (Backend) — Quickstart**
+
+1. Variables de entorno
+   - Crea un archivo `.env` en `backend/` con:
+     - `DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST/DBNAME`
+     - `SECRET_KEY=un_valor_secreto_aleatorio`
+2. Instalar dependencias
+   - `cd backend`
+   - `pip install -r requirements.txt`
+3. Ejecutar API
+   - `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+4. Probar salud y DB
+   - `GET /` → mensaje de bienvenida
+   - `GET /health/database` → verifica conexión Neon
+5. Autenticación y pruebas
+   - Crea un `usuario` admin via `POST /usuarios` (requiere token de un admin existente)
+   - Inicia sesión `POST /auth/login` o `/auth/login-simple`
+6. Hash de contraseñas
+   - Se usa Argon2id por defecto; compatible con bcrypt existente
+7. Gastos
+   - Endpoints: `POST/GET/PUT/DELETE /gastos` (roles: administrador, compras)

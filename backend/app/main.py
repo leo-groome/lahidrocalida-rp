@@ -5,6 +5,7 @@ from app.db.session import get_db, engine
 from app.models import Base
 from app.routers import auth
 from app.routers import users, products, pedidos
+from app.routers import gastos
 from sqlalchemy.orm import Session
 
 # Crear todas las tablas
@@ -26,6 +27,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(pedidos.router)
+app.include_router(gastos.router)
 
 @app.get("/")
 def root():
