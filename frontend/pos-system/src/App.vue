@@ -2,11 +2,10 @@
 </script>
 
 <template>
-  <div>
-    <h1 class=" text-white text-3xl font-bold bg-red-500">POS System</h1>
+  <div class="min-h-screen bg-[#FFFFFF] text-[#00126D]">
+    <router-view />
   </div>
 </template>
 
 <style scoped>
-
 </style>
