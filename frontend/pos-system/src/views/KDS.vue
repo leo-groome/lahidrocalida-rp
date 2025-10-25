@@ -9,6 +9,7 @@ interface PedidoKDS {
   id: number
   numero_display: string
   nombre_cliente: string | null
+  tipo_orden: 'aqui' | 'llevar' | 'uber_eats'
   estado: 'pendiente' | 'preparando' | 'listo' | 'completado' | 'cancelado'
   fecha_creacion: string
   articulos_pedido?: Array<{
@@ -28,9 +29,36 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 let timer: number | undefined
 
-const pendientes = computed(() => pedidos.value.filter(p => p.estado === 'pendiente'))
-const preparando = computed(() => pedidos.value.filter(p => p.estado === 'preparando'))
-const listos = computed(() => pedidos.value.filter(p => p.estado === 'listo'))
+const todasLasComandas = computed(() => {
+  return pedidos.value.filter(p => p.estado !== 'completado' && p.estado !== 'cancelado').slice(0, 60)
+})
+
+function getEstadoColor(estado: string) {
+  const colors: Record<string, string> = {
+    'pendiente': 'bg-red-500 text-white',
+    'preparando': 'bg-yellow-500 text-white',
+    'listo': 'bg-green-500 text-white'
+  }
+  return colors[estado] || 'bg-gray-500 text-white'
+}
+
+function getEstadoLabel(estado: string) {
+  const labels: Record<string, string> = {
+    'pendiente': 'PENDIENTE',
+    'preparando': 'PREPARANDO',
+    'listo': 'LISTO'
+  }
+  return labels[estado] || estado.toUpperCase()
+}
+
+function getTipoOrdenEmoji(tipo: string) {
+  const emojis: Record<string, string> = {
+    'aqui': '🍽️',
+    'llevar': '📦',
+    'uber_eats': '🚗'
+  }
+  return emojis[tipo] || '📋'
+}
 
 async function fetchPedidos() {
   loading.value = true
@@ -61,82 +89,34 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-[#F8FAFC]">
-    <header class="flex items-center justify-between px-4 py-3 border-b bg-white">
-      <h1 class="text-xl font-semibold text-[#00126D]">KDS - Cocina</h1>
-      <div class="text-sm text-[#00126D]">Actualizando cada 10s</div>
-    </header>
-
-    <main class="p-4">
-      <div v-if="error" class="p-3 bg-red-50 text-red-700 border border-red-200 rounded mb-4">{{ error }}</div>
-      <div v-if="loading" class="p-3">Cargando...</div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <!-- Pendientes -->
-        <section class="bg-white border rounded-xl p-3">
-          <h2 class="text-lg font-semibold text-[#00126D] mb-2">Pendientes</h2>
-          <div class="space-y-3 max-h-[70vh] overflow-auto">
-            <div v-for="p in pendientes" :key="p.id" class="border rounded-md p-3">
-              <div class="flex items-center justify-between">
-                <div class="text-2xl font-extrabold text-[#00126D]">{{ p.numero_display }}</div>
-                <div class="text-sm text-gray-600">{{ new Date(p.fecha_creacion).toLocaleTimeString() }}</div>
-              </div>
-              <div class="text-sm text-gray-700">{{ p.nombre_cliente }}</div>
-              <ul class="mt-2 text-sm list-disc pl-5">
-                <li v-for="a in p.articulos_pedido || []" :key="a.id">
-                  <span class="font-medium">{{ a.cantidad }}x</span>
-                  <span class="ml-1">{{ a.platillo?.nombre || 'Platillo' }}</span>
-                  <span v-if="a.modificaciones" class="text-gray-500"> — {{ a.modificaciones }}</span>
-                </li>
-              </ul>
-            </div>
-            <div v-if="pendientes.length===0" class="text-sm text-gray-500">Sin pedidos pendientes</div>
+  <div class="min-h-screen flex flex-col bg-[#0a0e27]">
+    <main class="flex-1 p-2 overflow-hidden">
+      <!-- Grid compacto de comandas -->
+      <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: max-content;">
+        <div v-for="p in todasLasComandas" :key="p.id" :class="['rounded-lg p-3 border-2 transition-all', getEstadoColor(p.estado)]" style="border-color: currentColor; opacity: 0.95;">
+          <!-- Estado y número -->
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-2xl font-black">{{ p.numero_display }}</div>
+            <div class="text-xs font-bold px-2 py-1 bg-black bg-opacity-30 rounded">{{ getEstadoLabel(p.estado) }}</div>
           </div>
-        </section>
 
-        <!-- Preparando -->
-        <section class="bg-white border rounded-xl p-3">
-          <h2 class="text-lg font-semibold text-[#00126D] mb-2">Preparando</h2>
-          <div class="space-y-3 max-h-[70vh] overflow-auto">
-            <div v-for="p in preparando" :key="p.id" class="border rounded-md p-3">
-              <div class="flex items-center justify-between">
-                <div class="text-2xl font-extrabold text-[#00126D]">{{ p.numero_display }}</div>
-                <div class="text-sm text-gray-600">{{ new Date(p.fecha_creacion).toLocaleTimeString() }}</div>
-              </div>
-              <div class="text-sm text-gray-700">{{ p.nombre_cliente }}</div>
-              <ul class="mt-2 text-sm list-disc pl-5">
-                <li v-for="a in p.articulos_pedido || []" :key="a.id">
-                  <span class="font-medium">{{ a.cantidad }}x</span>
-                  <span class="ml-1">{{ a.platillo?.nombre || 'Platillo' }}</span>
-                  <span v-if="a.modificaciones" class="text-gray-500"> — {{ a.modificaciones }}</span>
-                </li>
-              </ul>
-            </div>
-            <div v-if="preparando.length===0" class="text-sm text-gray-500">Sin pedidos preparando</div>
-          </div>
-        </section>
+          <!-- Tipo de orden -->
+          <div class="text-sm font-semibold mb-2">{{ getTipoOrdenEmoji(p.tipo_orden) }} {{ p.nombre_cliente || 'Cliente' }}</div>
 
-        <!-- Listos -->
-        <section class="bg-white border rounded-xl p-3">
-          <h2 class="text-lg font-semibold text-[#00126D] mb-2">Listos</h2>
-          <div class="space-y-3 max-h-[70vh] overflow-auto">
-            <div v-for="p in listos" :key="p.id" class="border rounded-md p-3">
-              <div class="flex items-center justify-between">
-                <div class="text-2xl font-extrabold text-[#00126D]">{{ p.numero_display }}</div>
-                <div class="text-sm text-gray-600">{{ new Date(p.fecha_creacion).toLocaleTimeString() }}</div>
-              </div>
-              <div class="text-sm text-gray-700">{{ p.nombre_cliente }}</div>
-              <ul class="mt-2 text-sm list-disc pl-5">
-                <li v-for="a in p.articulos_pedido || []" :key="a.id">
-                  <span class="font-medium">{{ a.cantidad }}x</span>
-                  <span class="ml-1">{{ a.platillo?.nombre || 'Platillo' }}</span>
-                  <span v-if="a.modificaciones" class="text-gray-500"> — {{ a.modificaciones }}</span>
-                </li>
-              </ul>
+          <!-- Items compactos -->
+          <div class="text-xs space-y-0.5 bg-black bg-opacity-20 rounded p-2">
+            <div v-for="a in p.articulos_pedido || []" :key="a.id" class="truncate">
+              <span class="font-bold">{{ a.cantidad }}x</span> {{ a.platillo?.nombre || 'Platillo' }}
+              <div v-if="a.modificaciones" class="text-xs opacity-90">{{ a.modificaciones }}</div>
             </div>
-            <div v-if="listos.length===0" class="text-sm text-gray-500">Sin pedidos listos</div>
           </div>
-        </section>
+        </div>
+
+        <!-- Empty state -->
+        <div v-if="todasLasComandas.length === 0" class="col-span-full text-center py-20 text-gray-400">
+          <p class="text-4xl mb-4">✨</p>
+          <p class="text-xl font-semibold">Sin comandas activas</p>
+        </div>
       </div>
     </main>
   </div>
