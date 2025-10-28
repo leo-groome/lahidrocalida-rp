@@ -96,6 +96,8 @@ const filteredPlatillos = computed(() => {
   )
 })
 
+const categoryOrder = ['Flautas', 'Enchiladas Rojas', 'Sopes', 'Tacos', 'Tostadas', 'Tamales']
+
 const groupedFiltered = computed(() => {
   const map: Record<string, Platillo[]> = {}
   for (const p of filteredPlatillos.value) {
@@ -105,8 +107,41 @@ const groupedFiltered = computed(() => {
     const category = map[p.categoria]
     if (category) category.push(p)
   }
-  return map
+  // Ordenar categorías según categoryOrder
+  const sorted: Record<string, Platillo[]> = {}
+  for (const cat of categoryOrder) {
+    if (map[cat]) sorted[cat] = map[cat]
+  }
+  // Agregar categorías no listadas al final
+  for (const cat in map) {
+    if (!sorted[cat] && map[cat]) sorted[cat] = map[cat]
+  }
+  return sorted
 })
+
+const getCategoryColor = (category: string) => {
+  const colors: Record<string, string> = {
+    'Flautas': 'from-yellow-50 to-yellow-100 border-yellow-300',
+    'Tacos': 'from-orange-50 to-orange-100 border-orange-300',
+    'Sopes': 'from-amber-50 to-amber-100 border-amber-300',
+    'Tostadas': 'from-red-50 to-red-100 border-red-300',
+    'Enchiladas Rojas': 'from-rose-50 to-rose-100 border-rose-300',
+    'Tamales': 'from-green-50 to-green-100 border-green-300'
+  }
+  return colors[category] || 'from-gray-50 to-gray-100 border-gray-300'
+}
+
+const getCategoryTextColor = (category: string) => {
+  const colors: Record<string, string> = {
+    'Flautas': 'text-yellow-700',
+    'Tacos': 'text-orange-700',
+    'Sopes': 'text-amber-700',
+    'Tostadas': 'text-red-700',
+    'Enchiladas Rojas': 'text-rose-700',
+    'Tamales': 'text-green-700'
+  }
+  return colors[category] || 'text-gray-700'
+}
 
 const pozolesByColorFiltered = computed(() => {
   const map: Record<'Verde' | 'Blanco' | 'Rojo', Platillo[]> = {
@@ -271,12 +306,12 @@ onMounted(async () => {
 
         <!-- Other Categories -->
         <div v-for="(items, cat) in groupedFiltered" :key="cat" class="">
-          <h2 class="text-xl font-bold text-[#00126D] mb-4">{{ cat }}</h2>
+          <div :class="['text-xl font-bold mb-4 px-4 py-2 rounded-lg border-2', getCategoryTextColor(cat), getCategoryColor(cat)]">{{ cat }}</div>
           <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
             <button
               v-for="p in items"
               :key="p.id"
-              class="bg-white border-2 border-gray-100 rounded-xl p-4 text-left hover:shadow-lg hover:border-[#FDB700] hover:scale-105 group transition-all active:scale-95"
+              class="bg-white border-2 border-gray-200 rounded-xl p-4 text-left hover:shadow-lg hover:border-[#FDB700] hover:scale-105 group transition-all active:scale-95"
               @click="addToCart(p)"
             >
               <div class="text-sm font-semibold text-[#FDB700] mb-1">$ {{ Number(p.precio).toFixed(2) }}</div>
