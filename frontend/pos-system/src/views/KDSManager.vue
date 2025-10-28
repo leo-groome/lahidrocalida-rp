@@ -88,6 +88,10 @@ function selectPedido(pedidoId: number) {
 }
 
 function toggleArticuloEstado(articulo: Articulo) {
+  if (!selectedPedido.value || selectedPedido.value.estado === 'pendiente') {
+    error.value = 'Debes empezar a preparar el pedido primero'
+    return
+  }
   const nuevoEstado = articulo.estado_item === 'pendiente' ? 'listo' : 'pendiente'
   updateEstadoArticulo(articulo.id, nuevoEstado)
 }
@@ -224,7 +228,10 @@ onUnmounted(() => {
               :key="a.id"
               @click="toggleArticuloEstado(a)"
               :class="[
-                'p-4 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md',
+                'p-4 rounded-lg border-2 transition-all',
+                selectedPedido.estado === 'pendiente'
+                  ? 'cursor-not-allowed opacity-50 bg-gray-50 border-gray-200'
+                  : 'cursor-pointer hover:shadow-md',
                 a.estado_item === 'listo'
                   ? 'bg-green-50 border-green-500 shadow-md'
                   : 'bg-gray-50 border-gray-200 hover:border-gray-300'
