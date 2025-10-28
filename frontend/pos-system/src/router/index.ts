@@ -3,13 +3,16 @@ import { useAuthStore } from '../stores/auth'
 
 const Login = () => import('../views/Login.vue')
 const POS = () => import('../views/POS.vue')
-const KDS = () => import('../views/KDS.vue')
+const KDSView = () => import('../views/KDSView.vue')
+const KDSManager = () => import('../views/KDSManager.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/login' },
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
   { path: '/pos', name: 'pos', component: POS, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
-  { path: '/kds', name: 'kds', component: KDS, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/kds', redirect: '/kds-view' },
 ]
 
 export const router = createRouter({

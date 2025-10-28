@@ -16,9 +16,9 @@ const searchQuery = ref('')
 const successMessage = ref<string | null>(null)
 const showNotification = ref(false)
 
-const nombreCliente = ref('')
 const metodoPago = ref<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo')
 const tipoOrden = ref<'aqui' | 'llevar' | 'uber_eats'>('aqui')
+const ultimoNumeroDisplay = ref<string | null>(null)
 
 interface CartItem {
   platillo: Platillo
@@ -139,10 +139,6 @@ async function loadPlatillos() {
 }
 
 async function enviarPedido() {
-  if (!nombreCliente.value.trim()) {
-    showErrorNotification('El nombre del cliente es obligatorio')
-    return
-  }
   if (cart.value.length === 0) {
     showErrorNotification('Agrega al menos un artículo')
     return
@@ -155,18 +151,17 @@ async function enviarPedido() {
   try {
     loading.value = true
     error.value = null
-    await api.post('/pedidos', {
-      nombre_cliente: nombreCliente.value.trim(),
+    const response = await api.post<any>('/pedidos', {
       metodo_pago: metodoPago.value,
       tipo_orden: tipoOrden.value,
       articulos,
     })
+    ultimoNumeroDisplay.value = response.data.numero_display
     // limpiar
     cart.value = []
-    nombreCliente.value = ''
     metodoPago.value = 'efectivo'
     tipoOrden.value = 'aqui'
-    showSuccessNotification('¡Pedido creado exitosamente!')
+    showSuccessNotification(`¡Pedido #${response.data.numero_display} creado!`)
   } catch (e: any) {
     showErrorNotification(e?.response?.data?.detail || 'Error creando pedido')
   } finally {
@@ -294,11 +289,6 @@ onMounted(async () => {
 
       <!-- Carrito -->
       <aside class="bg-gradient-to-b from-white to-blue-50 border-2 border-gray-200 rounded-2xl p-6 flex flex-col gap-5 h-fit sticky top-6 shadow-xl">
-        <div class="border-b-2 border-gray-100 pb-4">
-          <label class="block text-sm font-bold text-[#00126D] mb-2">👤 Nombre del cliente</label>
-          <input v-model="nombreCliente" type="text" class="w-full border-2 border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition" placeholder="Ingresa el nombre" />
-        </div>
-
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-bold text-[#00126D] mb-2">📦 Tipo de orden</label>

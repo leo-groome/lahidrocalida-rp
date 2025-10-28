@@ -38,6 +38,7 @@ class Platillo(Base):
     descripcion = Column(Text)
     precio = Column(DECIMAL(8, 2), nullable=False)
     categoria = Column(String(50), nullable=False)
+    kds_name = Column(String(50), nullable=True)  # Nombre corto para KDS
     estado = Column(String(20), default='disponible')  # 'disponible', 'no_disponible'
     
     # Relaciones
@@ -71,6 +72,7 @@ class ArticuloPedido(Base):
     cantidad = Column(Integer, nullable=False)
     precio_cobrado = Column(DECIMAL(8, 2), nullable=False)
     modificaciones = Column(Text)
+    estado_item = Column(String(20), default='pendiente')  # 'pendiente', 'listo'
     
     # Relaciones
     pedido = relationship("Pedido", back_populates="articulos_pedido")

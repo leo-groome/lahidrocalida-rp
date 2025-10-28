@@ -6,7 +6,7 @@ from datetime import datetime, date
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
-from app.schemas import PedidoCreate, PedidoResponse, PedidoUpdate
+from app.schemas import PedidoCreate, PedidoResponse, PedidoUpdate, ArticuloPedidoUpdate
 from app.auth import get_current_active_user
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
@@ -62,13 +62,6 @@ def create_pedido(
             detail="tipo_orden inválido. Valores permitidos: aqui, llevar, uber_eats"
         )
     
-    # Validar que nombre_cliente no esté vacío
-    if not data.nombre_cliente or data.nombre_cliente.strip() == "":
-        raise HTTPException(
-            status_code=400,
-            detail="El nombre del cliente es obligatorio"
-        )
-    
     # Validar que hay artículos en el pedido
     if not data.articulos or len(data.articulos) == 0:
         raise HTTPException(
@@ -121,7 +114,7 @@ def create_pedido(
     # Crear el pedido
     pedido = Pedido(
         numero_display=numero_display,
-        nombre_cliente=data.nombre_cliente.strip(),
+        nombre_cliente=data.nombre_cliente.strip() if data.nombre_cliente else None,
         total=total_calculado,
         estado="pendiente",
         metodo_pago=data.metodo_pago,
@@ -259,3 +252,62 @@ def update_pedido(
     db.refresh(pedido)
     
     return pedido
+
+
+@router.put("/articulos/{articulo_id}", response_model=dict)
+def update_articulo_estado(
+    articulo_id: int,
+    data: ArticuloPedidoUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    """
+    Actualizar el estado de un artículo del pedido.
+    Solo cocina y administradores pueden actualizar.
+    Si todos los artículos están listos, el pedido pasa a 'listo'.
+    """
+    # Validar permisos
+    if current_user.rol not in ["cocina", "administrador"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Solo cocina y administradores pueden actualizar items"
+        )
+    
+    # Obtener el artículo
+    articulo = db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).first()
+    if not articulo:
+        raise HTTPException(
+            status_code=404,
+            detail="Artículo no encontrado"
+        )
+    
+    # Validar estado
+    if data.estado_item not in ["pendiente", "listo"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Estado inválido. Valores permitidos: pendiente, listo"
+        )
+    
+    # Actualizar estado del artículo
+    articulo.estado_item = data.estado_item
+    db.commit()
+    
+    # Obtener el pedido asociado
+    pedido = articulo.pedido
+    
+    # Verificar si todos los artículos están listos
+    todos_listos = all(a.estado_item == "listo" for a in pedido.articulos_pedido)
+    
+    # Si todos están listos y el pedido está en 'preparando', cambiar a 'listo'
+    if todos_listos and pedido.estado == "preparando":
+        pedido.estado = "listo"
+        db.commit()
+    
+    db.refresh(articulo)
+    
+    return {
+        "articulo_id": articulo.id,
+        "estado_item": articulo.estado_item,
+        "pedido_id": pedido.id,
+        "pedido_estado": pedido.estado
+    }

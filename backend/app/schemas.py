@@ -43,6 +43,7 @@ class PlatilloBase(BaseModel):
     descripcion: Optional[str] = None
     precio: Decimal
     categoria: str
+    kds_name: Optional[str] = None
     estado: str = 'disponible'
 
 class PlatilloCreate(PlatilloBase):
@@ -60,11 +61,15 @@ class ArticuloPedidoBase(BaseModel):
     cantidad: int
     precio_cobrado: Decimal
     modificaciones: Optional[str] = None
+    estado_item: str = 'pendiente'
 
 class ArticuloPedidoCreate(BaseModel):
     platillo_id: int
     cantidad: int
     modificaciones: Optional[str] = None
+
+class ArticuloPedidoUpdate(BaseModel):
+    estado_item: str
 
 class ArticuloPedidoResponse(ArticuloPedidoBase):
     id: int
@@ -84,7 +89,7 @@ class PedidoBase(BaseModel):
     usuario_id: int
 
 class PedidoCreate(BaseModel):
-    nombre_cliente: str
+    nombre_cliente: Optional[str] = None
     metodo_pago: str
     tipo_orden: str = 'aqui'
     articulos: List[ArticuloPedidoCreate]

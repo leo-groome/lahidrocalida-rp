@@ -17,6 +17,7 @@ interface PedidoKDS {
     cantidad: number
     precio_cobrado: string | number
     modificaciones?: string | null
+    estado_item?: string
     platillo?: { nombre: string; kds_name?: string | null }
   }>
 }
@@ -64,7 +65,6 @@ async function fetchPedidos() {
   loading.value = true
   error.value = null
   try {
-    // Trae todos y filtramos por estado en cliente; backend ya ordena por fecha
     const { data } = await api.get<PedidoKDS[]>('/pedidos')
     pedidos.value = data
   } catch (e: any) {
@@ -80,7 +80,7 @@ onMounted(async () => {
     return
   }
   await fetchPedidos()
-  timer = window.setInterval(fetchPedidos, 10000)
+  timer = window.setInterval(fetchPedidos, 3000)
 })
 
 onUnmounted(() => {
@@ -105,7 +105,7 @@ onUnmounted(() => {
 
           <!-- Items compactos -->
           <div class="text-xs space-y-0.5 bg-black bg-opacity-20 rounded p-2">
-            <div v-for="a in p.articulos_pedido || []" :key="a.id" class="truncate">
+            <div v-for="a in p.articulos_pedido || []" :key="a.id" :class="['px-2 py-1 rounded truncate', a.estado_item === 'listo' ? 'bg-green-500 text-white font-bold' : '']">
               <span class="font-bold">{{ a.cantidad }}x</span> {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}
               <div v-if="a.modificaciones" class="text-xs opacity-90">{{ a.modificaciones }}</div>
             </div>
