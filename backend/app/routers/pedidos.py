@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, cast
+from sqlalchemy import Integer as SAInteger
 from typing import List, Optional
-from datetime import datetime, date
+from sqlalchemy.exc import IntegrityError
+from datetime import datetime, date, timedelta
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
@@ -18,24 +20,23 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
     Formato: 001, 002, 003, etc.
     Se reinicia automáticamente cada día.
     """
-    today = date.today()
-    
-    # Buscar el último número del día actual para esta sucursal
-    last_pedido = db.query(Pedido).filter(
-        and_(
+    # Usar ventana del día en UTC para evitar problemas de zona horaria
+    today_utc = datetime.utcnow().date()
+    start_dt = datetime.combine(today_utc, datetime.min.time())
+    end_dt = start_dt + timedelta(days=1)
+
+    # Obtener el máximo numero_display como entero para la sucursal y día actuales
+    max_number = (
+        db.query(func.max(cast(Pedido.numero_display, SAInteger)))
+        .filter(
             Pedido.sucursal_id == sucursal_id,
-            func.date(Pedido.fecha_creacion) == today
+            Pedido.fecha_creacion >= start_dt,
+            Pedido.fecha_creacion < end_dt,
         )
-    ).order_by(Pedido.numero_display.desc()).first()
-    
-    if last_pedido:
-        # Incrementar el último número
-        last_number = int(last_pedido.numero_display)
-        next_number = last_number + 1
-    else:
-        # Primer pedido del día
-        next_number = 1
-    
+        .scalar()
+    )
+
+    next_number = (max_number or 0) + 1
     return f"{next_number:03d}"
 
 
@@ -108,39 +109,48 @@ def create_pedido(
             'modificaciones': articulo.modificaciones
         })
     
-    # Generar número de display
-    numero_display = generate_numero_display(db, current_user.sucursal_id)
-    
-    # Crear el pedido
-    pedido = Pedido(
-        numero_display=numero_display,
-        nombre_cliente=data.nombre_cliente.strip() if data.nombre_cliente else None,
-        total=total_calculado,
-        estado="pendiente",
-        metodo_pago=data.metodo_pago,
-        tipo_orden=data.tipo_orden,
-        sucursal_id=current_user.sucursal_id,
-        usuario_id=current_user.id
-    )
-    
-    db.add(pedido)
-    db.flush()  # Para obtener el ID del pedido
-    
-    # Crear los artículos del pedido
-    for articulo_data in articulos_calculados:
-        articulo = ArticuloPedido(
-            pedido_id=pedido.id,
-            platillo_id=articulo_data['platillo_id'],
-            cantidad=articulo_data['cantidad'],
-            precio_cobrado=articulo_data['precio_cobrado'],
-            modificaciones=articulo_data['modificaciones']
-        )
-        db.add(articulo)
-    
-    db.commit()
-    db.refresh(pedido)
-    
-    return pedido
+    # Crear pedido con reintentos ante colisión de numero_display por concurrencia
+    attempts = 0
+    while attempts < 5:
+        try:
+            # Generar número de display basado en ventana del día
+            numero_display = generate_numero_display(db, current_user.sucursal_id)
+
+            # Crear el pedido
+            pedido = Pedido(
+                numero_display=numero_display,
+                nombre_cliente=data.nombre_cliente.strip() if data.nombre_cliente else None,
+                total=total_calculado,
+                estado="pendiente",
+                metodo_pago=data.metodo_pago,
+                tipo_orden=data.tipo_orden,
+                sucursal_id=current_user.sucursal_id,
+                usuario_id=current_user.id
+            )
+
+            db.add(pedido)
+            db.flush()  # Para obtener el ID del pedido
+
+            # Crear los artículos del pedido
+            for articulo_data in articulos_calculados:
+                articulo = ArticuloPedido(
+                    pedido_id=pedido.id,
+                    platillo_id=articulo_data['platillo_id'],
+                    cantidad=articulo_data['cantidad'],
+                    precio_cobrado=articulo_data['precio_cobrado'],
+                    modificaciones=articulo_data['modificaciones']
+                )
+                db.add(articulo)
+
+            db.commit()
+            db.refresh(pedido)
+            return pedido
+        except IntegrityError:
+            # Colisión de unique (otra transacción tomó el número). Reintentar.
+            db.rollback()
+            attempts += 1
+    # Si no se pudo después de varios intentos, reportar error
+    raise HTTPException(status_code=500, detail="No fue posible generar un numero_display único. Intenta de nuevo.")
 
 
 @router.get("/", response_model=List[PedidoResponse])

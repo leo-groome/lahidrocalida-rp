@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint, func
 from sqlalchemy.types import DECIMAL
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -46,9 +46,12 @@ class Platillo(Base):
 
 class Pedido(Base):
     __tablename__ = "pedidos"
+    __table_args__ = (
+        UniqueConstraint('numero_display', 'sucursal_id', 'fecha_creacion', name='uq_numero_display_sucursal_fecha'),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
-    numero_display = Column(String(10), nullable=False, unique=True)  # Ej: "101", "102"
+    numero_display = Column(String(10), nullable=False)  # Ej: "001", "002" (único por día y sucursal)
     nombre_cliente = Column(String(100))
     total = Column(DECIMAL(8, 2), nullable=False)
     estado = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'completado'

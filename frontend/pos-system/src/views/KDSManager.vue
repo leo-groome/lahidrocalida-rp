@@ -108,7 +108,7 @@ onMounted(async () => {
     return
   }
   await fetchPedidos()
-  timer = window.setInterval(fetchPedidos, 5000)
+  timer = window.setInterval(fetchPedidos, 3000)
 })
 
 onUnmounted(() => {

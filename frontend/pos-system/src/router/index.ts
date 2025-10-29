@@ -5,6 +5,7 @@ const Login = () => import('../views/Login.vue')
 const POS = () => import('../views/POS.vue')
 const KDSView = () => import('../views/KDSView.vue')
 const KDSManager = () => import('../views/KDSManager.vue')
+const ClienteDisplay = () => import('../views/ClienteDisplay.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/login' },
@@ -12,6 +13,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/pos', name: 'pos', component: POS, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
   { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/cliente-display', name: 'cliente-display', component: ClienteDisplay, meta: { public: true } },
   { path: '/kds', redirect: '/kds-view' },
 ]
 
