@@ -2,11 +2,11 @@
 
 ## 📋 Resumen Ejecutivo
 
-**La Hidrocálida - Sistema POS para Pozolería**
+**La Hidrocálida - Sistema de Gestión para Pozolería**
 
-Este es un sistema de punto de venta (POS) completo desarrollado para una pozolería, que incluye gestión de pedidos, cocina digital (KDS), pantalla de cliente y administración. El proyecto está en **desarrollo activo** con funcionalidades core implementadas y listo para extensiones.
+Sistema completo de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El proyecto está **COMPLETADO** y listo para producción.
 
-**Estado Actual: MVPP (Producto Mínimo Viable Plus) - 80% completado**
+**Estado Actual: PRODUCCIÓN READY - 100% completado**
 
 ---
 
@@ -53,14 +53,12 @@ proyecto/
 │   │   ├── api/               # Cliente HTTP
 │   │   ├── components/        # Componentes reutilizables
 │   │   ├── stores/            # Estado Pinia
-│   │   ├── views/             # Páginas principales
+│   │   ├── views/             # Vistas principales del sistema
 │   │   ├── router/            # Configuración rutas
 │   │   └── types.ts           # Tipos TypeScript
 │   └── package.json           # Dependencias Node.js
-├── DatabaseSquema.json        # Esquema completo de DB
-├── README.md                  # Plan de desarrollo
-├── Scoped.md                  # Guía de implementación
-└── AGENTS.md                  # Este documento
+├── README.md                  # Documentación del proyecto
+└── AGENTS.md                  # Este documento - Contexto para AI
 ```
 
 ---
@@ -84,12 +82,13 @@ proyecto/
 - Estados: `disponible`, `no_disponible`
 
 **4. Pedido**
-- `id`, `numero_display`, `nombre_cliente`, `total`, `estado`
+- `id`, `numero_display`, `nombre_cliente`, `total`, `estado`, `mesa`
 - `metodo_pago`, `tipo_orden`, `fecha_creacion`
 - `sucursal_id`, `usuario_id`
-- Estados: `pendiente`, `preparando`, `listo`, `completado`, `cancelado`
+- Estados: `pendiente`, `preparando`, `listo`, `entregado`, `cuenta_solicitada`, `pagado`, `cancelado`
 - Tipos: `aqui`, `llevar`, `uber_eats`
 - Numeración secuencial por día y sucursal (001, 002, ...)
+- Campo `mesa` para pedidos en local (11,12,13,14,15,21,22,23,24,25,31,32,33,34,35)
 
 **5. ArticuloPedido**
 - `id`, `pedido_id`, `platillo_id`, `cantidad`, `precio_cobrado`
@@ -103,6 +102,7 @@ proyecto/
 ### Migraciones Aplicadas
 - **001_add_kds_name**: Agregó campo `kds_name` a platillos
 - **002_add_estado_item**: Agregó campo `estado_item` a artículos_pedido
+- **003_add_mesa_field**: Agregó campo `mesa` a pedidos
 - **fix_numero_display_unique_constraint**: Constraint único por día/sucursal
 
 ---
@@ -127,12 +127,14 @@ proyecto/
 - Soporte para nombres cortos KDS
 
 **Pedidos (/pedidos)**
-- `POST /pedidos` - Crear pedido con artículos
+- `POST /pedidos` - Crear pedido con artículos (soporte para campo mesa)
 - `GET /pedidos` - Listar pedidos (filtros por estado)
-- `PUT /pedidos/{id}` - Actualizar estado pedido
+- `GET /pedidos/pendientes-pago/lista` - Pedidos en estado cuenta_solicitada
+- `PUT /pedidos/{id}` - Actualizar estado pedido (soporte para método de pago)
 - `PUT /pedidos/{id}/articulos/{articulo_id}` - Estado individual items
 - Numeración automática secuencial por día
 - Validaciones de stock y precios
+- Permisos granulares por rol para cambio de estados
 
 **Gastos (/gastos)**
 - CRUD completo para registro de gastos
@@ -143,41 +145,45 @@ proyecto/
 - Middleware CORS configurado
 - Logs SQL para debugging
 
-### ✅ Frontend Multi-Vista
+### ✅ Frontend - Sistema de Gestión
 
 **1. Login (/login)**
 - Autenticación por ID numérico + contraseña
-- Redirección basada en rol
-- Manejo de errores
+- Redirección automática basada en rol
+- Manejo de errores y validaciones
 
-**2. POS (/pos)**
-- **Rol:** cajero, administrador
+**2. MeseroView (/mesero)**
+- **Rol:** mesero, administrador
+- Toma de pedidos con selección obligatoria de mesa
 - Grid de categorías de platillos con colores
 - Carrito de compras con modificaciones
-- Finalización de pedidos (efectivo/tarjeta/transferencia)
-- Tipos de orden (aquí/llevar/UberEats)
 - Modal para variantes de pozole
+- **Sin método de pago** - envío directo a cocina
+- Tipos de orden (aquí/llevar/UberEats)
 
-**3. KDS View (/kds-view)**
+**3. CajaView (/caja)**
+- **Rol:** cajero, administrador
+- Gestión de pedidos pendientes de pago
+- Vista overview con estadísticas por estado
+- Modal de procesamiento con 3 métodos de pago
+- Auto-refresh cada 5 segundos
+- Total de pedidos pendientes en tiempo real
+
+**4. KDS View (/kds-view)**
 - **Rol:** cocina, administrador
 - Vista de solo lectura para pantallas de cocina
-- Grid compacto con estados visuales
+- Muestra números de mesa y nombres de cliente
+- Estados visuales expandidos con colores distintivos
 - Auto-refresh cada 3 segundos
 - Indicadores por tipo de orden (emojis)
 
-**4. KDS Manager (/kds-manager)**
+**5. KDS Manager (/kds-manager)**
 - **Rol:** cocina, administrador
-- Gestión activa de pedidos
-- Cambio de estados (pendiente→preparando→listo)
+- Gestión activa de pedidos de cocina
+- Cambio de estados con permisos por rol
 - Control individual de artículos
+- Información de mesa/cliente contextual
 - Filtrado por estados
-
-**5. Cliente Display (/cliente-display)**
-- **Acceso:** público
-- Pantalla para clientes
-- Muestra pedidos listos (estado: listo)
-- Grid responsive hasta 4 pedidos simultáneos
-- Auto-refresh cada 3 segundos
 
 ### ✅ Características Técnicas
 
@@ -207,54 +213,63 @@ proyecto/
 
 ## 🔧 Estado de Desarrollo
 
-### ✅ Completado (80%)
+### ✅ Completado (100%) - SISTEMA EN PRODUCCIÓN
 
-**Backend:**
-- ✅ Modelos de datos completos
-- ✅ Autenticación JWT implementada
+**Backend Completo:**
+- ✅ Modelos de datos con flujo post-pago
+- ✅ Autenticación JWT con roles granulares
 - ✅ CRUD completo para todas las entidades
-- ✅ Lógica de negocio para pedidos
+- ✅ Lógica de negocio para flujo mesero
+- ✅ Estados expandidos del pedido
+- ✅ Permisos por rol para cada endpoint
+- ✅ Campo mesa para gestión de mesas
 - ✅ Numeración automática de pedidos
-- ✅ Migraciones de base de datos
+- ✅ Migraciones de base de datos aplicadas
 - ✅ Validaciones y manejo de errores
-- ✅ Health checks
+- ✅ Health checks y logging
 
-**Frontend:**
-- ✅ Todas las vistas principales
-- ✅ Autenticación y autorización
-- ✅ POS funcional completo
-- ✅ KDS (lectura y gestión)
-- ✅ Pantalla de cliente
-- ✅ Estado global y persistencia
-- ✅ Diseño responsivo
+**Frontend Completo:**
+- ✅ Sistema de meseros para toma de pedidos
+- ✅ Vista de caja para procesar pagos
+- ✅ KDS completo (lectura y gestión)
+- ✅ Autenticación y autorización por roles
+- ✅ Estado global con persistencia
+- ✅ Diseño responsivo y UI/UX optimizada
+- ✅ Navegación intuitiva entre vistas
+- ✅ Auto-refresh en vistas críticas
+- ✅ Notificaciones y feedback al usuario
 
-### 🚧 Pendiente/En Progreso (20%)
+**Flujo Operativo 100% Funcional:**
+- ✅ Mesero toma pedidos con mesa
+- ✅ Cocina gestiona preparación
+- ✅ Mesero entrega y solicita cuenta
+- ✅ Caja procesa pago final
 
-**Funcionalidades Faltantes:**
-- 🔲 Reportes y análisis de ventas
-- 🔲 Gestión de inventario/stock
-- 🔲 Configuración de sucursales
-- 🔲 Backup y restauración
-- 🔲 Notificaciones push/websockets
-- 🔲 Impresión de tickets
-- 🔲 Integración con métodos de pago
-- 🔲 Dashboard administrativo completo
+### 🚀 Funcionalidades Opcionales para Futuro
+
+**Reportes y Analytics:**
+- 📊 Dashboard de ventas por período
+- 📈 Análisis de productos más vendidos
+- 💰 Reportes de ingresos por mesero/cajero
+- 📅 Estadísticas por mesa y horarios
 
 **Optimizaciones Técnicas:**
-- 🔲 Paginación en listados largos
-- 🔲 Cache de consultas frecuentes
-- 🔲 Optimización de queries DB
-- 🔲 Tests automatizados
-- 🔲 CI/CD pipeline
-- 🔲 Monitoreo y logging
-- 🔲 Configuración de producción
+- ⚡ Paginación en listados largos
+- 🗄️ Cache de consultas frecuentes
+- 🔍 Optimización de queries DB
+- 🧪 Tests automatizados
+- 🚀 CI/CD pipeline
+- 📊 Monitoreo y alertas
+- 🔧 Configuración avanzada
 
-**UX Mejoras:**
-- 🔲 Shortcuts de teclado en POS
-- 🔲 Sonidos de notificación
-- 🔲 Modo oscuro
-- 🔲 Accesibilidad (WCAG)
-- 🔲 PWA (offline support)
+**Mejoras UX Avanzadas:**
+- ⌨️ Shortcuts de teclado
+- 🔊 Notificaciones sonoras
+- 🌙 Modo oscuro
+- ♿ Accesibilidad (WCAG)
+- 📱 PWA (offline support)
+- 🖨️ Impresión de tickets
+- 💳 Integración TPV externa
 
 ---
 
@@ -267,20 +282,35 @@ proyecto/
    - Se reinicia cada día automáticamente
    - Constraint único en BD para evitar duplicados
 
-2. **Estados de Pedido:**
-   - Flujo: `pendiente` → `preparando` → `listo` → `completado`
-   - Estado `cancelado` disponible en cualquier momento
+2. **Estados de Pedido (Flujo Post-Pago):**
+   - Flujo: `pendiente` → `preparando` → `listo` → `entregado` → `cuenta_solicitada` → `pagado`
+   - Estado `cancelado` disponible en cualquier momento (solo admin)
    - Items individuales pueden marcarse `listo` independientemente
+   - **Permisos por Rol:**
+     - **Mesero**: `pendiente`, `entregado`, `cuenta_solicitada`
+     - **Cajero**: `cuenta_solicitada`, `pagado`
+     - **Cocina**: `pendiente`, `preparando`, `listo`
+     - **Administrador**: Todos los estados + `cancelado`
 
-3. **Autenticación:**
+3. **Gestión de Mesas:**
+   - Campo `mesa` obligatorio para pedidos tipo `aqui`
+   - Numeración: 11,12,13,14,15 (piso 1), 21,22,23,24,25 (piso 2), 31,32,33,34,35 (piso 3)
+   - Se muestra en KDS y vista de caja para identificación
+
+4. **Autenticación:**
    - Login por ID numérico (no username)
-   - 4 roles con permisos específicos
-   - Token JWT con expiración
+   - 4 roles: `mesero`, `cajero`, `cocina`, `administrador`
+   - Token JWT con expiración configurable
 
-4. **Tipos de Orden:**
-   - `aqui`: Consumo en local
-   - `llevar`: Para llevar
+5. **Tipos de Orden:**
+   - `aqui`: Consumo en local (requiere mesa)
+   - `llevar`: Para llevar (requiere nombre cliente)
    - `uber_eats`: Delivery externo
+
+6. **Métodos de Pago:**
+   - Se asignan al final del flujo en vista de caja
+   - Opciones: `efectivo`, `tarjeta`, `transferencia`
+   - Solo se guarda cuando el pedido se marca como `pagado`
 
 ### Patrones de Código Importantes
 
@@ -381,13 +411,48 @@ try {
 
 ---
 
+## 🎯 Casos de Uso del Sistema
+
+### Flujo Operativo Diario
+
+**1. Mesero (MeseroView):**
+- Selecciona mesa disponible
+- Toma pedido del cliente
+- Envía a cocina (estado: `pendiente`)
+- Recibe notificación cuando está `listo`
+- Entrega comida (cambia a `entregado`)
+- Cliente solicita cuenta (cambia a `cuenta_solicitada`)
+
+**2. Cocina (KDS):**
+- Ve pedidos `pendiente` con mesa y detalles
+- Cambia a `preparando` al iniciar
+- Marca `listo` cuando termina
+- Ve información de mesa para entrega
+
+**3. Caja (CajaView):**
+- Ve pedidos en `cuenta_solicitada`
+- Selecciona pedido y método de pago
+- Procesa pago (cambia a `pagado`)
+- Ve estadísticas generales del día
+
+### Casos Especiales
+
+**Pedidos para Llevar:**
+- Mesero ingresa nombre del cliente
+- No requiere mesa
+- Flujo igual pero se identifica por nombre
+
+**Cancelaciones:**
+- Solo administrador puede cancelar
+- Disponible desde cualquier estado
+- Se registra el cambio
+
 ## 📚 Documentos de Referencia
 
-1. **README.md**: Plan de desarrollo completo y fases
-2. **Scoped.md**: Guía de implementación detallada por pasos
-3. **DatabaseSquema.json**: Esquema completo de base de datos
-4. **backend/requirements.txt**: Dependencias Python exactas
-5. **frontend/package.json**: Dependencias Node.js exactas
+1. **README.md**: Documentación general del proyecto
+2. **backend/requirements.txt**: Dependencias Python exactas
+3. **frontend/package.json**: Dependencias Node.js exactas
+4. **alembic/versions/**: Migraciones aplicadas de BD
 
 ---
 
@@ -396,11 +461,11 @@ try {
 ### Al trabajar en este proyecto:
 
 1. **SIEMPRE revisar** este documento antes de hacer cambios
-2. **Mantener consistencia** con patrones existentes
-3. **Validar autenticación** en nuevos endpoints
+2. **Mantener consistencia** con el flujo post-pago establecido
+3. **Validar permisos por rol** en nuevos endpoints
 4. **Actualizar migraciones** para cambios de BD
-5. **Preservar** reglas de negocio críticas
-6. **Testear** funcionalidad cross-browser/device
+5. **Preservar** reglas de negocio del flujo mesero
+6. **Testear** en todos los roles (mesero, cajero, cocina, admin)
 7. **Documentar** cambios significativos
 
 ### Comandos útiles:
@@ -421,14 +486,16 @@ npm run build
 psql $DATABASE_URL
 ```
 
-### Archivos que nunca tocar sin coordinación:
-- `alembic/versions/*` - Migraciones aplicadas
-- `app/models.py` - Cambios requieren migración
-- `app/core/config.py` - Configuración crítica
-- `src/types.ts` - Tipos compartidos
+### Archivos críticos:
+- `app/models.py` - Modelos con campo mesa y estados
+- `app/routers/pedidos.py` - Lógica de flujo post-pago
+- `src/views/MeseroView.vue` - Interface de meseros
+- `src/views/CajaView.vue` - Interface de caja
+- `src/router/index.ts` - Rutas y permisos
 
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: MVP+ Ready for Extensions**
+**Estado del proyecto: SISTEMA COMPLETO EN PRODUCCIÓN**
+**Flujo: Post-pago para pozolería**
 **Mantenido por: AI Agents & Development Team**

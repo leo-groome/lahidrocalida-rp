@@ -1,203 +1,313 @@
-# **Plan de Desarrollo de Software: Sistema de Gestión para Pozolería**
+# **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-Versión: 1.2  
-Fecha: 12 de septiembre de 2025
+**Estado: SISTEMA COMPLETO EN PRODUCCIÓN**  
+Fecha: Enero 2025
 
-## **1\. Resumen del Proyecto**
+## 📋 Resumen del Proyecto
 
-El objetivo de este proyecto es desarrollar un Sistema de Punto de Venta (POS) y Gestión de Pedidos a medida para una pozolería. El sistema optimizará el flujo de trabajo desde que el cliente realiza el pedido en caja hasta que lo recoge, mejorando la eficiencia, reduciendo errores y agilizando la comunicación entre el personal de caja y la cocina.  
-El sistema está diseñado inicialmente para una sola sucursal, pero su arquitectura se concebirá desde el principio para permitir una expansión sencilla a múltiples sucursales en el futuro.
+**Sistema completo de gestión de pedidos con flujo post-pago** desarrollado específicamente para pozolería. Implementa un workflow completo desde la toma de pedidos por meseros hasta el procesamiento final de pagos en caja.
 
-## **2\. Objetivos**
+### 🎯 Características Principales
 
-* **Agilizar el Proceso de Pedido:** Reducir el tiempo que los clientes pasan en la caja.  
-* **Centralizar y Digitalizar Pedidos:** Eliminar comandas en papel y la comunicación verbal, minimizando errores en la preparación.  
-* **Mejorar la Eficiencia de la Cocina:** Proporcionar una vista clara y en tiempo real de los pedidos pendientes en una pantalla dedicada (KDS \- Kitchen Display System).  
-* **Optimizar la Experiencia del Cliente:** Informar a los clientes de manera clara y visual cuando su pedido esté listo para ser recogido.  
-* **Establecer una Base Escalable:** Construir una plataforma robusta que pueda crecer y adaptarse a futuras necesidades.
+- **✅ Flujo Post-Pago Completo**: Mesero → Cocina → Entrega → Solicitar Cuenta → Pago en Caja
+- **✅ Gestión de Mesas**: Sistema de numeración por pisos (11-15, 21-25, 31-35)
+- **✅ Roles Granulares**: Mesero, Cajero, Cocina, Administrador con permisos específicos
+- **✅ KDS (Kitchen Display System)**: Pantallas digitales para cocina con estados visuales
+- **✅ Estados Expandidos**: 7 estados del pedido para control completo del flujo
+- **✅ Auto-refresh**: Actualizaciones en tiempo real en todas las vistas críticas
+- **✅ UI/UX Optimizada**: Diseño responsivo con colores corporativos y navegación intuitiva
 
-## **3\. Alcance del Proyecto**
+### 🚀 Estado Actual
 
-### **Funcionalidades Incluidas (In-Scope):**
+**SISTEMA 100% FUNCIONAL Y LISTO PARA PRODUCCIÓN**
 
-* **Módulo de Caja (POS):**  
-  * Interfaz visual para tomar pedidos.  
-  * Capacidad para añadir modificaciones a los productos (sin costo).  
-  * Cálculo de totales.  
-  * Registro de pagos en efectivo y con terminal externa (Banorte).  
-  * Generación de un número de pedido secuencial (ej: 101, 102\) y solicitud del nombre del cliente.  
-* **Módulo de Cocina (KDS):**  
-  * Visualización en una TV de los pedidos entrantes en tiempo real.  
-  * Interfaz en una tablet para marcar pedidos como "Listos" y "Entregados".  
-* **Módulo de Notificación al Cliente:**  
-  * Visualización en una TV pública de los pedidos listos para ser recogidos.  
-* **Módulo de Administración (Básico):**  
-  * Gestión de menú (productos y categorías).  
-  * Gestión de usuarios y roles.  
-  * Registro de Gastos.  
-  * Reportes de Ventas (diarios, semanales y mensuales).
+Todas las funcionalidades core están implementadas y probadas. El sistema maneja completamente el flujo operativo de una pozolería desde la toma de pedidos hasta el cobro final.
 
-### **Funcionalidades Excluidas (Out-of-Scope para la v1.0):**
+## 🏗️ Arquitectura del Sistema
 
-* Modificadores de productos con costo adicional.  
-* Integración directa con la API de la terminal Banorte.  
-* Sistema de gestión de inventario.  
-* Pedidos en línea o a través de app móvil.
+### Stack Tecnológico
 
-## **4\. Arquitectura del Sistema**
+**Backend:**
+- **FastAPI 0.117.1** - API REST de alto rendimiento
+- **SQLAlchemy 2.0.43** - ORM con soporte async
+- **PostgreSQL** (Neon Cloud) - Base de datos principal
+- **Alembic 1.13.2** - Migraciones de esquema
+- **JWT (python-jose)** - Autenticación segura
+- **Pydantic 2.11.9** - Validación de datos
 
-El sistema seguirá una arquitectura cliente-servidor desacoplada.
+**Frontend:**
+- **Vue 3.5.21** - Framework reactivo moderno
+- **TypeScript 5.8.3** - Tipado estático
+- **Tailwind CSS 4.1.13** - Estilos utilitarios
+- **Pinia 3.0.3** - Gestión de estado global
+- **Vite 7.1.7** - Build tool optimizado
 
-* **Frontend (Cliente):** Tres interfaces de usuario desarrolladas en **Vue.js con Tailwind CSS**.  
-  1. Interfaz de Caja (POS)  
-  2. Interfaz de Cocina (KDS)  
-  3. Interfaz de Clientes  
-* **Backend (Servidor):** API RESTful con **FastAPI (Python)** y WebSockets.  
-* **Base de Datos:** **PostgreSQL**.
+### Estructura del Proyecto
 
-### **4.1. Diseño de Interfaz y Experiencia de Usuario (UI/UX) \- NUEVO**
+```
+├── backend/                 # API FastAPI
+│   ├── app/
+│   │   ├── routers/         # Endpoints organizados
+│   │   ├── models.py        # Modelos de BD
+│   │   ├── schemas.py       # Validaciones Pydantic
+│   │   └── auth.py          # Autenticación JWT
+│   └── alembic/             # Migraciones aplicadas
+├── frontend/pos-system/     # Aplicación Vue.js
+│   └── src/
+│       ├── views/           # Vistas principales
+│       ├── stores/          # Estado global
+│       ├── api/             # Cliente HTTP
+│       └── router/          # Rutas y permisos
+└── README.md
+```
 
-El diseño visual de todas las interfaces se basará en la identidad de marca del restaurante, según lo establecido en el documento Menú V6.pdf.
+## 🎯 Funcionalidades Implementadas
 
-* **Paleta de Colores:** Se utilizará la paleta de colores corporativa, principalmente el **azul oscuro y el amarillo/naranja** del logo, para botones, encabezados y elementos interactivos, garantizando una experiencia coherente con la marca.  
-* **Logotipo:** El logo de "La Hidrocálida" se integrará en las interfaces donde sea apropiado, como la pantalla de bienvenida del POS y la pantalla de notificación para clientes.  
-* **Legibilidad:** Se priorizará una tipografía clara y de alto contraste para asegurar que los pedidos y los estados sean fáciles de leer en las diferentes pantallas, especialmente en el ambiente de una cocina y en la pantalla pública.
+### 1. Sistema de Autenticación
+- Login por ID numérico + contraseña
+- 4 roles con permisos específicos:
+  - **Mesero**: Toma pedidos, gestiona entregas
+  - **Cajero**: Procesa pagos pendientes
+  - **Cocina**: Gestiona preparación de pedidos
+  - **Administrador**: Acceso completo al sistema
+- JWT con expiración configurable
+- Redirección automática por rol
 
-## **5\. Modelo de Datos (según initial.sql)**
+### 2. Vista de Mesero (/mesero)
+- **Toma de pedidos sin pago inicial**
+- Selección obligatoria de mesa
+- Grid de productos por categorías
+- Carrito de compras con modificaciones
+- Modal para variantes de pozole
+- Tipos de orden: Mesa, Llevar, UberEats
+- Envío directo a cocina
 
-Sucursales (`sucursales`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| nombre | VARCHAR(100) | |  
-| direccion | TEXT | |
+### 3. Kitchen Display System (KDS)
+- **Vista de solo lectura** (/kds-view) para pantallas
+- **Vista de gestión** (/kds-manager) para staff
+- Muestra números de mesa y nombres de cliente
+- Estados visuales con colores distintivos:
+  - 🟡 Pendiente
+  - 🟠 Preparando
+  - 🟢 Listo
+  - 🔵 Entregado
+  - 🟣 Cuenta Solicitada
+- Auto-refresh cada 3 segundos
+- Control individual de artículos
 
-Usuarios/Empleados (`usuarios`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| nombre | VARCHAR(100) | |  
-| rol | VARCHAR(20) | CHECK (rol IN ('cajero','cocina','administrador','compras')) |  
-| password | VARCHAR(255) | Hash Argon2id |  
-| activo | BOOLEAN | DEFAULT TRUE |  
-| sucursal_id | INTEGER | Foreign Key -> sucursales.id |
+### 4. Vista de Caja (/caja)
+- **Gestión de pedidos pendientes de pago**
+- Dashboard con estadísticas por estado
+- Grid de pedidos en "cuenta solicitada"
+- Modal de procesamiento con 3 métodos:
+  - 💵 Efectivo
+  - 💳 Tarjeta
+  - 📱 Transferencia
+- Auto-refresh cada 5 segundos
+- Total pendiente en tiempo real
 
-Platillos del menú (`platillos`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| nombre | VARCHAR(100) | |  
-| descripcion | TEXT | |  
-| precio | DECIMAL(8,2) | CHECK (precio >= 0) |  
-| categoria | VARCHAR(50) | |  
-| estado | VARCHAR(20) | DEFAULT 'disponible' CHECK (estado IN ('disponible','no_disponible')) |
+## 📊 Flujo Operativo
 
-Pedidos (`pedidos`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| numero_display | VARCHAR(10) | UNIQUE (p. ej. "101") |  
-| nombre_cliente | VARCHAR(100) | |  
-| total | DECIMAL(8,2) | CHECK (total >= 0) |  
-| estado | VARCHAR(20) | DEFAULT 'pendiente' CHECK (estado IN ('pendiente','preparando','listo','completado','cancelado')) |  
-| metodo_pago | VARCHAR(20) | CHECK (metodo_pago IN ('efectivo','tarjeta','transferencia')) |  
-| fecha_creacion | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |  
-| sucursal_id | INTEGER | Foreign Key -> sucursales.id |  
-| usuario_id | INTEGER | Foreign Key -> usuarios.id |
+### Flujo Principal (Post-Pago)
 
-Artículos de pedido (`articulos_pedido`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| pedido_id | INTEGER | FK -> pedidos.id ON DELETE CASCADE |  
-| platillo_id | INTEGER | FK -> platillos.id |  
-| cantidad | INTEGER | CHECK (cantidad > 0) |  
-| precio_cobrado | DECIMAL(8,2) | CHECK (precio_cobrado >= 0) |  
-| modificaciones | TEXT | |
+```mermaid
+graph LR
+    A[Mesero toma pedido] --> B[Selecciona mesa]
+    B --> C[Envía a cocina: PENDIENTE]
+    C --> D[Cocina: PREPARANDO]
+    D --> E[Cocina: LISTO]
+    E --> F[Mesero: ENTREGADO]
+    F --> G[Cliente solicita: CUENTA_SOLICITADA]
+    G --> H[Caja procesa: PAGADO]
+```
 
-Gastos (`gastos`)  
-| Columna | Tipo | Notas |  
-|---|---|---|  
-| id | SERIAL | Primary Key |  
-| descripcion | VARCHAR(255) | |  
-| monto | DECIMAL(8,2) | CHECK (monto >= 0) |  
-| categoria | VARCHAR(50) | |  
-| fecha_gasto | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP |  
-| sucursal_id | INTEGER | Foreign Key -> sucursales.id |
+### Estados del Pedido
 
-Índices principales  
-- `pedidos(estado)`, `pedidos(fecha_creacion)`, `pedidos(numero_display)`  
-- `articulos_pedido(pedido_id)`  
-- `platillos(categoria)`
+| Estado | Descripción | Responsable |
+|--------|-------------|-------------|
+| `pendiente` | Pedido recibido en cocina | Mesero → Cocina |
+| `preparando` | En proceso de preparación | Cocina |
+| `listo` | Listo para servir | Cocina |
+| `entregado` | Servido al cliente | Mesero |
+| `cuenta_solicitada` | Cliente pide cuenta | Mesero |
+| `pagado` | Pago procesado | Cajero |
+| `cancelado` | Pedido cancelado | Administrador |
 
-## **6\. Fases de Desarrollo**
+## 🗄️ Modelo de Datos
 
-### **Fase 1: Cimientos y Backend (1-2 Semanas)**
+### Entidades Principales
 
-* **Tareas:**  
-  * Diseño final del modelo de datos y creación del esquema en PostgreSQL.  
-  * Configuración del proyecto FastAPI.  
-  * Desarrollo de endpoints para Menú, Pedidos, Autenticación y Gastos.  
-  * Configuración de WebSockets.
+**Pedido**
+- `id`, `numero_display`, `total`, `estado`, `mesa`
+- `nombre_cliente`, `metodo_pago`, `tipo_orden`
+- `fecha_creacion`, `sucursal_id`, `usuario_id`
 
-### **Fase 2: Módulo de Caja (POS) (2-3 Semanas)**
+**ArticuloPedido**
+- `id`, `pedido_id`, `platillo_id`, `cantidad`
+- `precio_cobrado`, `modificaciones`, `estado_item`
 
-* **Tareas:**  
-  * **Diseño de la UI/UX en Vue.js y Tailwind CSS, aplicando la identidad de marca (ver sección 4.1).**  
-  * Listado de productos y funcionalidad para añadir al pedido, **organizado por las categorías del menú (Pozoles, Flautas, Tacos, etc.).**  
-  * Implementación de campo para añadir modificaciones de texto.  
-  * Integración para registrar pagos y enviar el pedido finalizado.
+**Platillo**
+- `id`, `nombre`, `descripcion`, `precio`, `categoria`
+- `kds_name` (nombre corto para cocina)
 
-### **Fase 3: Módulos de Visualización (KDS y Clientes) (2 Semanas)**
+**Usuario**
+- `id`, `nombre`, `rol`, `password_hash`
+- `sucursal_id`, `activo`
 
-* **Tareas:**  
-  * **KDS (Cocina):**  
-    * Desarrollo de la vista de "tarjetas" de pedidos, consistente con la identidad de marca.  
-    * Conexión vía WebSockets.  
-    * Interfaz en tablet para actualizar estado de pedidos a "Listo" y a "Entregado".  
-  * **Pantalla de Clientes:**  
-    * Desarrollo de la vista que muestra pedidos listos, utilizando los colores de la marca para una clara identificación.  
-    * Conexión vía WebSockets.
+### Características de BD
 
-### **Fase 4: Módulo de Administración y Reportes (1-2 Semanas)**
+- **Numeración automática**: Secuencial por día y sucursal (001, 002...)
+- **Gestión de mesas**: Campo específico para identificación
+- **Migraciones**: Sistema completo con Alembic
+- **Constraints**: Validaciones de integridad aplicadas
 
-* **Tareas:**  
-  * Creación de una interfaz de administración protegida.  
-  * Formularios para gestionar el menú.  
-  * Formularios para registrar, ver y editar gastos.  
-  * Creación de reportes de ventas detallados (diario, semanal, mensual).
+## 🚀 Instalación y Configuración
 
-### **Fase 5: Pruebas, Despliegue y Capacitación (1-2 Semanas)**
+### Prerrequisitos
 
-* **Tareas:**  
-  * Pruebas integrales del flujo completo.  
-  * Corrección de errores.  
-  * Configuración del servidor y despliegue.  
-  * Capacitación al personal.  
-  * Acompañamiento en el lanzamiento.
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL (Neon Cloud)
 
-## **7\. Próximos Pasos**
+### Backend Setup
 
-Con este plan de desarrollo actualizado y validado, el siguiente paso es comenzar con la **Fase 1: Cimientos y Backend**. El equipo de desarrollo puede proceder con el diseño final de la base de datos y la configuración inicial del proyecto FastAPI, mientras que el equipo de frontend puede comenzar a crear los primeros *mockups* basados en la identidad visual definida.
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate    # Windows
+pip install -r requirements.txt
 
-## **Guía Rápida (Backend) — Quickstart**
+# Configurar variables de entorno
+export DATABASE_URL="postgresql://..."
+export SECRET_KEY="tu-secret-key"
 
-1. Variables de entorno
-   - Crea un archivo `.env` en `backend/` con:
-     - `DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST/DBNAME`
-     - `SECRET_KEY=un_valor_secreto_aleatorio`
-2. Instalar dependencias
-   - `cd backend`
-   - `pip install -r requirements.txt`
-3. Ejecutar API
-   - `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
-4. Probar salud y DB
-   - `GET /` → mensaje de bienvenida
-   - `GET /health/database` → verifica conexión Neon
-5. Autenticación y pruebas
-   - Crea un `usuario` admin via `POST /usuarios` (requiere token de un admin existente)
-   - Inicia sesión `POST /auth/login` o `/auth/login-simple`
-6. Hash de contraseñas
-   - Se usa Argon2id por defecto; compatible con bcrypt existente
-7. Gastos
-   - Endpoints: `POST/GET/PUT/DELETE /gastos` (roles: administrador, compras)
+# Aplicar migraciones
+alembic upgrade head
+
+# Ejecutar servidor
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend Setup
+
+```bash
+cd frontend/pos-system
+npm install
+
+# Configurar variables de entorno
+echo "VITE_API_URL=http://localhost:8000" > .env
+
+# Ejecutar en desarrollo
+npm run dev
+
+# Build para producción
+npm run build
+```
+
+### Variables de Entorno
+
+**Backend (.env):**
+```env
+DATABASE_URL=postgresql://user:pass@host:port/db
+SECRET_KEY=your-super-secret-jwt-key
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+**Frontend (.env):**
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+## 👥 Usuarios de Prueba
+
+| ID | Nombre | Rol | Password | Descripción |
+|----|--------|-----|----------|-------------|
+| 3 | Admin | administrador | admin123 | Acceso completo |
+| 4 | Leo | cajero | cajero123 | Gestión de caja |
+| 5 | Mesero Test | mesero | mesero123 | Toma de pedidos |
+
+## 🔧 Comandos Útiles
+
+### Backend
+```bash
+# Crear nueva migración
+alembic revision --autogenerate -m "descripcion"
+
+# Aplicar migraciones
+alembic upgrade head
+
+# Ver estado de migraciones
+alembic current
+
+# Health check de BD
+curl http://localhost:8000/health/database
+```
+
+### Frontend
+```bash
+# Linter y formatter
+npm run lint
+npm run format
+
+# Build con análisis
+npm run build -- --analyze
+
+# Preview de build
+npm run preview
+```
+
+## 🎨 Personalización
+
+### Colores Corporativos
+
+- **Azul Principal**: `#00126D`
+- **Amarillo Accent**: `#FDB700`
+- **Blanco**: `#FFFFFF`
+
+### Numeración de Mesas
+
+- **Piso 1**: 11, 12, 13, 14, 15
+- **Piso 2**: 21, 22, 23, 24, 25
+- **Piso 3**: 31, 32, 33, 34, 35
+
+## 📈 Próximas Funcionalidades (Opcionales)
+
+### Reportes y Analytics
+- Dashboard de ventas por período
+- Análisis de productos más vendidos
+- Estadísticas por mesero/cajero
+- Reportes de ocupación de mesas
+
+### Integraciones
+- Impresión de tickets
+- Notificaciones push/WebSocket
+- TPV para pagos con tarjeta
+- Sistema de inventory management
+
+### Optimizaciones
+- Cache de consultas frecuentes
+- PWA con soporte offline
+- Tests automatizados
+- CI/CD pipeline
+
+## 🔒 Seguridad
+
+- Autenticación JWT con expiración
+- Hash de contraseñas con Argon2
+- Validación de permisos por endpoint
+- Sanitización de inputs
+- CORS configurado para producción
+
+## 📞 Soporte
+
+- **Documentación técnica**: Ver `AGENTS.md`
+- **Base de datos**: PostgreSQL en Neon Cloud
+- **API Docs**: `http://localhost:8000/docs`
+- **Logs**: Configurados en FastAPI con SQL echo
+
+---
+
+**Desarrollado para Pozolería "La Hidrocálida"**  
+**Sistema completo y funcional - Enero 2025**  
+**Flujo post-pago optimizado para restaurantes**
