@@ -26,10 +26,19 @@ async function onSubmit() {
     }
     switch (auth.role) {
       case 'cajero':
-        router.replace({ name: 'pos' })
+        router.replace({ name: 'caja' })
+        break
+      case 'mesero':
+        router.replace({ name: 'mesero' })
+        break
+      case 'cocina':
+        router.replace({ name: 'kds-view' })
+        break
+      case 'administrador':
+        router.replace({ name: 'mesero' })
         break
       default:
-        router.replace({ name: 'pos' })
+        router.replace({ name: 'mesero' })
         break
     }
   } catch {

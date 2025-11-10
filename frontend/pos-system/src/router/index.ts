@@ -2,18 +2,18 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const Login = () => import('../views/Login.vue')
-const POS = () => import('../views/POS.vue')
+const MeseroView = () => import('../views/MeseroView.vue')
+const CajaView = () => import('../views/CajaView.vue')
 const KDSView = () => import('../views/KDSView.vue')
 const KDSManager = () => import('../views/KDSManager.vue')
-const ClienteDisplay = () => import('../views/ClienteDisplay.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/login' },
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
-  { path: '/pos', name: 'pos', component: POS, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
+  { path: '/mesero', name: 'mesero', component: MeseroView, meta: { requiresAuth: true, roles: ['mesero', 'administrador'] } },
+  { path: '/caja', name: 'caja', component: CajaView, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
   { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
-  { path: '/cliente-display', name: 'cliente-display', component: ClienteDisplay, meta: { public: true } },
   { path: '/kds', redirect: '/kds-view' },
 ]
 
@@ -36,7 +36,13 @@ router.beforeEach(async (to) => {
       // fallback por rol
       switch (auth.role) {
         case 'cajero':
-          return { name: 'pos' }
+          return { name: 'caja' }
+        case 'mesero':
+          return { name: 'mesero' }
+        case 'cocina':
+          return { name: 'kds-view' }
+        case 'administrador':
+          return { name: 'mesero' }
         default:
           return { name: 'login' }
       }

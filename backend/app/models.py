@@ -21,7 +21,7 @@ class Usuario(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
-    rol = Column(String(20), nullable=False)  # 'cajero', 'cocina', 'administrador', 'compras'
+    rol = Column(String(20), nullable=False)  # 'cajero', 'cocina', 'administrador', 'compras', 'mesero'
     password = Column(String(255), nullable=False)  # Cambiado de 'pin' a 'password'
     activo = Column(Boolean, default=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
@@ -53,8 +53,9 @@ class Pedido(Base):
     id = Column(Integer, primary_key=True, index=True)
     numero_display = Column(String(10), nullable=False)  # Ej: "001", "002" (único por día y sucursal)
     nombre_cliente = Column(String(100))
+    mesa = Column(String(10), nullable=True)  # Número de mesa para tipo_orden 'aqui' (11,12,13,14,15,21,22,23,24,25,31,32,33,34,35)
     total = Column(DECIMAL(8, 2), nullable=False)
-    estado = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'completado'
+    estado = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada', 'pagado'
     metodo_pago = Column(String(20))  # 'efectivo', 'tarjeta', 'transferencia'
     tipo_orden = Column(String(20), default='aqui')  # 'aqui', 'llevar', 'uber_eats'
     fecha_creacion = Column(DateTime, default=datetime.utcnow)

@@ -120,6 +120,7 @@ def create_pedido(
             pedido = Pedido(
                 numero_display=numero_display,
                 nombre_cliente=data.nombre_cliente.strip() if data.nombre_cliente else None,
+                mesa=data.mesa,
                 total=total_calculado,
                 estado="pendiente",
                 metodo_pago=data.metodo_pago,
@@ -173,10 +174,10 @@ def list_pedidos(
     
     # Filtro por estado si se especifica
     if estado:
-        if estado not in ["pendiente", "preparando", "listo", "completado", "cancelado"]:
+        if estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]:
             raise HTTPException(
                 status_code=400,
-                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, completado, cancelado"
+                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado"
             )
         query = query.filter(Pedido.estado == estado)
     
@@ -184,6 +185,33 @@ def list_pedidos(
     query = query.order_by(Pedido.fecha_creacion.desc())
     
     return query.all()
+
+
+@router.get("/pendientes-pago/lista", response_model=List[PedidoResponse])
+def get_pedidos_pendientes_pago(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    """
+    Obtener pedidos que están esperando pago (estado: cuenta_solicitada).
+    Para cajeros: solo pedidos de su sucursal.
+    Para administradores: todos los pedidos.
+    """
+    # Solo cajeros y administradores pueden ver esto
+    if current_user.rol not in ["cajero", "administrador"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Solo cajeros y administradores pueden ver pedidos pendientes de pago"
+        )
+    
+    query = db.query(Pedido).filter(Pedido.estado == "cuenta_solicitada")
+    
+    # Filtro por sucursal para cajeros
+    if current_user.rol == "cajero":
+        query = query.filter(Pedido.sucursal_id == current_user.sucursal_id)
+    
+    # Ordenar por fecha de creación
+    return query.order_by(Pedido.fecha_creacion.asc()).all()
 
 
 @router.get("/{pedido_id}", response_model=PedidoResponse)
@@ -241,22 +269,39 @@ def update_pedido(
             detail="No tienes permisos para modificar este pedido"
         )
     
-    # Validar permisos para cambiar estado
-    if current_user.rol not in ["cocina", "administrador"]:
+    # Validar permisos para cambiar estado según rol
+    allowed_transitions = {
+        "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
+        "cajero": ["cuenta_solicitada", "pagado"],
+        "cocina": ["pendiente", "preparando", "listo"],
+        "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]
+    }
+    
+    if current_user.rol not in allowed_transitions:
         raise HTTPException(
             status_code=403,
-            detail="Solo cocina y administradores pueden cambiar el estado de pedidos"
+            detail="No tienes permisos para cambiar el estado de pedidos"
+        )
+    
+    if data.estado not in allowed_transitions[current_user.rol]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Tu rol ({current_user.rol}) no puede cambiar a estado '{data.estado}'"
         )
     
     # Validar estado
-    if data.estado not in ["pendiente", "preparando", "listo", "completado", "cancelado"]:
+    if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]:
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, completado, cancelado"
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado"
         )
     
     # Actualizar estado
     pedido.estado = data.estado
+    
+    # Actualizar método de pago si se proporciona
+    if data.metodo_pago is not None:
+        pedido.metodo_pago = data.metodo_pago
     
     db.commit()
     db.refresh(pedido)
@@ -277,10 +322,10 @@ def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
     # Validar permisos
-    if current_user.rol not in ["cocina", "administrador"]:
+    if current_user.rol not in ["mesero", "cocina", "administrador"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo cocina y administradores pueden actualizar items"
+            detail="Solo meseros, cocina y administradores pueden actualizar items"
         )
     
     # Obtener el artículo

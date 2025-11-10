@@ -81,6 +81,7 @@ class ArticuloPedidoResponse(ArticuloPedidoBase):
 class PedidoBase(BaseModel):
     numero_display: str
     nombre_cliente: Optional[str] = None
+    mesa: Optional[str] = None
     total: Decimal
     estado: str = 'pendiente'
     metodo_pago: Optional[str] = None
@@ -90,12 +91,14 @@ class PedidoBase(BaseModel):
 
 class PedidoCreate(BaseModel):
     nombre_cliente: Optional[str] = None
-    metodo_pago: str
+    mesa: Optional[str] = None
+    metodo_pago: Optional[str] = None  # Opcional para flujo mesero
     tipo_orden: str = 'aqui'
     articulos: List[ArticuloPedidoCreate]
 
 class PedidoUpdate(BaseModel):
     estado: str
+    metodo_pago: Optional[str] = None
 
 class PedidoResponse(PedidoBase):
     id: int

@@ -16,8 +16,10 @@ interface Articulo {
 interface Pedido {
   id: number
   numero_display: string
+  nombre_cliente: string | null
+  mesa: string | null
   tipo_orden: 'aqui' | 'llevar' | 'uber_eats'
-  estado: 'pendiente' | 'preparando' | 'listo' | 'completado' | 'cancelado'
+  estado: 'pendiente' | 'preparando' | 'listo' | 'entregado' | 'cuenta_solicitada' | 'pagado' | 'cancelado'
   articulos_pedido?: Articulo[]
 }
 
@@ -30,7 +32,7 @@ const selectedPedidoId = ref<number | null>(null)
 let timer: number | undefined
 
 const pedidosActivos = computed(() => {
-  return pedidos.value.filter(p => p.estado !== 'completado' && p.estado !== 'cancelado')
+  return pedidos.value.filter(p => !['entregado', 'cuenta_solicitada', 'pagado', 'cancelado'].includes(p.estado))
 })
 
 const selectedPedido = computed(() => {
@@ -50,7 +52,9 @@ function getEstadoColor(estado: string) {
   const colors: Record<string, string> = {
     'pendiente': 'bg-red-500',
     'preparando': 'bg-yellow-500',
-    'listo': 'bg-green-500'
+    'listo': 'bg-green-500',
+    'entregado': 'bg-blue-500',
+    'cuenta_solicitada': 'bg-purple-500'
   }
   return colors[estado] || 'bg-gray-500'
 }
@@ -165,7 +169,20 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="text-sm text-gray-600">{{ getTipoOrdenEmoji(p.tipo_orden) }} {{ p.tipo_orden }}</div>
-            <div class="text-xs text-gray-500 mt-1">{{ p.articulos_pedido?.length || 0 }} items</div>
+            
+            <!-- Mesa y Cliente con mejor diseño -->
+            <div v-if="p.mesa" class="mt-2">
+              <div class="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold text-center">
+                🪑 MESA {{ p.mesa }}
+              </div>
+            </div>
+            <div v-if="p.nombre_cliente && p.tipo_orden === 'llevar'" class="mt-2">
+              <div class="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold text-center">
+                📦 {{ p.nombre_cliente }}
+              </div>
+            </div>
+            
+            <div class="text-xs text-gray-500 mt-2">{{ p.articulos_pedido?.length || 0 }} items</div>
           </div>
         </div>
       </div>
@@ -213,10 +230,10 @@ onUnmounted(() => {
               </button>
               <button
                 v-if="selectedPedido.estado === 'listo'"
-                @click="updateEstadoPedido(selectedPedido.id, 'completado')"
+                @click="updateEstadoPedido(selectedPedido.id, 'entregado')"
                 class="flex-1 py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-all active:scale-95"
               >
-                ✓ Completado
+                🍽️ Entregado
               </button>
             </div>
           </div>
