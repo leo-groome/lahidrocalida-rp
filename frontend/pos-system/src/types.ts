@@ -1,3 +1,5 @@
+export type Rol = 'mesero' | 'cajero' | 'cocina' | 'administrador' | 'compras'
+
 export interface Platillo {
   id: number
   nombre: string
@@ -5,6 +7,7 @@ export interface Platillo {
   precio: string | number
   categoria: string
   estado: 'disponible' | 'no_disponible'
+  kds_name?: string
 }
 
 export interface ArticuloPedidoCreate {
@@ -24,6 +27,28 @@ export interface ArticuloPedidoResponse {
   platillo?: Platillo
 }
 
+export interface PlatilloResponse {
+  id: number
+  nombre: string
+  descripcion?: string
+  precio: number
+  categoria: string
+  estado: 'disponible' | 'no_disponible'
+  kds_name?: string
+}
+
+export interface PedidoCreate {
+  nombre_cliente: string
+  mesa?: string
+  tipo_orden: 'aqui' | 'llevar' | 'uber_eats'
+  metodo_pago?: string // Agregar metodo_pago opcional
+  articulos: Array<{
+    platillo_id: number
+    cantidad: number
+    modificaciones?: string
+  }>
+}
+
 export interface PedidoResponse {
   id: number
   numero_display: string
@@ -36,5 +61,6 @@ export interface PedidoResponse {
   sucursal_id: number
   usuario_id: number
   fecha_creacion: string
+  created_at?: string // Alias para fecha_creacion
   articulos_pedido?: ArticuloPedidoResponse[]
 }

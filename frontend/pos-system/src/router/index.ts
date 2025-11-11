@@ -6,6 +6,7 @@ const MeseroView = () => import('../views/MeseroView.vue')
 const CajaView = () => import('../views/CajaView.vue')
 const KDSView = () => import('../views/KDSView.vue')
 const KDSManager = () => import('../views/KDSManager.vue')
+const AdminView = () => import('../views/AdminView.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/login' },
@@ -14,6 +15,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/caja', name: 'caja', component: CajaView, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
   { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, roles: ['administrador'] } },
   { path: '/kds', redirect: '/kds-view' },
 ]
 
@@ -34,7 +36,7 @@ router.beforeEach(async (to) => {
   if (to.meta.roles && auth.role && Array.isArray(to.meta.roles)) {
     if (!(to.meta.roles as string[]).includes(auth.role)) {
       // fallback por rol
-      switch (auth.role) {
+      switch (auth.role as any) {
         case 'cajero':
           return { name: 'caja' }
         case 'mesero':
@@ -42,7 +44,7 @@ router.beforeEach(async (to) => {
         case 'cocina':
           return { name: 'kds-view' }
         case 'administrador':
-          return { name: 'mesero' }
+          return { name: 'admin' }
         default:
           return { name: 'login' }
       }

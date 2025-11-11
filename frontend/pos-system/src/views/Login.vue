@@ -24,7 +24,7 @@ async function onSubmit() {
       router.replace(redirect)
       return
     }
-    switch (auth.role) {
+    switch (auth.role as any) {
       case 'cajero':
         router.replace({ name: 'caja' })
         break
@@ -35,7 +35,7 @@ async function onSubmit() {
         router.replace({ name: 'kds-view' })
         break
       case 'administrador':
-        router.replace({ name: 'mesero' })
+        router.replace({ name: 'admin' })
         break
       default:
         router.replace({ name: 'mesero' })

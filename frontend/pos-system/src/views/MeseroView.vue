@@ -133,7 +133,7 @@ const getCategoryColor = (category: string) => {
 }
 
 // Agregar producto al carrito (para platillos normales)
-const agregarAlCarrito = (platillo: PlatilloResponse) => {
+const agregarAlCarrito = (platillo: any) => {
   const existente = carrito.value.find(item => 
     item.platillo.id === platillo.id && 
     item.modificaciones === ''
@@ -228,7 +228,6 @@ const enviarPedido = async () => {
     const pedidoData: PedidoCreate = {
       nombre_cliente: tipoOrden.value === 'llevar' ? nombreCliente.value : null,
       mesa: tipoOrden.value === 'aqui' ? mesa.value : null,
-      metodo_pago: null, // Sin método de pago - será asignado por cajero
       tipo_orden: tipoOrden.value,
       articulos
     }
