@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { api } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+import { usePedidosStore } from '../stores/pedidos'
 import { useRouter } from 'vue-router'
 
 interface Articulo {
@@ -24,15 +25,15 @@ interface Pedido {
 }
 
 const auth = useAuthStore()
+const pedidosStore = usePedidosStore()
 const router = useRouter()
 
-const pedidos = ref<Pedido[]>([])
 const error = ref<string | null>(null)
 const selectedPedidoId = ref<number | null>(null)
 let timer: number | undefined
 
 const pedidosActivos = computed(() => {
-  return pedidos.value.filter(p => !['entregado', 'cuenta_solicitada', 'pagado', 'cancelado'].includes(p.estado))
+  return pedidosStore.pedidosKDS
 })
 
 const selectedPedido = computed(() => {
@@ -59,19 +60,12 @@ function getEstadoColor(estado: string) {
   return colors[estado] || 'bg-gray-500'
 }
 
-async function fetchPedidos() {
-  try {
-    const { data } = await api.get<Pedido[]>('/pedidos')
-    pedidos.value = data
-  } catch (e: any) {
-    error.value = e?.response?.data?.detail || 'Error cargando pedidos'
-  }
-}
-
 async function updateEstadoPedido(pedidoId: number, nuevoEstado: string) {
   try {
-    await api.put(`/pedidos/${pedidoId}`, { estado: nuevoEstado })
-    await fetchPedidos()
+    const success = await pedidosStore.updatePedidoEstado(pedidoId, nuevoEstado)
+    if (!success) {
+      error.value = pedidosStore.error || 'Error actualizando pedido'
+    }
   } catch (e: any) {
     error.value = e?.response?.data?.detail || 'Error actualizando pedido'
   }
@@ -79,9 +73,10 @@ async function updateEstadoPedido(pedidoId: number, nuevoEstado: string) {
 
 async function updateEstadoArticulo(articuloId: number, nuevoEstado: string) {
   try {
-    const response = await api.put(`/pedidos/articulos/${articuloId}`, { estado_item: nuevoEstado })
-    await fetchPedidos()
-    return response.data
+    const success = await pedidosStore.updateArticuloEstado(articuloId, nuevoEstado)
+    if (!success) {
+      error.value = pedidosStore.error || 'Error actualizando artículo'
+    }
   } catch (e: any) {
     error.value = e?.response?.data?.detail || 'Error actualizando artículo'
   }
@@ -107,16 +102,40 @@ function swipeToPreparando(pedido: Pedido) {
 }
 
 onMounted(async () => {
-  if (!auth.isAuthenticated) {
+  if (!auth.isAuthenticated || !['cocina', 'administrador'].includes(auth.user?.rol || '')) {
     router.replace({ name: 'login' })
     return
   }
-  await fetchPedidos()
-  timer = window.setInterval(fetchPedidos, 3000)
+
+  console.log('🍳 KDS Manager: Iniciando...')
+
+  try {
+    // Cargar datos iniciales
+    await pedidosStore.loadInitialData()
+    
+    // Inicializar WebSocket para KDS
+    const wsConnected = await pedidosStore.initWebSocket('kds')
+    
+    if (wsConnected) {
+      console.log('✅ KDS Manager: WebSocket conectado, datos en tiempo real activos')
+    } else {
+      console.warn('⚠️ KDS Manager: WebSocket falló, usando polling como fallback')
+      // Fallback: polling cada 3 segundos si WebSocket falla
+      timer = window.setInterval(() => {
+        pedidosStore.refreshPedidos()
+      }, 3000)
+    }
+  } catch (error) {
+    console.error('❌ KDS Manager: Error en inicialización:', error)
+  }
 })
 
 onUnmounted(() => {
-  if (timer) window.clearInterval(timer)
+  console.log('👋 KDS Manager: Cleanup...')
+  if (timer) {
+    clearInterval(timer)
+  }
+  // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
 </script>
 

@@ -4,9 +4,9 @@
 
 **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-Sistema completo de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El proyecto está **COMPLETADO** y listo para producción.
+Sistema de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El **flujo operativo está completo** con WebSockets en tiempo real, pero faltan funcionalidades adicionales para producción completa.
 
-**Estado Actual: PRODUCCIÓN READY - 100% completado**
+**Estado Actual: FLUJO OPERATIVO COMPLETO - WebSockets tiempo real implementados**
 
 ---
 
@@ -15,13 +15,14 @@ Sistema completo de gestión de pedidos con **flujo post-pago** desarrollado esp
 ### Stack Tecnológico
 
 **Backend (Python/FastAPI):**
-- **FastAPI 0.117.1** - Framework API REST
+- **FastAPI 0.117.1** - Framework API REST + WebSockets
 - **SQLAlchemy 2.0.43** - ORM para base de datos
 - **PostgreSQL** (Neon Cloud) - Base de datos principal
 - **Alembic 1.13.2** - Migraciones de base de datos
 - **JWT (python-jose)** - Autenticación y autorización
 - **Passlib** - Hash de contraseñas (Argon2/bcrypt)
 - **Pydantic 2.11.9** - Validación y serialización
+- **WebSockets** - Actualizaciones en tiempo real
 
 **Frontend (Vue.js/TypeScript):**
 - **Vue 3.5.21** - Framework frontend reactivo
@@ -31,32 +32,39 @@ Sistema completo de gestión de pedidos con **flujo post-pago** desarrollado esp
 - **Tailwind CSS 4.1.13** - Framework CSS utilitario
 - **Axios 1.12.2** - Cliente HTTP
 - **Vite 7.1.7** - Bundler y dev server
+- **WebSockets** - Conexión tiempo real con fallback polling
+- **pnpm** - Gestor de paquetes (usar en este entorno)
 
 ### Estructura de Directorios
 
 ```
 proyecto/
-├── backend/                    # API FastAPI
+├── backend/                    # API FastAPI + WebSockets
+│   ├── .venv/                 # Entorno virtual Python (USAR SIEMPRE)
 │   ├── alembic/               # Migraciones DB
 │   │   └── versions/          # Archivos de migración
 │   ├── app/
 │   │   ├── core/              # Configuración
 │   │   ├── db/                # Sesión de base de datos
-│   │   ├── routers/           # Endpoints API
+│   │   ├── routers/           # Endpoints API REST
 │   │   ├── auth.py            # Autenticación JWT
 │   │   ├── main.py            # Aplicación principal
 │   │   ├── models.py          # Modelos SQLAlchemy
-│   │   └── schemas.py         # Schemas Pydantic
+│   │   ├── schemas.py         # Schemas Pydantic
+│   │   ├── websocket_manager.py  # Gestor WebSockets
+│   │   └── websocket_routes.py   # Rutas WebSockets
 │   └── requirements.txt       # Dependencias Python
-├── frontend/pos-system/       # Aplicación Vue.js
+├── frontend/pos-system/       # Aplicación Vue.js + WebSockets
 │   ├── src/
-│   │   ├── api/               # Cliente HTTP
+│   │   ├── api/               # Cliente HTTP (Axios)
 │   │   ├── components/        # Componentes reutilizables
-│   │   ├── stores/            # Estado Pinia
+│   │   ├── services/          # WebSocket service
+│   │   ├── stores/            # Estado Pinia (auth, pedidos)
 │   │   ├── views/             # Vistas principales del sistema
 │   │   ├── router/            # Configuración rutas
 │   │   └── types.ts           # Tipos TypeScript
-│   └── package.json           # Dependencias Node.js
+│   ├── package.json           # Dependencias Node.js
+│   └── pnpm-lock.yaml         # Lock file pnpm (USAR PNPM)
 ├── README.md                  # Documentación del proyecto
 └── AGENTS.md                  # Este documento - Contexto para AI
 ```
@@ -163,10 +171,13 @@ proyecto/
 
 **3. CajaView (/caja)**
 - **Rol:** cajero, administrador
+- **Overview completo** - Todos los pedidos del día en tiempo real
+- **Solicitar cuenta** - Botón en pedidos "entregado" → "cuenta_solicitada"
 - Gestión de pedidos pendientes de pago
 - Vista overview con estadísticas por estado
 - Modal de procesamiento con 3 métodos de pago
-- Auto-refresh cada 5 segundos
+- **WebSocket tiempo real** - Sin polling manual necesario
+- **Debug indicators** - Estado conexión WebSocket (🟢/🟡)
 - Total de pedidos pendientes en tiempo real
 
 **4. KDS View (/kds-view)**
@@ -174,7 +185,8 @@ proyecto/
 - Vista de solo lectura para pantallas de cocina
 - Muestra números de mesa y nombres de cliente
 - Estados visuales expandidos con colores distintivos
-- Auto-refresh cada 3 segundos
+- **WebSocket tiempo real** - Updates instantáneos
+- **Fallback polling** - 3 segundos si WebSocket falla
 - Indicadores por tipo de orden (emojis)
 
 **5. KDS Manager (/kds-manager)**
@@ -184,6 +196,8 @@ proyecto/
 - Control individual de artículos
 - Información de mesa/cliente contextual
 - Filtrado por estados
+- **WebSocket tiempo real** - Actualizaciones instantáneas
+- **Notificaciones automáticas** - Nuevos pedidos y cambios
 
 ### ✅ Características Técnicas
 
@@ -213,7 +227,7 @@ proyecto/
 
 ## 🔧 Estado de Desarrollo
 
-### ✅ Completado (100%) - SISTEMA EN PRODUCCIÓN
+### ✅ Completado - FLUJO OPERATIVO + WEBSOCKETS
 
 **Backend Completo:**
 - ✅ Modelos de datos con flujo post-pago
@@ -227,49 +241,58 @@ proyecto/
 - ✅ Migraciones de base de datos aplicadas
 - ✅ Validaciones y manejo de errores
 - ✅ Health checks y logging
+- ✅ **WebSockets completos** - Tiempo real para todas las vistas
+- ✅ **WebSocket Manager** - Gestión de conexiones por tipo de usuario
+- ✅ **Notificaciones automáticas** - Updates por cambios de estado
 
 **Frontend Completo:**
 - ✅ Sistema de meseros para toma de pedidos
-- ✅ Vista de caja para procesar pagos
+- ✅ Vista de caja para procesar pagos + **solicitar cuenta**
 - ✅ KDS completo (lectura y gestión)
 - ✅ Autenticación y autorización por roles
 - ✅ Estado global con persistencia
 - ✅ Diseño responsivo y UI/UX optimizada
 - ✅ Navegación intuitiva entre vistas
-- ✅ Auto-refresh en vistas críticas
+- ✅ **WebSockets tiempo real** - Actualizaciones instantáneas
+- ✅ **Fallback automático** - Polling si WebSocket falla
+- ✅ **Notificaciones tiempo real** - Estados de pedidos
+- ✅ **Debug indicators** - Estado de conexión WebSocket
 - ✅ Notificaciones y feedback al usuario
 
-**Flujo Operativo 100% Funcional:**
-- ✅ Mesero toma pedidos con mesa
-- ✅ Cocina gestiona preparación
-- ✅ Mesero entrega y solicita cuenta
-- ✅ Caja procesa pago final
+**Flujo Operativo Completo + Tiempo Real:**
+- ✅ Mesero toma pedidos con mesa → **Aparece instantáneamente en KDS**
+- ✅ Cocina gestiona preparación → **Updates en tiempo real**
+- ✅ Mesero entrega → **Notificación automática**
+- ✅ **Caja solicita cuenta** → **Nuevo: Botón en overview**
+- ✅ Caja procesa pago final → **Estadísticas actualizadas en tiempo real**
+- ❌ **Impresión automática** → **Pendiente: Integración impresora**
+- ❌ **Reportes gerenciales** → **Pendiente: Panel administración**
 
-### 🚀 Funcionalidades Opcionales para Futuro
+### 🚧 Funcionalidades Pendientes para Producción Completa
 
-**Reportes y Analytics:**
-- 📊 Dashboard de ventas por período
-- 📈 Análisis de productos más vendidos
-- 💰 Reportes de ingresos por mesero/cajero
-- 📅 Estadísticas por mesa y horarios
+**Críticas para Producción:**
+- 🖨️ **Integración con impresora** - Impresión automática de tickets/comandas
+- 👨‍💼 **Panel de administración** - Dashboard completo para gerencia
+- 📊 **Reportes de ventas** - Ventas diarias, semanales, mensuales
+- 📈 **Analytics de productos** - Productos más vendidos, rentabilidad
+- 💰 **Reportes financieros** - Ingresos, gastos, utilidades por período
+- 📅 **Estadísticas operativas** - Rendimiento por mesero, tiempos promedio
 
-**Optimizaciones Técnicas:**
-- ⚡ Paginación en listados largos
-- 🗄️ Cache de consultas frecuentes
-- 🔍 Optimización de queries DB
-- 🧪 Tests automatizados
-- 🚀 CI/CD pipeline
-- 📊 Monitoreo y alertas
-- 🔧 Configuración avanzada
+**Optimizaciones Necesarias:**
+- ⚡ **Performance** - Paginación, cache, optimización de queries
+- 🔍 **Búsqueda avanzada** - Filtros por fecha, cliente, productos
+- 🔧 **Configuración** - Ajustes de impresora, horarios, precios
+- 📱 **Responsividad móvil** - Optimización para tablets/móviles
+- 🧪 **Testing** - Tests automatizados para estabilidad
+- 📊 **Monitoreo** - Logs, alertas, health checks
 
-**Mejoras UX Avanzadas:**
-- ⌨️ Shortcuts de teclado
-- 🔊 Notificaciones sonoras
-- 🌙 Modo oscuro
-- ♿ Accesibilidad (WCAG)
-- 📱 PWA (offline support)
-- 🖨️ Impresión de tickets
-- 💳 Integración TPV externa
+**Mejoras UX Importantes:**
+- ⌨️ **Shortcuts de teclado** - Navegación rápida para cajeros
+- 🔊 **Notificaciones sonoras** - Alertas para nueva orden en cocina
+- 🌙 **Modo oscuro** - Para uso en horarios nocturnos
+- ♿ **Accesibilidad** - Cumplimiento WCAG para inclusividad
+- 📱 **PWA** - Funcionalidad offline y app móvil
+- 💳 **Integración TPV** - Conexión con terminales de pago
 
 ---
 
@@ -288,7 +311,7 @@ proyecto/
    - Items individuales pueden marcarse `listo` independientemente
    - **Permisos por Rol:**
      - **Mesero**: `pendiente`, `entregado`, `cuenta_solicitada`
-     - **Cajero**: `cuenta_solicitada`, `pagado`
+     - **Cajero**: `entregado`, `cuenta_solicitada`, `pagado` ← **ACTUALIZADO**
      - **Cocina**: `pendiente`, `preparando`, `listo`
      - **Administrador**: Todos los estados + `cancelado`
 
@@ -411,6 +434,25 @@ try {
 
 ---
 
+### 🎯 Estado Actual vs Funcionalidades Faltantes
+
+**✅ LO QUE FUNCIONA:**
+- Flujo operativo completo (mesero → cocina → caja)
+- WebSockets tiempo real en todas las vistas
+- Gestión de pedidos con estados granulares
+- Autenticación y autorización por roles
+- Solicitar cuenta desde caja
+- Vista KDS para cocina
+- Gestión de mesas y tipos de orden
+
+**❌ LO QUE FALTA PARA PRODUCCIÓN:**
+- **Panel de administración** con reportes y analytics
+- **Integración con impresora** para tickets automáticos
+- **Reportes de ventas** (diarios, semanales, mensuales)
+- **Optimización de código** y performance
+- **Testing automatizado** y control de calidad
+- **Configuración avanzada** (impresora, horarios, etc.)
+
 ## 🎯 Casos de Uso del Sistema
 
 ### Flujo Operativo Diario
@@ -467,35 +509,83 @@ try {
 5. **Preservar** reglas de negocio del flujo mesero
 6. **Testear** en todos los roles (mesero, cajero, cocina, admin)
 7. **Documentar** cambios significativos
+8. **PRIORIZAR** funcionalidades pendientes para producción
+9. **OPTIMIZAR** código existente cuando sea posible
+10. **CONSIDERAR** escalabilidad y performance
 
-### Comandos útiles:
+### 🚀 Comandos para este entorno específico:
 
 ```bash
-# Backend
+# Backend (USAR .venv/ obligatorio)
 cd backend
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate  # Windows
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 alembic upgrade head
 alembic revision --autogenerate -m "descripcion"
 
-# Frontend  
+# Frontend (USAR pnpm obligatorio)
 cd frontend/pos-system
-npm run dev
-npm run build
+pnpm install          # NO usar npm
+pnpm run dev          # NO usar npm run dev
+pnpm run build        # NO usar npm run build
 
 # Base de datos
 psql $DATABASE_URL
+
+# WebSockets test
+# Backend debe estar corriendo en :8000
+# Frontend debe estar corriendo en :5173
+# WebSocket endpoint: ws://localhost:8000/ws/{tipo_usuario}
 ```
+
+### ⚠️ **IMPORTANTE - Configuración de este entorno:**
+
+- **Backend**: SIEMPRE usar `.venv/` - No instalar globalmente
+- **Frontend**: SIEMPRE usar `pnpm` - No usar npm/yarn
+- **WebSockets**: Puerto 8000 backend, 5173 frontend
+- **Base de datos**: PostgreSQL en Neon Cloud (ver env vars)
 
 ### Archivos críticos:
 - `app/models.py` - Modelos con campo mesa y estados
 - `app/routers/pedidos.py` - Lógica de flujo post-pago
+- `app/websocket_manager.py` - **Gestor WebSockets tiempo real**
+- `app/websocket_routes.py` - **Rutas WebSocket por tipo usuario**
+- `src/services/websocket.ts` - **Cliente WebSocket frontend**
+- `src/stores/pedidos.ts` - **Estado global con WebSockets**
 - `src/views/MeseroView.vue` - Interface de meseros
-- `src/views/CajaView.vue` - Interface de caja
+- `src/views/CajaView.vue` - **Interface de caja + solicitar cuenta**
+- `src/views/KDSView.vue` - **Vista cocina tiempo real**
+- `src/views/KDSManager.vue` - **Gestión cocina tiempo real**
 - `src/router/index.ts` - Rutas y permisos
 
 ---
 
+## 📡 **WebSockets - Implementación Completa**
+
+### **Arquitectura Tiempo Real:**
+- **Backend**: FastAPI WebSockets con gestión por tipo de usuario
+- **Frontend**: Cliente WebSocket con fallback automático a polling
+- **Tipos de conexión**: `kds`, `mesero`, `caja`, `admin`
+- **Notificaciones**: Automáticas por cambios de estado/artículos
+- **Fallback**: Polling inteligente si WebSocket falla
+
+### **Cobertura por Vista:**
+- **KDSView**: ✅ Updates de pedidos activos
+- **KDSManager**: ✅ Notificaciones de nuevos pedidos y cambios
+- **MeseroView**: ✅ Notificaciones de pedidos listos y cambios relevantes
+- **CajaView**: ✅ **TODOS** los cambios para overview completo
+
+### **Estados Soportados:**
+- `pedido_created` - Nuevo pedido creado
+- `pedido_estado_changed` - Cambio de estado general
+- `articulo_estado_changed` - Progreso de artículos individuales
+
+---
+
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO EN PRODUCCIÓN**
-**Flujo: Post-pago para pozolería**
+**Estado del proyecto: FLUJO OPERATIVO COMPLETO + WebSockets tiempo real**
+**Flujo: Post-pago funcional con actualizaciones instantáneas**
+**Pendiente: Panel admin, impresora, reportes, optimizaciones**
+**Funcionalidad nueva: Solicitar cuenta desde caja**
 **Mantenido por: AI Agents & Development Team**

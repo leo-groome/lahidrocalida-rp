@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
 from app.schemas import PedidoCreate, PedidoResponse, PedidoUpdate, ArticuloPedidoUpdate
 from app.auth import get_current_active_user
+from app.websocket_manager import websocket_manager
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
@@ -41,7 +42,7 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
 
 
 @router.post("/", response_model=PedidoResponse, status_code=status.HTTP_201_CREATED)
-def create_pedido(
+async def create_pedido(
     data: PedidoCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
@@ -145,6 +146,38 @@ def create_pedido(
 
             db.commit()
             db.refresh(pedido)
+            
+            # Notificar creación del pedido via WebSocket
+            try:
+                pedido_data = {
+                    "id": pedido.id,
+                    "numero_display": pedido.numero_display,
+                    "nombre_cliente": pedido.nombre_cliente,
+                    "mesa": pedido.mesa,
+                    "total": float(pedido.total),
+                    "estado": pedido.estado,
+                    "tipo_orden": pedido.tipo_orden,
+                    "sucursal_id": pedido.sucursal_id,
+                    "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                    "articulos_pedido": [
+                        {
+                            "id": a.id,
+                            "cantidad": a.cantidad,
+                            "precio_cobrado": float(a.precio_cobrado),
+                            "modificaciones": a.modificaciones,
+                            "estado_item": a.estado_item,
+                            "platillo": {
+                                "nombre": a.platillo.nombre,
+                                "kds_name": a.platillo.kds_name
+                            } if a.platillo else None
+                        } for a in pedido.articulos_pedido
+                    ]
+                }
+                await websocket_manager.notify_pedido_created(pedido_data)
+            except Exception as e:
+                # Log del error pero no fallar la creación del pedido
+                print(f"Error notifying pedido creation via WebSocket: {e}")
+            
             return pedido
         except IntegrityError:
             # Colisión de unique (otra transacción tomó el número). Reintentar.
@@ -244,7 +277,7 @@ def get_pedido(
 
 
 @router.put("/{pedido_id}", response_model=PedidoResponse)
-def update_pedido(
+async def update_pedido(
     pedido_id: int,
     data: PedidoUpdate,
     db: Session = Depends(get_db),
@@ -272,7 +305,7 @@ def update_pedido(
     # Validar permisos para cambiar estado según rol
     allowed_transitions = {
         "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
-        "cajero": ["cuenta_solicitada", "pagado"],
+        "cajero": ["entregado", "cuenta_solicitada", "pagado"],  # Cajero puede cambiar de entregado a cuenta_solicitada
         "cocina": ["pendiente", "preparando", "listo"],
         "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]
     }
@@ -297,6 +330,7 @@ def update_pedido(
         )
     
     # Actualizar estado
+    old_estado = pedido.estado
     pedido.estado = data.estado
     
     # Actualizar método de pago si se proporciona
@@ -306,11 +340,48 @@ def update_pedido(
     db.commit()
     db.refresh(pedido)
     
+    # Notificar cambio de estado via WebSocket (solo si cambió)
+    if old_estado != data.estado:
+        try:
+            pedido_data = {
+                "id": pedido.id,
+                "numero_display": pedido.numero_display,
+                "nombre_cliente": pedido.nombre_cliente,
+                "mesa": pedido.mesa,
+                "total": float(pedido.total),
+                "estado": pedido.estado,
+                "tipo_orden": pedido.tipo_orden,
+                "sucursal_id": pedido.sucursal_id,
+                "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                "metodo_pago": pedido.metodo_pago,
+                "articulos_pedido": [
+                    {
+                        "id": a.id,
+                        "cantidad": a.cantidad,
+                        "precio_cobrado": float(a.precio_cobrado),
+                        "modificaciones": a.modificaciones,
+                        "estado_item": a.estado_item,
+                        "platillo": {
+                            "nombre": a.platillo.nombre,
+                            "kds_name": a.platillo.kds_name
+                        } if a.platillo else None
+                    } for a in pedido.articulos_pedido
+                ]
+            }
+            await websocket_manager.notify_pedido_estado_changed(
+                pedido_id=pedido.id,
+                nuevo_estado=data.estado,
+                pedido_data=pedido_data
+            )
+        except Exception as e:
+            # Log del error pero no fallar la actualización del pedido
+            print(f"Error notifying pedido estado change via WebSocket: {e}")
+    
     return pedido
 
 
 @router.put("/articulos/{articulo_id}", response_model=dict)
-def update_articulo_estado(
+async def update_articulo_estado(
     articulo_id: int,
     data: ArticuloPedidoUpdate,
     db: Session = Depends(get_db),
@@ -344,6 +415,7 @@ def update_articulo_estado(
         )
     
     # Actualizar estado del artículo
+    old_estado = articulo.estado_item
     articulo.estado_item = data.estado_item
     db.commit()
     
@@ -354,11 +426,62 @@ def update_articulo_estado(
     todos_listos = all(a.estado_item == "listo" for a in pedido.articulos_pedido)
     
     # Si todos están listos y el pedido está en 'preparando', cambiar a 'listo'
+    pedido_estado_changed = False
     if todos_listos and pedido.estado == "preparando":
         pedido.estado = "listo"
+        pedido_estado_changed = True
         db.commit()
     
     db.refresh(articulo)
+    db.refresh(pedido)
+    
+    # Notificar cambio de artículo via WebSocket (solo si cambió)
+    if old_estado != data.estado_item:
+        try:
+            pedido_data = {
+                "id": pedido.id,
+                "numero_display": pedido.numero_display,
+                "nombre_cliente": pedido.nombre_cliente,
+                "mesa": pedido.mesa,
+                "total": float(pedido.total),
+                "estado": pedido.estado,
+                "tipo_orden": pedido.tipo_orden,
+                "sucursal_id": pedido.sucursal_id,
+                "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                "articulos_pedido": [
+                    {
+                        "id": a.id,
+                        "cantidad": a.cantidad,
+                        "precio_cobrado": float(a.precio_cobrado),
+                        "modificaciones": a.modificaciones,
+                        "estado_item": a.estado_item,
+                        "platillo": {
+                            "nombre": a.platillo.nombre,
+                            "kds_name": a.platillo.kds_name
+                        } if a.platillo else None
+                    } for a in pedido.articulos_pedido
+                ]
+            }
+            
+            # Notificar cambio de artículo
+            await websocket_manager.notify_articulo_estado_changed(
+                pedido_id=pedido.id,
+                articulo_id=articulo.id,
+                nuevo_estado=data.estado_item,
+                pedido_data=pedido_data
+            )
+            
+            # Si el pedido también cambió de estado, notificar eso también
+            if pedido_estado_changed:
+                await websocket_manager.notify_pedido_estado_changed(
+                    pedido_id=pedido.id,
+                    nuevo_estado="listo",
+                    pedido_data=pedido_data
+                )
+                
+        except Exception as e:
+            # Log del error pero no fallar la actualización del artículo
+            print(f"Error notifying articulo estado change via WebSocket: {e}")
     
     return {
         "articulo_id": articulo.id,

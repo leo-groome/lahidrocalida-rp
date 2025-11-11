@@ -2,22 +2,20 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { api } from '../api/client'
+import { usePedidosStore } from '../stores/pedidos'
 import type { PedidoResponse } from '../types'
 
 const router = useRouter()
 const auth = useAuthStore()
+const pedidosStore = usePedidosStore()
 
 // Referencias reactivas
 const activeTab = ref<'overview' | 'pendientes'>('pendientes')
-const todosLosPedidos = ref<PedidoResponse[]>([])
-const pedidosPendientes = ref<PedidoResponse[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const successMessage = ref<string | null>(null)
-const showNotification = ref(false)
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
+const successMessage = ref<string | null>(null)
+const showNotification = ref(false)
+const error = ref<string | null>(null)
 
 let timer: number | undefined
 
@@ -27,87 +25,54 @@ onMounted(async () => {
     router.replace({ name: 'login' })
     return
   }
-  await loadData()
-  // Auto-refresh cada 5 segundos
-  timer = window.setInterval(loadData, 5000)
+
+  console.log('💰 Caja View: Iniciando...')
+
+  try {
+    // Cargar datos iniciales
+    await pedidosStore.loadInitialData()
+    
+    // Inicializar WebSocket para caja
+    const wsConnected = await pedidosStore.initWebSocket('caja')
+    
+    if (wsConnected) {
+      console.log('✅ Caja View: WebSocket conectado, datos en tiempo real activos')
+    } else {
+      console.warn('⚠️ Caja View: WebSocket falló, usando polling como fallback')
+      // Fallback: polling cada 5 segundos si WebSocket falla
+      timer = window.setInterval(() => {
+        pedidosStore.refreshPedidos()
+      }, 5000)
+    }
+  } catch (error) {
+    console.error('❌ Caja View: Error en inicialización:', error)
+  }
 })
 
 onUnmounted(() => {
-  if (timer) window.clearInterval(timer)
+  console.log('👋 Caja View: Cleanup...')
+  if (timer) {
+    clearInterval(timer)
+  }
+  // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
-
-// Cargar todos los datos
-const loadData = async () => {
-  if (processingPayment.value) return // No actualizar durante procesamiento de pago
-  
-  // Solo mostrar loading si no hay datos previos
-  const isInitialLoad = todosLosPedidos.value.length === 0 && pedidosPendientes.value.length === 0
-  
-  if (isInitialLoad) {
-    loading.value = true
-  }
-  
-  try {
-    await Promise.all([
-      loadTodosLosPedidos(),
-      loadPedidosPendientes()
-    ])
-  } catch (e: any) {
-    showErrorNotification(e?.message || 'Error al cargar datos')
-  } finally {
-    if (isInitialLoad) {
-      loading.value = false
-    }
-  }
-}
-
-// Cargar todos los pedidos (overview)
-const loadTodosLosPedidos = async () => {
-  try {
-    const { data } = await api.get<PedidoResponse[]>('/pedidos')
-    todosLosPedidos.value = data
-  } catch (e: any) {
-    throw new Error(e?.response?.data?.detail || 'Error al cargar pedidos')
-  }
-}
-
-// Cargar pedidos pendientes de pago
-const loadPedidosPendientes = async () => {
-  try {
-    const { data } = await api.get<PedidoResponse[]>('/pedidos/pendientes-pago/lista')
-    pedidosPendientes.value = data
-  } catch (e: any) {
-    throw new Error(e?.response?.data?.detail || 'Error al cargar pedidos pendientes')
-  }
-}
 
 // Computadas para estadísticas
 const totalPendientesPago = computed(() => {
-  return pedidosPendientes.value.reduce((sum, pedido) => sum + Number(pedido.total), 0)
+  return pedidosStore.pedidosPendientesPago.reduce((sum, pedido) => sum + Number(pedido.total), 0)
 })
 
 const estadisticasOverview = computed(() => {
-  const stats = {
-    pendiente: 0,
-    preparando: 0,
-    listo: 0,
-    entregado: 0,
-    cuenta_solicitada: 0,
-    pagado: 0,
-    cancelado: 0
-  }
-  
-  todosLosPedidos.value.forEach(pedido => {
-    if (stats.hasOwnProperty(pedido.estado)) {
-      stats[pedido.estado as keyof typeof stats]++
-    }
-  })
-  
-  return stats
+  return pedidosStore.estadisticasPedidos
 })
 
 const pedidosActivos = computed(() => {
-  return todosLosPedidos.value.filter(p => !['pagado', 'cancelado'].includes(p.estado))
+  return pedidosStore.pedidosCaja
+})
+
+// Computed para pedidos pendientes de pago
+const pedidosPendientes = computed(() => {
+  return pedidosStore.pedidosPendientesPago
 })
 
 // Obtener emoji por tipo de orden
@@ -148,13 +113,14 @@ const getEstadoTexto = (estado: string) => {
   return textos[estado] || estado.toUpperCase()
 }
 
-// Obtener detalles del pedido completo
+// Obtener detalles del pedido completo desde el store
 const getPedidoCompleto = async (pedidoId: number) => {
-  try {
-    const { data } = await api.get<PedidoResponse>(`/pedidos/${pedidoId}`)
-    return data
-  } catch (e: any) {
-    showErrorNotification(e?.response?.data?.detail || 'Error al obtener detalles del pedido')
+  // Los pedidos ya están cargados en el store con todos sus detalles
+  const pedido = pedidosStore.pedidos.find(p => p.id === pedidoId)
+  if (pedido) {
+    return pedido
+  } else {
+    showErrorNotification('Pedido no encontrado')
     return null
   }
 }
@@ -163,19 +129,19 @@ const getPedidoCompleto = async (pedidoId: number) => {
 const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'tarjeta' | 'transferencia') => {
   processingPayment.value = true
   try {
-    // Actualizar método de pago y estado
-    await api.put(`/pedidos/${pedido.id}`, { 
-      estado: 'pagado',
-      metodo_pago: metodoPago 
-    })
+    // Usar el store para actualizar el pedido
+    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'pagado', metodoPago)
     
-    const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-    showSuccessNotification(`Pago procesado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)} (${metodoPago})`)
-    
-    selectedPedido.value = null
-    await loadData()
+    if (success) {
+      const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+      showSuccessNotification(`Pago procesado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)} (${metodoPago})`)
+      
+      selectedPedido.value = null
+    } else {
+      showErrorNotification(pedidosStore.error || 'Error al procesar pago')
+    }
   } catch (e: any) {
-    showErrorNotification(e?.response?.data?.detail || 'Error al procesar pago')
+    showErrorNotification('Error inesperado al procesar pago')
   } finally {
     processingPayment.value = false
   }
@@ -217,6 +183,22 @@ const selectPedido = async (pedido: PedidoResponse) => {
 // Cerrar modal
 const closeModal = () => {
   selectedPedido.value = null
+}
+
+// Solicitar cuenta para pedido entregado
+const solicitarCuenta = async (pedido: PedidoResponse) => {
+  try {
+    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
+    
+    if (success) {
+      const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+      showSuccessNotification(`Cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+    } else {
+      showErrorNotification(pedidosStore.error || 'Error al solicitar cuenta')
+    }
+  } catch (e: any) {
+    showErrorNotification('Error inesperado al solicitar cuenta')
+  }
 }
 </script>
 
@@ -289,12 +271,29 @@ const closeModal = () => {
 
     <!-- Main Content -->
     <main class="flex-1 p-6 pt-0">
-      <div v-if="loading" class="text-center py-8 text-gray-600 font-medium">
-        Cargando datos...
+      <div v-if="pedidosStore.loading" class="text-center py-8 text-gray-600 font-medium">
+        <div class="text-4xl mb-4">⏳</div>
+        <p class="text-lg">Cargando datos...</p>
+        <p class="text-sm text-gray-500 mt-2">
+          WebSocket: {{ pedidosStore.wsConnected ? '🟢 Conectado' : '🔴 Desconectado' }}
+        </p>
       </div>
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-6">
+        <!-- Debug info -->
+        <div v-if="pedidosStore.wsConnected" class="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+          <div class="flex items-center gap-2 text-sm text-green-700">
+            <span>🟢</span>
+            <span>Tiempo real activo - Última actualización: {{ pedidosStore.lastUpdate ? new Date(pedidosStore.lastUpdate).toLocaleTimeString() : 'N/A' }}</span>
+          </div>
+        </div>
+        <div v-else class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+          <div class="flex items-center gap-2 text-sm text-yellow-700">
+            <span>🟡</span>
+            <span>Modo polling - Actualizando cada 5 segundos</span>
+          </div>
+        </div>
         <!-- Estadísticas -->
         <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <div class="bg-yellow-100 border border-yellow-300 rounded-lg p-4 text-center">
@@ -338,7 +337,7 @@ const closeModal = () => {
             <div 
               v-for="pedido in pedidosActivos" 
               :key="pedido.id"
-              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm"
+              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all"
             >
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
@@ -349,10 +348,21 @@ const closeModal = () => {
                   {{ getEstadoTexto(pedido.estado) }}
                 </div>
               </div>
+              
               <div class="text-sm">
                 <div v-if="pedido.mesa" class="text-blue-600 font-medium">🪑 Mesa {{ pedido.mesa }}</div>
                 <div v-if="pedido.nombre_cliente" class="text-green-600 font-medium">👤 {{ pedido.nombre_cliente }}</div>
                 <div class="text-[#FDB700] font-bold mt-1">$ {{ Number(pedido.total).toFixed(2) }}</div>
+              </div>
+
+              <!-- Botón para solicitar cuenta si está entregado -->
+              <div v-if="pedido.estado === 'entregado'" class="mt-3 pt-3 border-t border-gray-200">
+                <button
+                  @click="solicitarCuenta(pedido)"
+                  class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md"
+                >
+                  💳 Solicitar Cuenta
+                </button>
               </div>
             </div>
           </div>

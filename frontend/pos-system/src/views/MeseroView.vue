@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { usePedidosStore } from '../stores/pedidos'
 import { api } from '../api/client'
 import type { PlatilloResponse, PedidoCreate, ArticuloPedidoCreate } from '../types'
 import PozoleVariantModal from '../components/PozoleVariantModal.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const pedidosStore = usePedidosStore()
 
 // Referencias reactivas
 const platillos = ref<PlatilloResponse[]>([])
@@ -22,13 +24,39 @@ const tipoOrden = ref<'aqui' | 'llevar'>('aqui')
 const showPozoleModal = ref(false)
 const selectedPozoleColor = ref<'Verde' | 'Blanco' | 'Rojo' | null>(null)
 
+let timer: number | undefined
+
 // Validar que el usuario tenga permisos
 onMounted(async () => {
   if (!auth.isAuthenticated || !['mesero', 'administrador'].includes(auth.user?.rol || '')) {
     router.replace({ name: 'login' })
     return
   }
-  await loadPlatillos()
+
+  console.log('👨‍🍳 Mesero View: Iniciando...')
+  
+  try {
+    await loadPlatillos()
+    
+    // Inicializar WebSocket para mesero
+    const wsConnected = await pedidosStore.initWebSocket('mesero')
+    
+    if (wsConnected) {
+      console.log('✅ Mesero View: WebSocket conectado, notificaciones en tiempo real activas')
+    } else {
+      console.warn('⚠️ Mesero View: WebSocket falló, continuando sin notificaciones en tiempo real')
+    }
+  } catch (error) {
+    console.error('❌ Mesero View: Error en inicialización:', error)
+  }
+})
+
+onUnmounted(() => {
+  console.log('👋 Mesero View: Cleanup...')
+  if (timer) {
+    clearInterval(timer)
+  }
+  // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
 
 // Cargar platillos disponibles
@@ -205,18 +233,22 @@ const enviarPedido = async () => {
       articulos
     }
 
-    await api.post('/pedidos/', pedidoData)
+    const nuevoPedido = await pedidosStore.createPedido(pedidoData)
     
-    // Limpiar formulario
-    carrito.value = []
-    nombreCliente.value = ''
-    mesa.value = ''
-    
-    const mensajeExito = tipoOrden.value === 'aqui' 
-      ? `Pedido enviado a cocina para Mesa ${mesa.value}` 
-      : `Pedido para llevar enviado a cocina (${nombreCliente.value})`
-    
-    showSuccessNotification(mensajeExito)
+    if (nuevoPedido) {
+      // Limpiar formulario
+      carrito.value = []
+      nombreCliente.value = ''
+      mesa.value = ''
+      
+      const mensajeExito = tipoOrden.value === 'aqui' 
+        ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}` 
+        : `Pedido #${nuevoPedido.numero_display} para llevar enviado a cocina (${nombreCliente.value})`
+      
+      showSuccessNotification(mensajeExito)
+    } else {
+      showErrorNotification(pedidosStore.error || 'Error al crear pedido')
+    }
     
   } catch (e: any) {
     showErrorNotification(e?.response?.data?.detail || 'Error al enviar pedido')
