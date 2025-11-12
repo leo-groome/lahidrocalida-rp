@@ -268,6 +268,40 @@ npm run preview
 - **Piso 2**: 21, 22, 23, 24, 25
 - **Piso 3**: 31, 32, 33, 34, 35
 
+## 🖨️ Impresión de Tickets
+
+**Sistema de impresión integrado en el navegador:**
+
+**Funcionalidad Actual:**
+- **Impresión automática** al procesar pagos en la vista de caja
+- **Formato profesional** con todos los detalles del pedido
+- **Visible en consola** del navegador (F12 → Console)
+
+**Información incluida en el ticket:**
+```
+=== IMPRIMIENDO TICKET ===
+Pozolería La Hidrocálida
+==========================
+Pedido: #123
+Fecha: 12/01/2025, 13:12:34
+Mesa: 15
+Cliente: Juan Pérez
+==========================
+2x Pozole Grande - $260.00
+   Extra picante, sin orégano
+1x Refresco - $25.00
+==========================
+TOTAL: $285.00
+==========================
+¡Gracias por su visita!
+=== FIN TICKET ===
+```
+
+**Uso:**
+1. En la vista de Caja, procesa un pago
+2. El ticket se imprime automáticamente en consola
+3. Abre las herramientas de desarrollador (F12) para verlo
+
 ## 📈 Próximas Funcionalidades (Opcionales)
 
 ### Funcionalidades Restantes
@@ -276,10 +310,11 @@ npm run preview
 - Estadísticas de ocupación de mesas en tiempo real
 
 ### Integraciones
-- Impresión de tickets
-- Notificaciones push/WebSocket
-- TPV para pagos con tarjeta
-- Sistema de inventory management
+- ✅ **Impresión en consola** - Tickets se imprimen en el navegador
+- ✅ **WebSocket tiempo real** - Notificaciones automáticas implementadas
+- TPV para pagos con tarjeta (pendiente)
+- Sistema de inventory management (pendiente)
+- Impresión física con impresora térmica (opcional)
 
 ### Optimizaciones
 - Cache de consultas frecuentes
@@ -306,4 +341,4 @@ npm run preview
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
 **Sistema completo con Panel Admin - Enero 2025**  
-**Gestión integral: Post-pago + Reportes + Analytics**
+**Gestión integral: Post-pago + Reportes + Analytics + Impresión en consola**

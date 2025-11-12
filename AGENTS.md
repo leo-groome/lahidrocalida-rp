@@ -276,14 +276,14 @@ proyecto/
 - ✅ **Panel de administración** → **Dashboard + reportes implementados**
 - ✅ **Reportes semanales** → **Analytics completos con métricas**
 - ✅ **Gestión de gastos** → **CRUD completo con categorías**
-- ❌ **Impresión automática** → **Pendiente: Integración impresora**
+- ✅ **Impresión en consola** → **Tickets se imprimen en consola del navegador**
 
 ### 🚧 Funcionalidades Pendientes para Producción Completa
 
 **Críticas para Producción:**
-- 🖨️ **Integración con impresora** - Impresión automática de tickets/comandas
 - 📅 **Estadísticas operativas** - Rendimiento por mesero, tiempos promedio
 - 📊 **Reportes mensuales** - Analytics extendidos por mes/año
+- 🖨️ **Impresión física** - Integración con impresora térmica (opcional)
 
 **Optimizaciones Necesarias:**
 - ⚡ **Performance** - Paginación, cache, optimización de queries
@@ -456,12 +456,12 @@ try {
 - **Métricas financieras (ingresos, gastos, utilidad)**
 
 **❌ LO QUE FALTA PARA PRODUCCIÓN:**
-- **Integración con impresora** para tickets automáticos
 - **Reportes mensuales/anuales** extendidos
 - **Optimización de código** y performance
 - **Testing automatizado** y control de calidad
-- **Configuración avanzada** (impresora, horarios, etc.)
+- **Configuración avanzada** (horarios, etc.)
 - **Analytics de meseros** (rendimiento individual)
+- **Impresión física** (opcional - actualmente solo en consola)
 
 ## 🎯 Casos de Uso del Sistema
 
@@ -591,7 +591,7 @@ psql $DATABASE_URL
 
 **Última actualización: Enero 2025**
 **Estado del proyecto: SISTEMA COMPLETO + Panel Admin + WebSockets tiempo real**
-**Flujo: Post-pago + Dashboard + Reportes + Administración funcionales**
-**Pendiente: Integración impresora, reportes mensuales, optimizaciones**
-**Funcionalidad nueva: Solicitar cuenta desde caja**
+**Flujo: Post-pago + Dashboard + Reportes + Administración + Impresión en consola**
+**Pendiente: Reportes mensuales, optimizaciones, impresión física opcional**
+**Funcionalidad nueva: Impresión de tickets en consola del navegador**
 **Mantenido por: AI Agents & Development Team**

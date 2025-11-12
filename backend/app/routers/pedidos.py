@@ -295,6 +295,7 @@ def get_pedido(
 
 
 @router.put("/{pedido_id}", response_model=PedidoResponse)
+# Nota: la impresión automática puede activarse bajo condiciones, pero por ahora la impresión se invoca desde el frontend antes del cambio de estado.
 async def update_pedido(
     pedido_id: int,
     data: PedidoUpdate,

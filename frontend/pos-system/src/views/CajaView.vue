@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import type { PedidoResponse } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
+import api from '@/api/client'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -17,6 +18,11 @@ const processingPayment = ref(false)
 const successMessage = ref<string | null>(null)
 const showNotification = ref(false)
 const error = ref<string | null>(null)
+
+// Estados para calculadora de efectivo
+const showEfectivoCalculator = ref(false)
+const efectivoRecibido = ref<string>('')
+const cambioCalculado = ref<number>(0)
 
 let timer: number | undefined
 
@@ -128,6 +134,20 @@ const getPedidoCompleto = async (pedidoId: number) => {
 
 // Procesar pago
 const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'tarjeta' | 'transferencia') => {
+  if (metodoPago === 'efectivo') {
+    // Mostrar calculadora de efectivo
+    showEfectivoCalculator.value = true
+    efectivoRecibido.value = ''
+    cambioCalculado.value = 0
+    return
+  }
+  
+  // Para tarjeta y transferencia, procesar directamente
+  await finalizarPago(pedido, metodoPago)
+}
+
+// Finalizar pago (usado por todos los métodos)
+const finalizarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'tarjeta' | 'transferencia') => {
   processingPayment.value = true
   try {
     // Usar el store para actualizar el pedido
@@ -135,9 +155,19 @@ const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'ta
     
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-      showSuccessNotification(`Pago procesado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)} (${metodoPago})`)
+      let mensaje = `Pago procesado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)} (${metodoPago})`
       
+      if (metodoPago === 'efectivo' && parseFloat(efectivoRecibido.value) > Number(pedido.total)) {
+        mensaje += ` - Cambio: $${cambioCalculado.value.toFixed(2)}`
+      }
+      
+      showSuccessNotification(mensaje)
+      
+      // Resetear estados
       selectedPedido.value = null
+      showEfectivoCalculator.value = false
+      efectivoRecibido.value = ''
+      cambioCalculado.value = 0
     } else {
       showErrorNotification(pedidosStore.error || 'Error al procesar pago')
     }
@@ -184,16 +214,94 @@ const selectPedido = async (pedido: PedidoResponse) => {
 // Cerrar modal
 const closeModal = () => {
   selectedPedido.value = null
+  showEfectivoCalculator.value = false
+  efectivoRecibido.value = ''
+  cambioCalculado.value = 0
+}
+
+// Funciones para calculadora de efectivo
+const calcularCambio = () => {
+  if (!selectedPedido.value) return
+  
+  const recibido = parseFloat(efectivoRecibido.value) || 0
+  const total = Number(selectedPedido.value.total)
+  
+  cambioCalculado.value = recibido - total
+}
+
+const confirmarPagoEfectivo = async () => {
+  if (!selectedPedido.value) return
+  
+  const recibido = parseFloat(efectivoRecibido.value) || 0
+  const total = Number(selectedPedido.value.total)
+  
+  if (recibido < total) {
+    showErrorNotification(`Efectivo insuficiente. Falta: $${(total - recibido).toFixed(2)}`)
+    return
+  }
+  
+  await finalizarPago(selectedPedido.value, 'efectivo')
+}
+
+const cerrarCalculadoraEfectivo = () => {
+  showEfectivoCalculator.value = false
+  efectivoRecibido.value = ''
+  cambioCalculado.value = 0
+}
+
+// Función para imprimir ticket (solo consola)
+const imprimirTicket = async (pedido: PedidoResponse) => {
+  try {
+    // Asegurar que tenemos los artículos del pedido
+    const pedidoCompleto = await getPedidoCompleto(pedido.id)
+    if (!pedidoCompleto) throw new Error('Pedido no encontrado para impresión')
+
+    // Imprimir en consola
+    console.log('=== IMPRIMIENDO TICKET ===')
+    console.log('Pozolería La Hidrocálida')
+    console.log('==========================')
+    console.log(`Pedido: #${pedido.numero_display}`)
+    console.log(`Fecha: ${new Date().toLocaleString('es-MX')}`)
+    if (pedido.mesa) console.log(`Mesa: ${pedido.mesa}`)
+    if (pedido.nombre_cliente) console.log(`Cliente: ${pedido.nombre_cliente}`)
+    console.log('==========================')
+    
+    if (pedidoCompleto?.articulos_pedido) {
+      pedidoCompleto.articulos_pedido.forEach((articulo) => {
+        const nombre = articulo.platillo?.nombre || 'Producto'
+        const cantidad = articulo.cantidad
+        const precio = Number(articulo.precio_cobrado).toFixed(2)
+        console.log(`${cantidad}x ${nombre} - $${precio}`)
+        if (articulo.modificaciones) console.log(`   ${articulo.modificaciones}`)
+      })
+    }
+    console.log('==========================')
+    console.log(`TOTAL: $${Number(pedido.total).toFixed(2)}`)
+    console.log('==========================')
+    console.log('¡Gracias por su visita!')
+    console.log('=== FIN TICKET ===')
+    
+    // Simula impresión
+    await new Promise(resolve => setTimeout(resolve, 800))
+    console.log('🖨️ Ticket impreso en consola')
+  } catch (e: any) {
+    console.error('❌ Error al imprimir ticket:', e.message)
+    throw e
+  }
 }
 
 // Solicitar cuenta para pedido entregado
 const solicitarCuenta = async (pedido: PedidoResponse) => {
   try {
+    // Primero imprimimos el ticket
+    await imprimirTicket(pedido)
+    
+    // Luego cambiamos el estado
     const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
     
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-      showSuccessNotification(`Cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+      showSuccessNotification(`Ticket impreso y cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
     } else {
       showErrorNotification(pedidosStore.error || 'Error al solicitar cuenta')
     }
@@ -495,6 +603,126 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
           >
             Cancelar
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Calculadora de Efectivo Profesional -->
+    <div 
+      v-if="showEfectivoCalculator && selectedPedido" 
+      class="fixed inset-0 flex items-center justify-center z-[60] p-4"
+      @click.self="cerrarCalculadoraEfectivo"
+    >
+      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-gray-300">
+        <!-- Header profesional -->
+        <div class="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 rounded-t-2xl">
+          <div class="flex items-center justify-between text-white">
+            <h2 class="text-xl font-bold flex items-center gap-2">
+              💵 Pago en Efectivo
+            </h2>
+            <button 
+              @click="cerrarCalculadoraEfectivo" 
+              class="text-white hover:text-gray-200 text-2xl font-bold"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Contenido de la calculadora -->
+        <div class="p-6">
+          <!-- Info del pedido -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6 text-center">
+            <div class="text-sm text-gray-600 mb-1">Pedido #{{ selectedPedido.numero_display }}</div>
+            <div v-if="selectedPedido.mesa" class="text-blue-600 font-medium mb-2">
+              🪑 Mesa {{ selectedPedido.mesa }}
+            </div>
+            <div class="text-3xl font-black text-[#FDB700] mb-2">
+              ${{ Number(selectedPedido.total).toFixed(2) }}
+            </div>
+            <div class="text-sm text-gray-500">Total a cobrar</div>
+          </div>
+
+          <!-- Campo de efectivo recibido -->
+          <div class="mb-6">
+            <label class="block text-sm font-bold text-gray-700 mb-2">
+              💰 Efectivo recibido
+            </label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg font-bold">$</span>
+              <input
+                v-model="efectivoRecibido"
+                @input="calcularCambio"
+                type="number"
+                step="0.01"
+                min="0"
+                class="w-full pl-8 pr-4 py-4 text-2xl font-bold border-2 border-gray-300 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 text-center"
+                placeholder="0.00"
+                autofocus
+              />
+            </div>
+          </div>
+
+          <!-- Resultado del cambio -->
+          <div class="mb-6 p-4 rounded-lg" :class="{
+            'bg-green-50 border-2 border-green-200': cambioCalculado >= 0,
+            'bg-red-50 border-2 border-red-200': cambioCalculado < 0
+          }">
+            <div class="text-center">
+              <div class="text-sm font-medium mb-1" :class="{
+                'text-green-700': cambioCalculado >= 0,
+                'text-red-700': cambioCalculado < 0
+              }">
+                {{ cambioCalculado >= 0 ? 'Cambio a entregar' : 'Falta por pagar' }}
+              </div>
+              <div class="text-3xl font-black" :class="{
+                'text-green-600': cambioCalculado >= 0,
+                'text-red-600': cambioCalculado < 0
+              }">
+                ${{ Math.abs(cambioCalculado).toFixed(2) }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Botones de acción -->
+          <div class="space-y-3">
+            <button
+              @click="confirmarPagoEfectivo"
+              :disabled="processingPayment || cambioCalculado < 0 || !efectivoRecibido"
+              class="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold text-lg rounded-lg transition-all disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar Pago' }}
+            </button>
+            
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                @click="efectivoRecibido = selectedPedido.total.toString(); calcularCambio()"
+                class="py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium text-sm rounded transition-all"
+              >
+                Exacto
+              </button>
+              <button
+                @click="efectivoRecibido = (Math.ceil(Number(selectedPedido.total) / 50) * 50).toString(); calcularCambio()"
+                class="py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium text-sm rounded transition-all"
+              >
+                + $50
+              </button>
+              <button
+                @click="efectivoRecibido = (Math.ceil(Number(selectedPedido.total) / 100) * 100).toString(); calcularCambio()"
+                class="py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 font-medium text-sm rounded transition-all"
+              >
+                + $100
+              </button>
+            </div>
+            
+            <button
+              @click="cerrarCalculadoraEfectivo"
+              :disabled="processingPayment"
+              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       </div>
     </div>
