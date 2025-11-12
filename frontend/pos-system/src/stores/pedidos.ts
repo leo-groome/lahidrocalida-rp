@@ -44,18 +44,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const pedidosCaja = computed(() => {
     // Para CAJA: mostrar todos los pedidos del día (incluye entregados y cuenta_solicitada)
     // Excluir solo los pagados y cancelados que ya no requieren seguimiento
-    const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
     
     return pedidos.value.filter(p => {
-      // Filtrar por fecha (pedidos de hoy)
-      const fechaPedido = new Date(p.fecha_creacion || p.created_at || Date.now())
-      fechaPedido.setHours(0, 0, 0, 0)
-      
-      const esDeHoy = fechaPedido.getTime() === hoy.getTime()
+      // Solo filtrar por estado, la fecha ya viene filtrada desde el backend
       const noEstaPagadoNiCancelado = !['pagado', 'cancelado'].includes(p.estado)
       
-      return esDeHoy && noEstaPagadoNiCancelado
+      return noEstaPagadoNiCancelado
     }).sort((a, b) => {
       // Ordenar: pendientes de pago primero, luego por número de orden
       if (a.estado === 'cuenta_solicitada' && b.estado !== 'cuenta_solicitada') return -1
@@ -69,15 +63,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
   })
 
   const estadisticasPedidos = computed(() => {
-    // Estadísticas para la caja - solo pedidos de hoy
-    const hoy = new Date()
-    hoy.setHours(0, 0, 0, 0)
-    
-    const pedidosHoy = pedidos.value.filter(p => {
-      const fechaPedido = new Date(p.fecha_creacion || p.created_at || Date.now())
-      fechaPedido.setHours(0, 0, 0, 0)
-      return fechaPedido.getTime() === hoy.getTime()
-    })
+    // Estadísticas para la caja - pedidos del día (ya filtrados desde backend)
+    const pedidosHoy = pedidos.value
 
     const stats = {
       total: pedidosHoy.length,

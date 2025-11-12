@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { useRouter } from 'vue-router'
+import AppHeader from '@/components/AppHeader.vue'
 
 interface Articulo {
   id: number
@@ -142,23 +143,8 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
     <!-- Header -->
-    <header class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-[#00126D] to-[#001a4d] shadow-lg">
-      <div class="flex items-center gap-4">
-        <div class="bg-white rounded-lg p-2 drop-shadow-lg">
-          <img src="/src/assets/Logo.png" alt="Logo" class="h-8" />
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white">Cocina - Manager</h1>
-          <p class="text-xs text-blue-100">La Hidrocálida</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-4 text-sm">
-        <div class="bg-white bg-opacity-10 px-4 py-2 rounded-lg backdrop-blur">
-          <p class="text-[#00126D] text-xs">Usuario</p>
-          <p class="text-blue-500 font-semibold">{{ auth.user?.nombre }}</p>
-        </div>
-      </div>
-    </header>
+    <AppHeader title="Cocina" />
+
 
     <main class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 overflow-hidden">
       <!-- Lista de Pedidos -->

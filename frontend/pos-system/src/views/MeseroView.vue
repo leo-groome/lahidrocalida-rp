@@ -6,6 +6,7 @@ import { usePedidosStore } from '../stores/pedidos'
 import { api } from '../api/client'
 import type { PlatilloResponse, PedidoCreate, ArticuloPedidoCreate } from '../types'
 import PozoleVariantModal from '../components/PozoleVariantModal.vue'
+import AppHeader from '@/components/AppHeader.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -24,7 +25,16 @@ const tipoOrden = ref<'aqui' | 'llevar'>('aqui')
 const showPozoleModal = ref(false)
 const selectedPozoleColor = ref<'Verde' | 'Blanco' | 'Rojo' | null>(null)
 
+// Control del carrito móvil
+const showMobileCart = ref(false)
+const isMobile = ref(false)
+
 let timer: number | undefined
+
+// Detectar si es móvil
+const checkIfMobile = () => {
+  isMobile.value = window.innerWidth < 1024 // lg breakpoint
+}
 
 // Validar que el usuario tenga permisos
 onMounted(async () => {
@@ -34,6 +44,10 @@ onMounted(async () => {
   }
 
   console.log('👨‍🍳 Mesero View: Iniciando...')
+  
+  // Detectar tamaño de pantalla
+  checkIfMobile()
+  window.addEventListener('resize', checkIfMobile)
   
   try {
     await loadPlatillos()
@@ -56,8 +70,18 @@ onUnmounted(() => {
   if (timer) {
     clearInterval(timer)
   }
+  window.removeEventListener('resize', checkIfMobile)
   // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
+
+// Control del carrito móvil
+const toggleMobileCart = () => {
+  showMobileCart.value = !showMobileCart.value
+}
+
+const closeMobileCart = () => {
+  showMobileCart.value = false
+}
 
 // Cargar platillos disponibles
 const loadPlatillos = async () => {
@@ -245,6 +269,11 @@ const enviarPedido = async () => {
         : `Pedido #${nuevoPedido.numero_display} para llevar enviado a cocina (${nombreCliente.value})`
       
       showSuccessNotification(mensajeExito)
+      
+      // Cerrar carrito móvil si está abierto
+      if (isMobile.value && showMobileCart.value) {
+        closeMobileCart()
+      }
     } else {
       showErrorNotification(pedidosStore.error || 'Error al crear pedido')
     }
@@ -294,39 +323,13 @@ const limpiarCarrito = () => {
 <template>
   <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
     <!-- Header -->
-    <header class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-[#00126D] to-[#001a4d] shadow-lg">
-      <div class="flex items-center gap-4">
-        <div class="bg-white rounded-lg p-2 drop-shadow-lg">
-          <img src="/src/assets/Logo.png" alt="Logo" class="h-8" />
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white">Mesero - Tomar Pedidos</h1>
-          <p class="text-xs text-blue-100">La Hidrocálida</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-4 text-sm">
-        <div class="bg-white bg-opacity-10 px-4 py-2 rounded-lg backdrop-blur">
-          <p class="text-[#00126D] text-xs">Usuario</p>
-          <p class="text-blue-500 font-semibold">{{ auth.user?.nombre }}</p>
-        </div>
-        <button 
-          @click="router.push({ name: 'kds-view' })"
-          class="px-4 py-2 rounded-lg bg-white bg-opacity-20 text-white font-semibold hover:bg-opacity-30 transition shadow-md hover:shadow-lg"
-        >
-          Ver Cocina
-        </button>
-        <button 
-          @click="auth.logout()" 
-          class="px-4 py-2 rounded-lg bg-white text-[#00126D] font-semibold hover:bg-blue-50 transition shadow-md hover:shadow-lg"
-        >
-          Salir
-        </button>
-      </div>
-    </header>
+    <AppHeader title="Mesero" />
 
-    <main class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6">
-      <!-- Menu -->
-      <section class="lg:col-span-2 space-y-6">
+    <main class="flex-1 p-6 pb-24 lg:pb-6">
+      <!-- Layout responsive: móvil = solo menú, desktop = grid -->
+      <div class="lg:grid lg:grid-cols-3 lg:gap-6">
+        <!-- Menu -->
+        <section class="lg:col-span-2 space-y-6">
         <div v-if="loading" class="p-4 text-center text-gray-600 font-medium">Cargando platillos...</div>
 
         <div v-else>
@@ -381,8 +384,8 @@ const limpiarCarrito = () => {
         </div>
       </section>
 
-      <!-- Carrito -->
-      <aside class="bg-gradient-to-b from-white to-blue-50 border-2 border-gray-200 rounded-2xl p-6 flex flex-col gap-5 h-fit sticky top-6 shadow-xl">
+        <!-- Carrito Desktop -->
+        <aside class="hidden lg:block bg-gradient-to-b from-white to-blue-50 border-2 border-gray-200 rounded-2xl p-6 flex flex-col gap-5 h-fit sticky top-6 shadow-xl">
         <div class="text-center border-b pb-4">
           <h2 class="text-xl font-bold text-[#00126D] flex items-center justify-center gap-2">
             🍽️ Pedido Mesa
@@ -479,15 +482,142 @@ const limpiarCarrito = () => {
           >
             {{ loading ? '⏳ Enviando...' : '🍳 Enviar a Cocina' }}
           </button>
-          <button
-            @click="limpiarCarrito"
-            class="w-full mt-2 py-2 rounded-lg bg-white bg-opacity-20 text-white font-semibold hover:bg-opacity-30 transition"
-          >
-            🗑️ Limpiar
+        </div>
+        </aside>
+      </div>
+    </main>
+
+    <!-- Botón flotante móvil -->
+    <button
+      v-if="isMobile"
+      @click="toggleMobileCart"
+      class="fixed bottom-6 right-6 w-16 h-16 bg-[#00126D] text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:scale-110 transition-all"
+    >
+      <div class="text-center">
+        <div class="text-xl">🛒</div>
+        <div v-if="carrito.length > 0" class="absolute -top-2 -right-2 bg-[#FDB700] text-black text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+          {{ carrito.length }}
+        </div>
+      </div>
+    </button>
+
+    <!-- Carrito Móvil (Bottom Sheet) -->
+    <div
+      v-if="isMobile && showMobileCart"
+      class="fixed inset-0 z-50 flex items-end"
+      @click.self="closeMobileCart"
+    >
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black bg-opacity-50"></div>
+      
+      <!-- Carrito Panel -->
+      <div class="relative w-full max-h-[85vh] bg-white rounded-t-3xl shadow-2xl">
+        <!-- Header del carrito móvil -->
+        <div class="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 class="text-xl font-bold text-[#00126D] flex items-center gap-2">
+            🍽️ Pedido Mesa
+          </h2>
+          <button @click="closeMobileCart" class="text-gray-400 hover:text-gray-600 text-2xl">
+            ×
           </button>
         </div>
-      </aside>
-    </main>
+
+        <!-- Contenido del carrito móvil (igual que desktop) -->
+        <div class="p-6 overflow-y-auto max-h-[70vh] space-y-5">
+          <!-- Tipo de orden -->
+          <div class="mb-4">
+            <label class="block text-sm font-bold text-[#00126D] mb-2">📦 Tipo de orden</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button 
+                :class="['px-3 py-3 rounded-xl border-2 text-sm font-semibold transition-all', 
+                         tipoOrden === 'aqui' ? 'bg-[#00126D] text-white border-[#00126D] shadow-md' : 'bg-white border-gray-200 text-[#00126D] hover:border-[#00126D]']" 
+                @click="setTipoOrden('aqui')"
+              >
+                🪑 Aquí
+              </button>
+              <button 
+                :class="['px-3 py-3 rounded-xl border-2 text-sm font-semibold transition-all', 
+                         tipoOrden === 'llevar' ? 'bg-[#00126D] text-white border-[#00126D] shadow-md' : 'bg-white border-gray-200 text-[#00126D] hover:border-[#00126D]']" 
+                @click="setTipoOrden('llevar')"
+              >
+                📦 Llevar
+              </button>
+            </div>
+          </div>
+
+          <!-- Campos dinámicos según tipo de orden -->
+          <div class="grid grid-cols-1 gap-4">
+            <!-- Mesa (solo para "aquí") -->
+            <div v-if="tipoOrden === 'aqui'">
+              <label class="block text-sm font-bold text-[#00126D] mb-2">🪑 Mesa</label>
+              <select 
+                v-model="mesa" 
+                class="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white"
+                required
+              >
+                <option value="">Selecciona mesa</option>
+                <option v-for="mesaNum in mesasDisponibles" :key="mesaNum" :value="mesaNum">
+                  Mesa {{ mesaNum }}
+                </option>
+              </select>
+            </div>
+            
+            <!-- Nombre cliente (solo para "llevar") -->
+            <div v-if="tipoOrden === 'llevar'">
+              <label class="block text-sm font-bold text-[#00126D] mb-2">👤 Nombre Cliente <span class="text-red-500">*</span></label>
+              <input
+                v-model="nombreCliente"
+                type="text"
+                class="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white"
+                placeholder="Nombre del cliente"
+                required
+              />
+            </div>
+          </div>
+
+          <!-- Items del carrito -->
+          <div class="border-t-2 border-gray-100 pt-4">
+            <div class="text-xs font-semibold text-gray-600 mb-2">🛒 CARRITO ({{ carrito.length }} items)</div>
+            <div class="space-y-2 max-h-[25vh] overflow-auto">
+              <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-4">Sin artículos</div>
+              <div v-for="(item, index) in carrito" :key="index" class="bg-gray-50 border-2 border-gray-100 rounded-lg p-3 hover:shadow-md transition">
+                <div class="flex items-center justify-between mb-2">
+                  <div>
+                    <div class="font-bold text-[#00126D] text-sm">{{ item.platillo.kds_name || item.platillo.nombre }}</div>
+                    <div class="text-xs text-[#FDB700] font-semibold">$ {{ Number(item.platillo.precio).toFixed(2) }}</div>
+                  </div>
+                  <div class="flex items-center gap-1.5 bg-gray-100 rounded-lg p-1">
+                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
+                    <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
+                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
+                    <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm" @click="eliminarDelCarrito(index)">✕</button>
+                  </div>
+                </div>
+                <input v-model="item.modificaciones" placeholder="Notas (opcional)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#FDB700]" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Total y botones -->
+          <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] rounded-xl p-4 text-white">
+            <div class="flex items-center justify-between mb-3">
+              <span class="font-bold text-lg">💰 TOTAL</span>
+              <span class="text-2xl font-black">$ {{ totalCarrito.toFixed(2) }}</span>
+            </div>
+            <div class="text-xs text-blue-200 mb-3 text-center">
+              💳 Pago se procesará en caja
+            </div>
+            <button 
+              @click="enviarPedido" 
+              :disabled="loading || carrito.length === 0 || (tipoOrden === 'aqui' && !mesa) || (tipoOrden === 'llevar' && !nombreCliente.trim())" 
+              class="w-full py-3 rounded-lg text-[#00126D] bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
+            >
+              {{ loading ? '⏳ Enviando...' : '🍳 Enviar a Cocina' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Pozole Variant Modal -->
     <PozoleVariantModal

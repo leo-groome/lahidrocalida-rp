@@ -2,7 +2,14 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, Foreign
 from sqlalchemy.types import DECIMAL
 from sqlalchemy.orm import relationship
 from datetime import datetime
+import pytz
 from app.db.session import Base
+from app.core.config import settings
+
+def get_local_datetime():
+    """Obtener datetime en zona horaria local del restaurante"""
+    tz = pytz.timezone(settings.TIMEZONE)
+    return datetime.now(tz).replace(tzinfo=None)
 
 class Sucursal(Base):
     __tablename__ = "sucursales"
@@ -58,7 +65,7 @@ class Pedido(Base):
     estado = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada', 'pagado'
     metodo_pago = Column(String(20))  # 'efectivo', 'tarjeta', 'transferencia'
     tipo_orden = Column(String(20), default='aqui')  # 'aqui', 'llevar', 'uber_eats'
-    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    fecha_creacion = Column(DateTime, default=get_local_datetime)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
     
@@ -89,7 +96,7 @@ class Gasto(Base):
     descripcion = Column(String(255), nullable=False)
     monto = Column(DECIMAL(8, 2), nullable=False)
     categoria = Column(String(50), nullable=False)
-    fecha_gasto = Column(DateTime, default=datetime.utcnow)
+    fecha_gasto = Column(DateTime, default=get_local_datetime)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     
     # Relaciones

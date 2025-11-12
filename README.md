@@ -1,6 +1,6 @@
 # **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-**Estado: SISTEMA COMPLETO EN PRODUCCIÓN**  
+**Estado: SISTEMA COMPLETO CON PANEL ADMIN**  
 Fecha: Enero 2025
 
 ## 📋 Resumen del Proyecto
@@ -31,7 +31,6 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - **FastAPI 0.117.1** - API REST de alto rendimiento
 - **SQLAlchemy 2.0.43** - ORM con soporte async
 - **PostgreSQL** (Neon Cloud) - Base de datos principal
-- **Alembic 1.13.2** - Migraciones de esquema
 - **JWT (python-jose)** - Autenticación segura
 - **Pydantic 2.11.9** - Validación de datos
 
@@ -46,12 +45,12 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 
 ```
 ├── backend/                 # API FastAPI
-│   ├── app/
-│   │   ├── routers/         # Endpoints organizados
-│   │   ├── models.py        # Modelos de BD
-│   │   ├── schemas.py       # Validaciones Pydantic
-│   │   └── auth.py          # Autenticación JWT
-│   └── alembic/             # Migraciones aplicadas
+│   └── app/
+│       ├── routers/         # Endpoints organizados
+│       ├── models.py        # Modelos de BD
+│       ├── schemas.py       # Validaciones Pydantic
+│       └── auth.py          # Autenticación JWT
+│   
 ├── frontend/pos-system/     # Aplicación Vue.js
 │   └── src/
 │       ├── views/           # Vistas principales
@@ -106,6 +105,16 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - Auto-refresh cada 5 segundos
 - Total pendiente en tiempo real
 
+### 5. Panel de Administración (/admin)
+- **Dashboard completo** con métricas del día
+- **Reportes semanales** con analytics detallados
+- **Top 10 productos** más vendidos
+- **Gestión de gastos** con categorización
+- **Métricas financieras**: Ingresos, gastos, utilidad bruta
+- **Ventas por día** de la semana seleccionada
+- **Análisis por método de pago** (efectivo, tarjeta, transferencia)
+- Navegación por pestañas: Dashboard, Reportes, Gastos
+
 ## 📊 Flujo Operativo
 
 ### Flujo Principal (Post-Pago)
@@ -158,7 +167,6 @@ graph LR
 
 - **Numeración automática**: Secuencial por día y sucursal (001, 002...)
 - **Gestión de mesas**: Campo específico para identificación
-- **Migraciones**: Sistema completo con Alembic
 - **Constraints**: Validaciones de integridad aplicadas
 
 ## 🚀 Instalación y Configuración
@@ -181,9 +189,6 @@ pip install -r requirements.txt
 # Configurar variables de entorno
 export DATABASE_URL="postgresql://..."
 export SECRET_KEY="tu-secret-key"
-
-# Aplicar migraciones
-alembic upgrade head
 
 # Ejecutar servidor
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -231,14 +236,6 @@ VITE_API_URL=http://localhost:8000
 
 ### Backend
 ```bash
-# Crear nueva migración
-alembic revision --autogenerate -m "descripcion"
-
-# Aplicar migraciones
-alembic upgrade head
-
-# Ver estado de migraciones
-alembic current
 
 # Health check de BD
 curl http://localhost:8000/health/database
@@ -273,11 +270,10 @@ npm run preview
 
 ## 📈 Próximas Funcionalidades (Opcionales)
 
-### Reportes y Analytics
-- Dashboard de ventas por período
-- Análisis de productos más vendidos
-- Estadísticas por mesero/cajero
-- Reportes de ocupación de mesas
+### Funcionalidades Restantes
+- Reportes mensuales y anuales extendidos
+- Analytics de rendimiento por mesero
+- Estadísticas de ocupación de mesas en tiempo real
 
 ### Integraciones
 - Impresión de tickets
@@ -309,5 +305,5 @@ npm run preview
 ---
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
-**Sistema completo y funcional - Enero 2025**  
-**Flujo post-pago optimizado para restaurantes**
+**Sistema completo con Panel Admin - Enero 2025**  
+**Gestión integral: Post-pago + Reportes + Analytics**

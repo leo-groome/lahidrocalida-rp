@@ -1,24 +1,7 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <!-- Header -->
-    <div class="bg-white shadow-sm border-b">
-      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex justify-between items-center h-16">
-          <div class="flex items-center">
-            <h1 class="text-2xl font-bold text-gray-900">Panel de Administración</h1>
-          </div>
-          <div class="flex items-center space-x-4">
-            <span class="text-sm text-gray-500">{{ auth.user?.nombre }}</span>
-            <button 
-              @click="handleLogout"
-              class="px-4 py-2 text-sm font-medium text-red-600 hover:text-red-800"
-            >
-              Cerrar Sesión
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AppHeader title="Panel de Administración" />
 
     <!-- Navegación de pestañas -->
     <div class="bg-white border-b border-gray-200">
@@ -458,6 +441,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/api/client'
+import AppHeader from '@/components/AppHeader.vue'
 
 interface DashboardData {
   fecha: string

@@ -4,13 +4,14 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import type { PedidoResponse } from '../types'
+import AppHeader from '@/components/AppHeader.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
 const pedidosStore = usePedidosStore()
 
 // Referencias reactivas
-const activeTab = ref<'overview' | 'pendientes'>('pendientes')
+const activeTab = ref<'overview' | 'pendientes'>('overview')
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
 const successMessage = ref<string | null>(null)
@@ -205,33 +206,7 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
 <template>
   <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
     <!-- Header -->
-    <header class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-[#00126D] to-[#001a4d] shadow-lg">
-      <div class="flex items-center gap-4">
-        <div class="bg-white rounded-lg p-2 drop-shadow-lg">
-          <img src="/src/assets/Logo.png" alt="Logo" class="h-8" />
-        </div>
-        <div>
-          <h1 class="text-2xl font-bold text-white">Sistema de Caja</h1>
-          <p class="text-xs text-blue-100">La Hidrocálida</p>
-        </div>
-      </div>
-      <div class="flex items-center gap-4 text-sm">
-        <div class="bg-white bg-opacity-10 px-4 py-2 rounded-lg backdrop-blur">
-          <p class="text-white text-xs">Total Pendiente Pago</p>
-          <p class="text-[#FDB700] font-bold text-lg">$ {{ totalPendientesPago.toFixed(2) }}</p>
-        </div>
-        <div class="bg-white bg-opacity-10 px-4 py-2 rounded-lg backdrop-blur">
-          <p class="text-white text-xs">Usuario</p>
-          <p class="text-blue-200 font-semibold">{{ auth.user?.nombre }}</p>
-        </div>
-        <button 
-          @click="auth.logout()" 
-          class="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600 transition shadow-md hover:shadow-lg"
-        >
-          🚪 Salir
-        </button>
-      </div>
-    </header>
+    <AppHeader title="Caja" />
 
     <!-- Navigation Tabs -->
     <div class="bg-gray-50 border-b border-gray-200">

@@ -5,12 +5,14 @@ from sqlalchemy import Integer as SAInteger
 from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
+import pytz
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
 from app.schemas import PedidoCreate, PedidoResponse, PedidoUpdate, ArticuloPedidoUpdate
 from app.auth import get_current_active_user
 from app.websocket_manager import websocket_manager
+from app.core.config import settings
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
@@ -19,12 +21,16 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
     """
     Genera el número de display secuencial por día y sucursal.
     Formato: 001, 002, 003, etc.
-    Se reinicia automáticamente cada día.
+    Se reinicia automáticamente cada día en zona horaria local.
     """
-    # Usar ventana del día en UTC para evitar problemas de zona horaria
-    today_utc = datetime.utcnow().date()
-    start_dt = datetime.combine(today_utc, datetime.min.time())
-    end_dt = start_dt + timedelta(days=1)
+    # Usar zona horaria local del restaurante directamente
+    tz = pytz.timezone(settings.TIMEZONE)
+    now_local = datetime.now(tz)
+    today_local = now_local.date()
+    
+    # Usar fechas locales directamente (BD ya está en zona local)
+    start_dt = tz.localize(datetime.combine(today_local, datetime.min.time())).replace(tzinfo=None)
+    end_dt = tz.localize(datetime.combine(today_local + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
 
     # Obtener el máximo numero_display como entero para la sucursal y día actuales
     max_number = (
@@ -52,10 +58,10 @@ async def create_pedido(
     Solo cajeros y administradores pueden crear pedidos.
     """
     # Validar permisos
-    if current_user.rol not in ["cajero", "administrador"]:
+    if current_user.rol not in ["cajero", "administrador", "mesero"]:
         raise HTTPException(
             status_code=403, 
-            detail="Solo cajeros y administradores pueden crear pedidos"
+            detail="Solo cajeros, meseros y administradores pueden crear pedidos"
         )
     # Validar tipo_orden
     if data.tipo_orden not in ["aqui", "llevar", "uber_eats"]:
@@ -194,11 +200,23 @@ def list_pedidos(
     current_user: Usuario = Depends(get_current_active_user)
 ):
     """
-    Listar pedidos con filtros.
+    Listar pedidos del día actual según zona horaria del restaurante.
     Cajeros ven solo pedidos de su sucursal.
     Administradores ven todos los pedidos.
     """
-    query = db.query(Pedido)
+    # Usar zona horaria local del restaurante para filtrar pedidos del día
+    tz = pytz.timezone(settings.TIMEZONE)
+    now_local = datetime.now(tz)
+    today_local = now_local.date()
+    
+    # Usar fechas locales directamente (BD ya está en zona local)
+    start_dt = tz.localize(datetime.combine(today_local, datetime.min.time())).replace(tzinfo=None)
+    end_dt = tz.localize(datetime.combine(today_local + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    
+    query = db.query(Pedido).filter(
+        Pedido.fecha_creacion >= start_dt,
+        Pedido.fecha_creacion < end_dt
+    )
     
     # Filtro por sucursal según el rol
     if current_user.rol == "cajero":

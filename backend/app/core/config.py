@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
+    # Zona horaria del restaurante
+    TIMEZONE: str = "America/Mexico_City"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
