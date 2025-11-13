@@ -100,15 +100,19 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
   - 🟣 Cuenta Solicitada
 
 ### 4. Vista de Caja (/caja)
-- **Gestión de pedidos pendientes de pago**
-- Dashboard con estadísticas por estado
-- Grid de pedidos en "cuenta solicitada"
+- **Mapa de mesas lateral** con estados visuales en tiempo real
+- **Interacción contextual**: Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)
+- **Búsqueda y filtrado** por mesa, cliente o número de pedido con auto-limpieza
+- **Gestión de pedidos pendientes de pago** sin elementos redundantes
+- Dashboard con estadísticas compactas por estado
+- Grid de pedidos en "cuenta solicitada" con información temporal
 - Modal de procesamiento con 3 métodos:
-  - 💵 Efectivo
+  - 💵 Efectivo (con calculadora de cambio)
   - 💳 Tarjeta
   - 📱 Transferencia
-- Auto-refresh cada 5 segundos
-- Total pendiente en tiempo real
+- **Auto-limpieza de filtros** después de cada acción completada
+- **Notificaciones optimizadas** (1s éxitos, 3s errores)
+- **WebSockets tiempo real** sin polling innecesario
 
 ### 5. Panel de Administración (/admin)
 - **Dashboard completo** con métricas del día
@@ -346,4 +350,4 @@ TOTAL: $285.00
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
 **Sistema completo con Panel Admin - Enero 2025**  
-**Gestión integral: Post-pago + Reportes + Analytics + Impresión en consola**
+**Gestión integral: Post-pago + UX Optimizada + Reportes + Analytics + Mapa de Mesas + Auto-limpieza**

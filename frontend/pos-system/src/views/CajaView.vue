@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
@@ -23,6 +23,10 @@ const error = ref<string | null>(null)
 const showEfectivoCalculator = ref(false)
 const efectivoRecibido = ref<string>('')
 const cambioCalculado = ref<number>(0)
+
+// Estados para búsqueda y mapa de mesas
+const searchQuery = ref<string>('')
+const showMesaMap = ref(false)
 
 let timer: number | undefined
 
@@ -64,6 +68,7 @@ onUnmounted(() => {
   // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
 
+
 // Computadas para estadísticas
 const totalPendientesPago = computed(() => {
   return pedidosStore.pedidosPendientesPago.reduce((sum, pedido) => sum + Number(pedido.total), 0)
@@ -74,13 +79,155 @@ const estadisticasOverview = computed(() => {
 })
 
 const pedidosActivos = computed(() => {
-  return pedidosStore.pedidosCaja
+  let pedidos = [...pedidosStore.pedidosCaja]
+  
+  // Filtrar por búsqueda (mesa o cliente)
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim()
+    pedidos = pedidos.filter(pedido => 
+      (pedido.mesa && pedido.mesa.includes(query)) ||
+      (pedido.nombre_cliente && pedido.nombre_cliente.toLowerCase().includes(query)) ||
+      pedido.numero_display.includes(query)
+    )
+  }
+  
+  return pedidos
 })
 
-// Computed para pedidos pendientes de pago
+// Computed para pedidos pendientes de pago con filtro y ordenamiento
 const pedidosPendientes = computed(() => {
-  return pedidosStore.pedidosPendientesPago
+  let pedidos = [...pedidosStore.pedidosPendientesPago]
+  
+  // Filtrar por búsqueda (mesa o cliente)
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim()
+    pedidos = pedidos.filter(pedido => 
+      (pedido.mesa && pedido.mesa.includes(query)) ||
+      (pedido.nombre_cliente && pedido.nombre_cliente.toLowerCase().includes(query)) ||
+      pedido.numero_display.includes(query)
+    )
+  }
+  
+  // Ordenar por fecha de creación (más viejos primero)
+  return pedidos.sort((a, b) => 
+    new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime()
+  )
 })
+
+// Layout de mesas para el mapa (igual que en mesero)
+const mesasLayout = [
+  ['11', '21', '31'],
+  ['12', '22', '32'],
+  ['13', '23', '33'],
+  ['14', '24', '34'],
+  ['15', '25', '35']
+]
+
+// Computed para estado de mesas
+const mesasOcupadas = computed(() => {
+  const ocupadas = new Set<string>()
+  
+  // Mesas con pedidos activos (no pagados ni cancelados)
+  pedidosStore.pedidos.forEach(pedido => {
+    if (pedido.mesa && !['pagado', 'cancelado'].includes(pedido.estado)) {
+      ocupadas.add(pedido.mesa)
+    }
+  })
+  
+  return ocupadas
+})
+
+// Obtener estado de una mesa específica
+const getMesaEstado = (numeroMesa: string) => {
+  if (!mesasOcupadas.value.has(numeroMesa)) return 'libre'
+  
+  // Buscar el pedido más reciente de esta mesa
+  const pedidosMesa = pedidosStore.pedidos.filter(p => p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado))
+  if (pedidosMesa.length === 0) return 'libre'
+  
+  // Obtener el estado más avanzado
+  const ultimoPedido = pedidosMesa.sort((a, b) => 
+    new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
+  )[0]
+  
+  return ultimoPedido.estado
+}
+
+// Obtener clase CSS para el estado de la mesa (colores iguales a las estadísticas)
+const getMesaClase = (numeroMesa: string) => {
+  const estado = getMesaEstado(numeroMesa)
+  
+  const clases = {
+    'libre': 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200',
+    'pendiente': 'bg-yellow-100 border-yellow-200 text-yellow-700',
+    'preparando': 'bg-orange-100 border-orange-200 text-orange-700', 
+    'listo': 'bg-green-100 border-green-200 text-green-700',
+    'entregado': 'bg-blue-100 border-blue-200 text-blue-700',
+    'cuenta_solicitada': 'bg-purple-100 border-purple-200 text-purple-700 animate-pulse'
+  }
+  
+  return clases[estado as keyof typeof clases] || clases.libre
+}
+
+// Buscar mesa específica
+const buscarMesa = (numeroMesa: string) => {
+  searchQuery.value = numeroMesa
+  if (activeTab.value !== 'pendientes') {
+    activeTab.value = 'pendientes'
+  }
+}
+
+
+// Manejar click en mesa según su estado
+const handleMesaClick = (numeroMesa: string) => {
+  const estadoMesa = getMesaEstado(numeroMesa)
+  
+  // Mesa libre - no hacer nada
+  if (estadoMesa === 'libre') {
+    return
+  }
+  
+  // Buscar el pedido más reciente de esta mesa
+  const pedidosMesa = pedidosStore.pedidos.filter(p => 
+    p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado)
+  )
+  
+  if (pedidosMesa.length === 0) return
+  
+  const ultimoPedido = pedidosMesa.sort((a, b) => 
+    new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
+  )[0]
+  
+  // Si es cuenta solicitada - ir directo a cobrar
+  if (ultimoPedido.estado === 'cuenta_solicitada') {
+    activeTab.value = 'pendientes'
+    searchQuery.value = numeroMesa
+    // Pequeño delay para asegurar que se filtre antes de abrir modal
+    nextTick(() => {
+      selectedPedido.value = ultimoPedido
+    })
+    return
+  }
+  
+  // Para cualquier otro estado - mostrar detalles del pedido
+  showPedidoDetails(ultimoPedido)
+}
+
+// Estado reactivo para modal de detalles
+const showDetailsModal = ref(false)
+const selectedPedidoDetails = ref<PedidoResponse | null>(null)
+
+// Mostrar detalles del pedido
+const showPedidoDetails = (pedido: PedidoResponse) => {
+  selectedPedidoDetails.value = pedido
+  showDetailsModal.value = true
+}
+
+// Cerrar modal de detalles
+const closeDetailsModal = () => {
+  showDetailsModal.value = false
+  selectedPedidoDetails.value = null
+}
 
 // Obtener emoji por tipo de orden
 const getTipoOrdenEmoji = (tipo: string) => {
@@ -168,6 +315,9 @@ const finalizarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 't
       showEfectivoCalculator.value = false
       efectivoRecibido.value = ''
       cambioCalculado.value = 0
+      
+      // Limpiar filtro después de acción completada
+      searchQuery.value = ''
     } else {
       showErrorNotification(pedidosStore.error || 'Error al procesar pago')
     }
@@ -185,7 +335,7 @@ const showErrorNotification = (message: string) => {
   showNotification.value = true
   setTimeout(() => {
     showNotification.value = false
-  }, 5000)
+  }, 3000) // 3 segundos para errores - tiempo suficiente para leer
 }
 
 const showSuccessNotification = (message: string) => {
@@ -194,7 +344,7 @@ const showSuccessNotification = (message: string) => {
   showNotification.value = true
   setTimeout(() => {
     showNotification.value = false
-  }, 3000)
+  }, 1000) // 1 segundo para éxito - súper rápido
 }
 
 // Seleccionar pedido para mostrar detalles
@@ -302,6 +452,9 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
       showSuccessNotification(`Ticket impreso y cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+      
+      // Limpiar filtro después de acción completada
+      searchQuery.value = ''
     } else {
       showErrorNotification(pedidosStore.error || 'Error al solicitar cuenta')
     }
@@ -318,7 +471,8 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
 
     <!-- Navigation Tabs -->
     <div class="bg-gray-50 border-b border-gray-200">
-      <div class="px-6 py-4">
+      <div class="px-6 py-4 space-y-4">
+        <!-- Tabs principales -->
         <div class="flex gap-1 bg-white rounded-lg p-1 shadow-sm border">
           <button
             @click="activeTab = 'overview'"
@@ -349,18 +503,42 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             </span>
           </button>
         </div>
+
+        <!-- Búsqueda -->
+        <div class="flex items-center">
+          <div class="flex-1">
+            <div class="relative">
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="🔍 Buscar por mesa, cliente o pedido..."
+                class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00126D] focus:border-transparent text-sm"
+              />
+              <button 
+                v-if="searchQuery"
+                @click="searchQuery = ''"
+                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- Main Content -->
     <main class="flex-1 p-6 pt-0">
-      <div v-if="pedidosStore.loading" class="text-center py-8 text-gray-600 font-medium">
-        <div class="text-4xl mb-4">⏳</div>
-        <p class="text-lg">Cargando datos...</p>
-        <p class="text-sm text-gray-500 mt-2">
-          WebSocket: {{ pedidosStore.wsConnected ? '🟢 Conectado' : '🔴 Desconectado' }}
-        </p>
-      </div>
+      <div class="flex gap-6">
+        <!-- Contenido principal -->
+        <div class="flex-1">
+          <div v-if="pedidosStore.loading" class="text-center py-8 text-gray-600 font-medium">
+            <div class="text-4xl mb-4">⏳</div>
+            <p class="text-lg">Cargando datos...</p>
+            <p class="text-sm text-gray-500 mt-2">
+              WebSocket: {{ pedidosStore.wsConnected ? '🟢 Conectado' : '🔴 Desconectado' }}
+            </p>
+          </div>
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-6">
@@ -377,44 +555,65 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             <span>Modo polling - Actualizando cada 5 segundos</span>
           </div>
         </div>
-        <!-- Estadísticas -->
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <div class="bg-yellow-100 border border-yellow-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-yellow-700">{{ estadisticasOverview.pendiente }}</div>
+        <!-- Estadísticas compactas -->
+        <div class="flex flex-wrap gap-3 justify-center lg:justify-start">
+          <div class="bg-yellow-100 border border-yellow-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-yellow-700">{{ estadisticasOverview.pendiente }}</div>
             <div class="text-xs text-yellow-600 font-medium">PENDIENTE</div>
           </div>
-          <div class="bg-orange-100 border border-orange-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-orange-700">{{ estadisticasOverview.preparando }}</div>
+          <div class="bg-orange-100 border border-orange-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-orange-700">{{ estadisticasOverview.preparando }}</div>
             <div class="text-xs text-orange-600 font-medium">PREPARANDO</div>
           </div>
-          <div class="bg-green-100 border border-green-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-green-700">{{ estadisticasOverview.listo }}</div>
+          <div class="bg-green-100 border border-green-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-green-700">{{ estadisticasOverview.listo }}</div>
             <div class="text-xs text-green-600 font-medium">LISTO</div>
           </div>
-          <div class="bg-blue-100 border border-blue-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-blue-700">{{ estadisticasOverview.entregado }}</div>
+          <div class="bg-blue-100 border border-blue-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-blue-700">{{ estadisticasOverview.entregado }}</div>
             <div class="text-xs text-blue-600 font-medium">ENTREGADO</div>
           </div>
-          <div class="bg-purple-100 border border-purple-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-purple-700">{{ estadisticasOverview.cuenta_solicitada }}</div>
-            <div class="text-xs text-purple-600 font-medium">CUENTA SOLICITADA</div>
+          <div class="bg-purple-100 border border-purple-200 rounded-lg px-4 py-2 min-w-[90px] text-center">
+            <div class="text-xl font-bold text-purple-700">{{ estadisticasOverview.cuenta_solicitada }}</div>
+            <div class="text-xs text-purple-600 font-medium">CUENTA SOL.</div>
           </div>
-          <div class="bg-gray-100 border border-gray-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-gray-700">{{ estadisticasOverview.pagado }}</div>
+          <div class="bg-gray-100 border border-gray-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-gray-700">{{ estadisticasOverview.pagado }}</div>
             <div class="text-xs text-gray-600 font-medium">PAGADO</div>
           </div>
-          <div class="bg-red-100 border border-red-300 rounded-lg p-4 text-center">
-            <div class="text-2xl font-bold text-red-700">{{ estadisticasOverview.cancelado }}</div>
+          <div class="bg-red-100 border border-red-200 rounded-lg px-4 py-2 min-w-[80px] text-center">
+            <div class="text-xl font-bold text-red-700">{{ estadisticasOverview.cancelado }}</div>
             <div class="text-xs text-red-600 font-medium">CANCELADO</div>
           </div>
         </div>
 
         <!-- Lista de pedidos activos -->
         <div>
-          <h3 class="text-lg font-bold text-gray-700 mb-4">Pedidos Activos ({{ pedidosActivos.length }})</h3>
+          <!-- Header con información de filtros -->
+          <div class="mb-4 flex items-center justify-between">
+            <h3 class="text-lg font-bold text-gray-700">
+              Pedidos Activos
+              <span v-if="searchQuery" class="text-sm font-normal text-gray-500">
+                (filtrado por: "{{ searchQuery }}")
+              </span>
+            </h3>
+            <div class="text-sm text-gray-500">
+              {{ pedidosActivos.length }} de {{ pedidosStore.pedidosCaja.length }} pedidos
+            </div>
+          </div>
+          
           <div v-if="pedidosActivos.length === 0" class="text-center py-8">
             <div class="text-4xl mb-2">🎉</div>
-            <p class="text-gray-600">No hay pedidos activos</p>
+            <p class="text-gray-600">
+              {{ searchQuery ? 'No se encontraron resultados' : 'No hay pedidos activos' }}
+            </p>
+            <button 
+              v-if="searchQuery"
+              @click="searchQuery = ''"
+              class="mt-4 px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all"
+            >
+              Limpiar filtro
+            </button>
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             <div 
@@ -454,13 +653,39 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
 
       <!-- Tab Pendientes de Pago -->
       <div v-else-if="activeTab === 'pendientes'">
-        <div v-if="pedidosPendientes.length === 0" class="text-center py-12">
-          <div class="text-6xl mb-4">💳</div>
-          <h2 class="text-2xl font-bold text-gray-600 mb-2">Sin pedidos pendientes de pago</h2>
-          <p class="text-gray-500">Todos los pedidos están pagados</p>
+        <!-- Header con información de filtros -->
+        <div class="mb-4 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <h3 class="text-lg font-bold text-gray-700">
+              Cuentas Pendientes 
+              <span v-if="searchQuery" class="text-sm font-normal text-gray-500">
+                (filtrado por: "{{ searchQuery }}")
+              </span>
+            </h3>
+          </div>
+          <div class="text-sm text-gray-500">
+            {{ pedidosPendientes.length }} de {{ pedidosStore.pedidosPendientesPago.length }} cuentas
+          </div>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div v-if="pedidosPendientes.length === 0" class="text-center py-12">
+          <div class="text-6xl mb-4">💳</div>
+          <h2 class="text-2xl font-bold text-gray-600 mb-2">
+            {{ searchQuery ? 'No se encontraron resultados' : 'Sin pedidos pendientes de pago' }}
+          </h2>
+          <p class="text-gray-500">
+            {{ searchQuery ? 'Intenta con otro término de búsqueda' : 'Todos los pedidos están pagados' }}
+          </p>
+          <button 
+            v-if="searchQuery"
+            @click="searchQuery = ''"
+            class="mt-4 px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all"
+          >
+            Limpiar filtro
+          </button>
+        </div>
+
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           <div 
             v-for="pedido in pedidosPendientes" 
             :key="pedido.id"
@@ -468,13 +693,10 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-[#FDB700] cursor-pointer transition-all hover:scale-105 group"
           >
             <!-- Header del pedido -->
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center justify-center mb-4">
               <div class="flex items-center gap-3">
                 <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
                 <div class="text-2xl font-black text-[#00126D]">{{ pedido.numero_display }}</div>
-              </div>
-              <div class="bg-purple-500 text-white px-3 py-1 rounded-full text-xs font-bold">
-                CUENTA SOLICITADA
               </div>
             </div>
 
@@ -496,9 +718,51 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
               </div>
             </div>
 
-            <!-- Indicador de hover -->
-            <div class="mt-4 text-center text-xs text-gray-500 group-hover:text-[#00126D] transition">
-              👆 Clic para procesar pago
+            <!-- Información adicional de tiempo -->
+            <div class="mt-3 text-center text-xs text-gray-500 space-y-1">
+              <div>
+                ⏰ {{ new Date(pedido.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
+                ({{ Math.floor((Date.now() - new Date(pedido.fecha_creacion).getTime()) / (1000 * 60)) }} min)
+              </div>
+              <div class="group-hover:text-[#00126D] transition font-medium">
+                👆 Clic para procesar pago
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+        </div>
+
+        <!-- Panel lateral de mesas -->
+        <div class="w-64 bg-white rounded-lg border border-gray-200 p-4 h-fit sticky top-6">
+          <div class="mb-3">
+            <h3 class="text-sm font-bold text-[#00126D] flex items-center gap-2">
+              🗺️ Estado de Mesas
+            </h3>
+            <p class="text-xs text-gray-500 mt-1">Clic en mesa para buscar</p>
+          </div>
+          
+          <!-- Layout de mesas -->
+          <div class="space-y-3">
+            <div class="grid grid-cols-3 gap-2">
+              <div v-for="(fila, index) in mesasLayout" :key="index" class="contents">
+                <button
+                  v-for="numeroMesa in fila"
+                  :key="numeroMesa"
+                  @click="handleMesaClick(numeroMesa)"
+                  :disabled="getMesaEstado(numeroMesa) === 'libre'"
+                  :class="[
+                    'w-12 h-10 rounded border text-sm font-bold transition-all',
+                    getMesaEstado(numeroMesa) === 'libre' 
+                      ? 'cursor-not-allowed opacity-60' 
+                      : 'hover:scale-105 cursor-pointer',
+                    getMesaClase(numeroMesa)
+                  ]"
+                  :title="`Mesa ${numeroMesa} - ${getMesaEstado(numeroMesa).toUpperCase()}${getMesaEstado(numeroMesa) === 'libre' ? ' (Sin pedidos)' : ' (Clic para ver)'}`"
+                >
+                  {{ numeroMesa }}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -727,6 +991,114 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
       </div>
     </div>
 
+    <!-- Modal de detalles del pedido -->
+    <div 
+      v-if="showDetailsModal && selectedPedidoDetails" 
+      class="fixed inset-0 flex items-center justify-center z-50 p-4"
+      @click.self="closeDetailsModal"
+    >
+      <div class="bg-white rounded-lg max-w-md w-full shadow-xl border border-gray-200">
+        <!-- Header -->
+        <div class="px-6 py-4 border-b border-gray-200 bg-[#00126D] rounded-t-lg">
+          <div class="flex items-center justify-between text-white">
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+              🍽️ Mesa {{ selectedPedidoDetails.mesa }} - Pedido #{{ selectedPedidoDetails.numero_display }}
+            </h2>
+            <button 
+              @click="closeDetailsModal" 
+              class="text-white hover:text-gray-200 text-xl"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Contenido -->
+        <div class="p-6">
+          <!-- Estado y información básica -->
+          <div class="mb-4">
+            <div class="flex items-center justify-between mb-3">
+              <div :class="[getEstadoColor(selectedPedidoDetails.estado), 'text-white px-3 py-1 rounded-full text-sm font-bold']">
+                {{ getEstadoTexto(selectedPedidoDetails.estado) }}
+              </div>
+              <div class="text-sm text-gray-500">
+                {{ new Date(selectedPedidoDetails.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
+              </div>
+            </div>
+            
+            <div v-if="selectedPedidoDetails.nombre_cliente" class="bg-green-100 text-green-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
+              👤 {{ selectedPedidoDetails.nombre_cliente }}
+            </div>
+          </div>
+            
+          <!-- Lista de artículos -->
+          <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-4">
+            <h4 class="text-sm font-bold text-gray-700 mb-3">📋 Artículos del pedido:</h4>
+            <div class="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
+              <div 
+                v-for="articulo in selectedPedidoDetails.articulos_pedido" 
+                :key="articulo.id"
+                class="flex justify-between items-start py-2 border-b border-gray-200 last:border-b-0"
+              >
+                <div class="flex-1">
+                  <div class="font-medium text-gray-800">{{ articulo.platillo?.nombre || 'Producto' }}</div>
+                  <div v-if="articulo.modificaciones" class="text-gray-500 text-xs mt-1">
+                    💬 {{ articulo.modificaciones }}
+                  </div>
+                  <div class="text-xs text-gray-400 mt-1">
+                    Estado: <span :class="articulo.estado_item === 'listo' ? 'text-green-600' : 'text-orange-600'">
+                      {{ articulo.estado_item === 'listo' ? '✅ Listo' : '⏳ Preparando' }}
+                    </span>
+                  </div>
+                </div>
+                <div class="text-center px-3">
+                  <span class="text-gray-600 font-medium">x{{ articulo.cantidad }}</span>
+                </div>
+                <div class="text-right text-[#FDB700] font-bold">
+                  ${{ Number(articulo.precio_cobrado).toFixed(2) }}
+                </div>
+              </div>
+            </div>
+          </div>
+            
+          <!-- Total -->
+          <div class="text-center bg-[#FDB700] text-white px-4 py-3 rounded-lg mb-6">
+            <div class="text-sm">Total del pedido</div>
+            <div class="text-2xl font-bold">$ {{ Number(selectedPedidoDetails.total).toFixed(2) }}</div>
+          </div>
+
+          <!-- Botones de acción según el estado -->
+          <div class="space-y-2">
+            <!-- Si está listo para entregar -->
+            <button
+              v-if="selectedPedidoDetails.estado === 'entregado'"
+              @click="solicitarCuenta(selectedPedidoDetails); closeDetailsModal()"
+              class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-all"
+            >
+              💳 Solicitar Cuenta
+            </button>
+            
+            <!-- Si es cuenta solicitada -->
+            <button
+              v-if="selectedPedidoDetails.estado === 'cuenta_solicitada'"
+              @click="selectedPedido = selectedPedidoDetails; closeDetailsModal()"
+              class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-all"
+            >
+              💰 Cobrar Ahora
+            </button>
+            
+            <!-- Botón cerrar -->
+            <button
+              @click="closeDetailsModal"
+              class="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Notification Toast -->
     <div v-if="showNotification" class="fixed inset-0 flex items-center justify-center z-50 pointer-events-none">
       <!-- Error Notification -->
@@ -746,7 +1118,7 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
         <div class="flex items-start gap-4">
           <div class="text-3xl">✅</div>
           <div>
-            <h3 class="font-bold text-green-700 text-lg mb-1">¡Pago Procesado!</h3>
+            <h3 class="font-bold text-green-700 text-lg mb-1">¡Éxito!</h3>
             <p class="text-green-600">{{ successMessage }}</p>
           </div>
           <button @click="showNotification = false" class="text-green-400 hover:text-green-600 text-2xl leading-none ml-auto">×</button>

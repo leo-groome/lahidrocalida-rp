@@ -225,7 +225,7 @@ proyecto/
 
 ## 🔧 Estado de Desarrollo
 
-## ✅ **Completado - SISTEMA COMPLETO + PANEL ADMIN + KDS OPTIMIZADO**
+## ✅ **Completado - SISTEMA COMPLETO + PANEL ADMIN + KDS OPTIMIZADO + UX MEJORADA**
 
 **Backend Completo:**
 - ✅ Modelos de datos con flujo post-pago
@@ -259,6 +259,10 @@ proyecto/
 - ✅ **Gestión de Gastos** - CRUD con categorización
 - ✅ **Top 10 Productos** - Analytics de ventas por producto
 - ✅ **Métricas financieras** - Ingresos, gastos, utilidad bruta
+- ✅ **Mapa de mesas inteligente** - Vista visual del estado de mesas en tiempo real
+- ✅ **Búsqueda y filtrado** - Por mesa, cliente o número de pedido con auto-limpieza
+- ✅ **Interacción contextual de mesas** - Clic directo para ver detalles o cobrar según estado
+- ✅ **UX optimizada** - Notificaciones consistentes y flujo simplificado
 - ✅ Autenticación y autorización por roles
 - ✅ Estado global con persistencia
 - ✅ Diseño responsivo y UI/UX optimizada
@@ -271,15 +275,17 @@ proyecto/
 - ✅ **Updates optimísticos** - Performance mejorado sin loading innecesario
 - ✅ Notificaciones y feedback al usuario
 
-**Flujo Operativo Completo + Tiempo Real + Administración:**
+**Flujo Operativo Completo + Tiempo Real + Administración + UX Optimizada:**
 - ✅ Mesero toma pedidos con mesa → **Aparece instantáneamente en KDS**
 - ✅ **Cocina ve temporizadores** → **Tiempo transcurrido por pedido en tiempo real**
 - ✅ **KDS Manager optimizado** → **Control ultra-rápido en tablet sin demoras**
 - ✅ **Auto-marcar artículos** → **Al marcar pedido listo, todos los artículos se marcan**
 - ✅ Cocina gestiona preparación → **Updates en tiempo real**
 - ✅ Mesero entrega → **Notificación automática**
-- ✅ **Caja solicita cuenta** → **Botón en overview**
-- ✅ Caja procesa pago final → **Estadísticas actualizadas en tiempo real**
+- ✅ **Caja ve mapa de mesas** → **Estado visual en tiempo real**
+- ✅ **Caja hace clic en mesa** → **Ve detalles del pedido o va directo a cobrar**
+- ✅ **Caja solicita cuenta** → **Botón en overview + auto-limpieza de filtros**
+- ✅ Caja procesa pago final → **Estadísticas actualizadas + filtros limpios automáticamente**
 - ✅ **Panel de administración** → **Dashboard + reportes implementados**
 - ✅ **Reportes semanales** → **Analytics completos con métricas**
 - ✅ **Gestión de gastos** → **CRUD completo con categorías**
@@ -597,10 +603,16 @@ psql $DATABASE_URL
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + WebSockets tiempo real**
-**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Temporizadores + Administración**
-**Pendiente: Búsqueda avanzada caja, reportes mensuales, optimizaciones, impresión física**
+**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + UX Mejorada + WebSockets tiempo real**
+**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Mapa de mesas inteligente + UX optimizada**
+**Pendiente: Reportes mensuales, optimizaciones, impresión física**
 **Funcionalidades nuevas:** 
+- **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
+- **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)
+- **Auto-limpieza de filtros** después de cada acción completada
+- **Búsqueda optimizada** por mesa, cliente o pedido con limpieza automática
+- **Notificaciones consistentes** siguiendo patrón de MeseroView (1s éxito, 3s errores)
+- **UI simplificada** sin elementos redundantes en pendientes de pago
 - **Temporizadores en tiempo real** en KDS View para monitoreo de urgencia
 - **KDS Manager ultra-optimizado** para tablet con updates instantáneos sin loading
 - **Auto-marcar artículos** cuando se marca pedido como listo
