@@ -34,12 +34,117 @@ const selectedPedidoId = ref<number | null>(null)
 let timer: number | undefined
 
 const pedidosActivos = computed(() => {
+  // Usar directamente pedidosKDS que ya está filtrado correctamente en el store
   return pedidosStore.pedidosKDS
 })
 
 const selectedPedido = computed(() => {
   return pedidosActivos.value.find(p => p.id === selectedPedidoId.value)
 })
+
+// Filtro de estados
+const filtroEstado = ref('')
+
+const pedidosFiltrados = computed(() => {
+  const activos = pedidosActivos.value
+  console.log('🔍 Debug pedidosFiltrados:', {
+    totalPedidos: pedidosStore.pedidos.length,
+    pedidosKDS: pedidosStore.pedidosKDS.length,
+    pedidosActivos: activos.length,
+    filtroEstado: filtroEstado.value,
+    wsConnected: pedidosStore.wsConnected,
+    loading: pedidosStore.loading
+  })
+  
+  // Filtrar por estado si hay filtro activo
+  let filtered = filtroEstado.value 
+    ? activos.filter(p => p.estado === filtroEstado.value)
+    : activos
+  
+  // Ordenamiento eficiente por prioridad para KDS Manager
+  return filtered.sort((a, b) => {
+    // 1. Por urgencia de tiempo (más antiguos primero)
+    const tiempoA = new Date(a.fecha_creacion).getTime()
+    const tiempoB = new Date(b.fecha_creacion).getTime()
+    const diffA = Date.now() - tiempoA
+    const diffB = Date.now() - tiempoB
+    
+    // 2. Priorizar pedidos urgentes (>10 min) al top
+    const urgentA = diffA > 10 * 60 * 1000 // más de 10 min
+    const urgentB = diffB > 10 * 60 * 1000
+    
+    if (urgentA && !urgentB) return -1
+    if (!urgentA && urgentB) return 1
+    
+    // 3. Después por tiempo de creación (más viejo primero)
+    if (tiempoA !== tiempoB) return tiempoA - tiempoB
+    
+    // 4. Por número de pedido como tiebreaker
+    return (a.numero_display || '').localeCompare(b.numero_display || '')
+  })
+})
+
+const loading = computed(() => pedidosStore.loading)
+
+// Funciones para filtros rápidos
+function getCountByEstado(estado: string): number {
+  return pedidosActivos.value.filter(p => p.estado === estado).length
+}
+
+function getEstadoLabel(estado: string): string {
+  const labels: Record<string, string> = {
+    'pendiente': 'PENDIENTES',
+    'preparando': 'PREPARANDO',
+    'listo': 'LISTOS',
+    'entregado': 'ENTREGADOS'
+  }
+  return labels[estado] || estado.toUpperCase()
+}
+
+function getEstadoStyles(estado: string): string {
+  const styles: Record<string, string> = {
+    'pendiente': 'bg-red-500 text-white',
+    'preparando': 'bg-yellow-500 text-white',
+    'listo': 'bg-green-500 text-white',
+    'entregado': 'bg-blue-500 text-white'
+  }
+  return styles[estado] || 'bg-gray-500 text-white'
+}
+
+// Funciones de temporizador (copiadas de KDS View)
+const timerTick = ref(0)
+let timerInterval: number | undefined
+
+function calcularTiempoTranscurrido(fechaCreacion: string) {
+  timerTick.value // Forzar re-renderizado
+  const ahora = new Date()
+  const fechaPedido = new Date(fechaCreacion)
+  const diferenciaMs = ahora.getTime() - fechaPedido.getTime()
+  const minutos = Math.floor(diferenciaMs / (1000 * 60))
+  const segundos = Math.floor((diferenciaMs % (1000 * 60)) / 1000)
+  
+  if (minutos >= 60) {
+    const horas = Math.floor(minutos / 60)
+    const minutosRestantes = minutos % 60
+    return `${horas}h ${minutosRestantes}m`
+  } else if (minutos > 0) {
+    return `${minutos}m ${segundos}s`
+  } else {
+    return `${segundos}s`
+  }
+}
+
+function getTiempoColor(fechaCreacion: string) {
+  const ahora = new Date()
+  const fechaPedido = new Date(fechaCreacion)
+  const diferenciaMs = ahora.getTime() - fechaPedido.getTime()
+  const minutos = Math.floor(diferenciaMs / (1000 * 60))
+  
+  if (minutos < 5) return 'bg-green-500 text-white'
+  if (minutos < 10) return 'bg-yellow-500 text-white'
+  if (minutos < 15) return 'bg-orange-500 text-white'
+  return 'bg-red-600 text-white'
+}
 
 function getTipoOrdenEmoji(tipo: string) {
   const emojis: Record<string, string> = {
@@ -102,6 +207,36 @@ function swipeToPreparando(pedido: Pedido) {
   }
 }
 
+// Función sin updates optimísticos problemáticos - usar store directamente
+async function updateEstadoPedidoOptimistic(pedido: any, nuevoEstado: string) {
+  try {
+    // Usar la función del store directamente sin modificar el objeto local
+    const success = await pedidosStore.updatePedidoEstado(pedido.id, nuevoEstado)
+    if (!success) {
+      error.value = pedidosStore.error || 'Error actualizando pedido'
+    }
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail || 'Error actualizando pedido'
+    console.error('❌ Error actualizando pedido:', e)
+  }
+}
+
+// Función sin updates optimísticos problemáticos - usar store directamente
+async function toggleArticuloEstadoOptimistic(articulo: any) {
+  const nuevoEstado = articulo.estado_item === 'listo' ? 'pendiente' : 'listo'
+  
+  try {
+    // Usar la función del store directamente sin modificar el objeto local
+    const success = await pedidosStore.updateArticuloEstado(articulo.id, nuevoEstado)
+    if (!success) {
+      error.value = pedidosStore.error || 'Error actualizando artículo'
+    }
+  } catch (e: any) {
+    error.value = e?.response?.data?.detail || 'Error actualizando artículo'
+    console.error('❌ Error actualizando artículo:', e)
+  }
+}
+
 onMounted(async () => {
   if (!auth.isAuthenticated || !['cocina', 'administrador'].includes(auth.user?.rol || '')) {
     router.replace({ name: 'login' })
@@ -126,6 +261,12 @@ onMounted(async () => {
         pedidosStore.refreshPedidos()
       }, 3000)
     }
+
+    // Inicializar temporizador para actualizar tiempo transcurrido cada segundo
+    timerInterval = window.setInterval(() => {
+      timerTick.value++
+    }, 1000)
+
   } catch (error) {
     console.error('❌ KDS Manager: Error en inicialización:', error)
   }
@@ -136,162 +277,155 @@ onUnmounted(() => {
   if (timer) {
     clearInterval(timer)
   }
+  if (timerInterval) {
+    clearInterval(timerInterval)
+  }
   // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
-    <!-- Header -->
-    <AppHeader title="Cocina" />
-
-
-    <main class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 overflow-hidden">
-      <!-- Lista de Pedidos -->
-      <div class="lg:col-span-1 bg-white rounded-2xl shadow-lg border-2 border-gray-200 overflow-hidden flex flex-col">
-        <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] px-6 py-4 text-white font-bold">
-          📋 Pedidos Activos ({{ pedidosActivos.length }})
-        </div>
-        <div class="flex-1 overflow-auto space-y-2 p-4">
-          <div v-if="pedidosActivos.length === 0" class="text-center text-gray-500 py-8">
-            Sin pedidos activos
-          </div>
-          <div
-            v-for="p in pedidosActivos"
-            :key="p.id"
-            @click="selectPedido(p.id)"
+  <div class="min-h-screen bg-slate-900 text-white">
+    <!-- Header ultra-compacto -->
+    <div class="bg-slate-800 p-2 border-b border-slate-600">
+      <div class="flex items-center justify-between">
+        <h1 class="text-lg font-bold">🍳 Control Rápido</h1>
+        <div class="flex items-center gap-3">
+          <!-- Filtros rápidos -->
+          <button
+            v-for="estado in ['pendiente', 'preparando', 'listo']"
+            :key="estado"
+            @click="filtroEstado = filtroEstado === estado ? '' : estado"
             :class="[
-              'p-4 rounded-lg border-2 cursor-pointer transition-all hover:shadow-md',
-              selectedPedidoId === p.id
-                ? 'bg-blue-50 border-[#FDB700] shadow-md'
-                : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+              'px-3 py-1 rounded text-sm font-bold transition-colors',
+              filtroEstado === estado 
+                ? getEstadoColor(estado) + ' text-white' 
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             ]"
           >
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-2xl font-black text-[#00126D]">{{ p.numero_display }}</div>
-              <div :class="['text-xs font-bold px-2 py-1 rounded text-white', getEstadoColor(p.estado)]">
-                {{ p.estado.toUpperCase() }}
-              </div>
-            </div>
-            <div class="text-sm text-gray-600">{{ getTipoOrdenEmoji(p.tipo_orden) }} {{ p.tipo_orden }}</div>
-            
-            <!-- Mesa y Cliente con mejor diseño -->
-            <div v-if="p.mesa" class="mt-2">
-              <div class="bg-blue-500 text-white px-2 py-1 rounded-full text-xs font-bold text-center">
-                🪑 MESA {{ p.mesa }}
-              </div>
-            </div>
-            <div v-if="p.nombre_cliente && p.tipo_orden === 'llevar'" class="mt-2">
-              <div class="bg-green-500 text-white px-2 py-1 rounded-full text-xs font-bold text-center">
-                📦 {{ p.nombre_cliente }}
-              </div>
-            </div>
-            
-            <div class="text-xs text-gray-500 mt-2">{{ p.articulos_pedido?.length || 0 }} items</div>
+            {{ getCountByEstado(estado) }} {{ getEstadoLabel(estado) }}
+          </button>
+          
+          <!-- Indicador conexión -->
+          <div :class="pedidosStore.wsConnected ? 'text-green-400' : 'text-yellow-400'">
+            {{ pedidosStore.wsConnected ? '🟢' : '🟡' }}
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Detalle del Pedido Seleccionado -->
-      <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg border-2 border-gray-200 overflow-hidden flex flex-col">
-        <div v-if="!selectedPedido" class="flex-1 flex items-center justify-center text-gray-400">
-          <div class="text-center">
-            <p class="text-4xl mb-4">👈</p>
-            <p class="text-lg font-semibold">Selecciona un pedido</p>
-          </div>
-        </div>
-
-        <template v-else>
-          <!-- Header del Pedido -->
-          <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] px-6 py-4 text-white">
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-3">
-                <div class="text-4xl">{{ getTipoOrdenEmoji(selectedPedido.tipo_orden) }}</div>
-                <div>
-                  <div class="text-3xl font-black">Pedido #{{ selectedPedido.numero_display }}</div>
-                  <div class="text-sm text-blue-100">{{ selectedPedido.tipo_orden }}</div>
-                </div>
+    <!-- Lista ultra-optimizada para tablet -->
+    <div class="p-3">
+      <div v-if="loading" class="text-center py-16">
+        <div class="text-4xl mb-2">⏳</div>
+        <div class="text-lg">Cargando...</div>
+      </div>
+      
+      <div v-else-if="pedidosFiltrados.length === 0" class="text-center py-16">
+        <div class="text-4xl mb-2">✨</div>
+        <div class="text-lg">{{ filtroEstado ? 'Sin pedidos en este estado' : '¡Todo listo!' }}</div>
+      </div>
+      
+      <!-- Layout de lista vertical optimizado -->
+      <div v-else class="space-y-3">
+        <div
+          v-for="p in pedidosFiltrados"
+          :key="p.id"
+          :class="[
+            'rounded-lg p-4 transition-all duration-200',
+            getEstadoStyles(p.estado)
+          ]"
+        >
+          <!-- Header responsive - diferente layout para móvil -->
+          <div class="space-y-3">
+            <!-- Fila 1: Info básica -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
+                <span class="text-2xl font-black">{{ p.numero_display }}</span>
+                <span v-if="p.mesa" class="text-lg font-bold hidden sm:inline">Mesa {{ p.mesa }}</span>
+                <span v-else-if="p.nombre_cliente" class="text-sm opacity-75 max-w-24 sm:max-w-32 truncate">{{ p.nombre_cliente }}</span>
               </div>
-              <div :class="['text-sm font-bold px-3 py-2 rounded-lg', getEstadoColor(selectedPedido.estado)]">
-                {{ selectedPedido.estado.toUpperCase() }}
-              </div>
-            </div>
-
-            <!-- Botones de Acción -->
-            <div class="flex gap-2 mt-4">
-              <button
-                v-if="selectedPedido.estado === 'pendiente'"
-                @click="swipeToPreparando(selectedPedido)"
-                class="flex-1 py-2 px-4 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-lg transition-all active:scale-95"
-              >
-                👉 Empezar a preparar
-              </button>
-              <button
-                v-if="selectedPedido.estado === 'preparando'"
-                @click="updateEstadoPedido(selectedPedido.id, 'listo')"
-                class="flex-1 py-2 px-4 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition-all active:scale-95"
-              >
-                ✓ Marcar como listo
-              </button>
-              <button
-                v-if="selectedPedido.estado === 'listo'"
-                @click="updateEstadoPedido(selectedPedido.id, 'entregado')"
-                class="flex-1 py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition-all active:scale-95"
-              >
-                🍽️ Entregado
-              </button>
-            </div>
-          </div>
-
-          <!-- Lista de Artículos -->
-          <div class="flex-1 overflow-auto p-6 space-y-3">
-            <div
-              v-for="a in selectedPedido.articulos_pedido || []"
-              :key="a.id"
-              @click="toggleArticuloEstado(a)"
-              :class="[
-                'p-4 rounded-lg border-2 transition-all',
-                selectedPedido.estado === 'pendiente'
-                  ? 'cursor-not-allowed opacity-50 bg-gray-50 border-gray-200'
-                  : 'cursor-pointer hover:shadow-md',
-                a.estado_item === 'listo'
-                  ? 'bg-green-50 border-green-500 shadow-md'
-                  : 'bg-gray-50 border-gray-200 hover:border-gray-300'
-              ]"
-            >
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center gap-2 mb-1">
-                    <div class="text-2xl font-black text-[#FDB700]">{{ a.cantidad }}x</div>
-                    <div class="font-bold text-[#00126D]">{{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}</div>
-                  </div>
-                  <div v-if="a.modificaciones" class="text-sm text-gray-600 ml-8">📝 {{ a.modificaciones }}</div>
-                </div>
-                <div :class="['text-2xl font-bold px-3 py-1 rounded', a.estado_item === 'listo' ? 'text-green-600' : 'text-gray-400']">
-                  {{ a.estado_item === 'listo' ? '✓' : '○' }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer con Progreso -->
-          <div class="bg-gray-50 px-6 py-4 border-t-2 border-gray-200">
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-bold text-gray-700">Progreso</span>
-              <span class="text-sm font-bold text-[#FDB700]">
-                {{ (selectedPedido.articulos_pedido || []).filter(a => a.estado_item === 'listo').length }} / {{ selectedPedido.articulos_pedido?.length || 0 }}
+              
+              <!-- Temporizador siempre visible -->
+              <span :class="['text-xs sm:text-sm font-bold px-2 py-1 rounded', getTiempoColor(p.fecha_creacion)]">
+                {{ calcularTiempoTranscurrido(p.fecha_creacion) }}
               </span>
             </div>
-            <div class="w-full bg-gray-300 rounded-full h-2 overflow-hidden">
-              <div
-                :style="{ width: `${((selectedPedido.articulos_pedido || []).filter(a => a.estado_item === 'listo').length / (selectedPedido.articulos_pedido?.length || 1)) * 100}%` }"
-                class="bg-green-500 h-full transition-all"
-              ></div>
+            
+            <!-- Fila 2: Mesa en móvil + Acción principal -->
+            <div class="flex items-center justify-between">
+              <div v-if="p.mesa" class="text-base font-bold sm:hidden">Mesa {{ p.mesa }}</div>
+              <div v-else class="hidden sm:block"></div>
+              
+              <!-- Botón de acción optimizado para móvil -->
+              <button
+                v-if="p.estado === 'pendiente'"
+                @click="updateEstadoPedidoOptimistic(p, 'preparando')"
+                class="bg-yellow-600 hover:bg-yellow-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+              >
+                🔥 INICIAR
+              </button>
+              
+              <button
+                v-else-if="p.estado === 'preparando'"
+                @click="updateEstadoPedidoOptimistic(p, 'listo')"
+                class="bg-green-600 hover:bg-green-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+              >
+                ✅ LISTO
+              </button>
+              
+              <button
+                v-else-if="p.estado === 'listo'"
+                @click="updateEstadoPedidoOptimistic(p, 'entregado')"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+              >
+                📤 ENTREGAR
+              </button>
+              
+              <div v-else class="text-green-400 font-bold text-sm sm:text-lg py-2 px-4 sm:py-3 sm:px-6 text-center w-full sm:w-auto">
+                ✓ ENTREGADO
+              </div>
             </div>
           </div>
-        </template>
+
+          <!-- Artículos táctiles para marcar individualmente -->
+          <div v-if="p.estado === 'preparando'" class="grid grid-cols-1 gap-2">
+            <div
+              v-for="articulo in p.articulos_pedido || []"
+              :key="articulo.id"
+              :class="[
+                'p-3 rounded-lg flex items-center justify-between transition-all cursor-pointer',
+                articulo.estado_item === 'listo' 
+                  ? 'bg-green-600 bg-opacity-50 text-green-100 line-through opacity-80' 
+                  : 'bg-slate-700 text-white hover:bg-slate-600 active:scale-95'
+              ]"
+              @click="toggleArticuloEstadoOptimistic(articulo)"
+            >
+              <div class="flex-1">
+                <div class="font-bold text-sm sm:text-base">
+                  {{ articulo.cantidad }}x {{ articulo.platillo?.kds_name || articulo.platillo?.nombre || 'Platillo' }}
+                </div>
+                <div v-if="articulo.modificaciones" class="text-xs sm:text-sm opacity-75 mt-1">
+                  {{ articulo.modificaciones }}
+                </div>
+              </div>
+              <div class="text-xl sm:text-2xl font-bold ml-2">
+                {{ articulo.estado_item === 'listo' ? '✅' : '⭕' }}
+              </div>
+            </div>
+          </div>
+          
+          <!-- Solo mostrar resumen para otros estados -->
+          <div v-else class="text-sm opacity-75">
+            {{ p.articulos_pedido?.length || 0 }} artículos
+            <span v-if="p.estado === 'listo'">
+              - {{ (p.articulos_pedido || []).filter(a => a.estado_item === 'listo').length }} listos
+            </span>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 

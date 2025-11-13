@@ -281,7 +281,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
   async function updatePedidoEstado(pedidoId: number, nuevoEstado: string, metodoPago?: string): Promise<boolean> {
-    loading.value = true
+    // NO poner loading = true para updates individuales
     error.value = null
 
     try {
@@ -303,13 +303,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
       error.value = e?.response?.data?.detail || 'Error actualizando pedido'
       console.error('❌ Error actualizando pedido:', e)
       return false
-    } finally {
-      loading.value = false
     }
+    // NO hay finally que ponga loading = false
   }
 
   async function updateArticuloEstado(articuloId: number, nuevoEstado: string): Promise<boolean> {
-    loading.value = true
+    // NO poner loading = true para updates individuales
     error.value = null
 
     try {
@@ -320,7 +319,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       
       // El WebSocket debería notificar automáticamente
       if (!wsConnected.value) {
-        // Buscar el pedido y actualizarlo
+        // Buscar el pedido y actualizarlo - pero sin loading general
+        console.log('⚠️ WebSocket desconectado, actualizando datos...')
         await loadInitialData()
       }
       
@@ -329,9 +329,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       error.value = e?.response?.data?.detail || 'Error actualizando artículo'
       console.error('❌ Error actualizando artículo:', e)
       return false
-    } finally {
-      loading.value = false
     }
+    // NO hay finally que ponga loading = false
   }
 
   // Función para refresh manual (fallback)

@@ -1,6 +1,6 @@
 # **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-**Estado: SISTEMA COMPLETO CON PANEL ADMIN**  
+**Estado: SISTEMA COMPLETO + KDS OPTIMIZADO + PANEL ADMIN**  
 Fecha: Enero 2025
 
 ## 📋 Resumen del Proyecto
@@ -12,9 +12,9 @@ Fecha: Enero 2025
 - **✅ Flujo Post-Pago Completo**: Mesero → Cocina → Entrega → Solicitar Cuenta → Pago en Caja
 - **✅ Gestión de Mesas**: Sistema de numeración por pisos (11-15, 21-25, 31-35)
 - **✅ Roles Granulares**: Mesero, Cajero, Cocina, Administrador con permisos específicos
-- **✅ KDS (Kitchen Display System)**: Pantallas digitales para cocina con estados visuales
+- **✅ KDS (Kitchen Display System)**: Pantallas digitales con temporizadores en tiempo real y control ultra-rápido
 - **✅ Estados Expandidos**: 7 estados del pedido para control completo del flujo
-- **✅ Auto-refresh**: Actualizaciones en tiempo real en todas las vistas críticas
+- **✅ WebSockets tiempo real**: Actualizaciones instantáneas sin demoras ni loading innecesario
 - **✅ UI/UX Optimizada**: Diseño responsivo con colores corporativos y navegación intuitiva
 
 ### 🚀 Estado Actual
@@ -81,18 +81,23 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - Tipos de orden: Mesa, Llevar, UberEats
 - Envío directo a cocina
 
-### 3. Kitchen Display System (KDS)
-- **Vista de solo lectura** (/kds-view) para pantallas
-- **Vista de gestión** (/kds-manager) para staff
-- Muestra números de mesa y nombres de cliente
+### 3. Kitchen Display System (KDS) - OPTIMIZADO
+- **Vista TV optimizada** (/kds-view) - Pantalla para toda la cocina
+  - **Temporizadores en tiempo real** - Tiempo transcurrido por pedido
+  - **Colores de urgencia** - Verde → Amarillo → Naranja → Rojo
+  - **Layout denso** - Máxima información visible
+  - **WebSocket tiempo real** - Updates instantáneos
+- **Vista de control rápido** (/kds-manager) - Tablet personal
+  - **Updates optimísticos** - Cambios instantáneos sin loading
+  - **Auto-marcar artículos** - Al marcar pedido listo, todos los artículos se marcan
+  - **Control ultra-rápido** - Mínimos taps para máxima eficiencia
+  - **Layout vertical móvil** - Optimizado para tablet
 - Estados visuales con colores distintivos:
   - 🟡 Pendiente
-  - 🟠 Preparando
+  - 🟠 Preparando  
   - 🟢 Listo
   - 🔵 Entregado
   - 🟣 Cuenta Solicitada
-- Auto-refresh cada 3 segundos
-- Control individual de artículos
 
 ### 4. Vista de Caja (/caja)
 - **Gestión de pedidos pendientes de pago**

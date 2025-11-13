@@ -352,6 +352,12 @@ async def update_pedido(
     old_estado = pedido.estado
     pedido.estado = data.estado
     
+    # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
+    if data.estado == "listo":
+        for articulo in pedido.articulos_pedido:
+            if articulo.estado_item != "listo":
+                articulo.estado_item = "listo"
+    
     # Actualizar método de pago si se proporciona
     if data.metodo_pago is not None:
         pedido.metodo_pago = data.metodo_pago

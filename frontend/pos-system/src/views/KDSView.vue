@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { useRouter } from 'vue-router'
@@ -8,19 +8,22 @@ const auth = useAuthStore()
 const router = useRouter()
 const pedidosStore = usePedidosStore()
 
+// Estado para forzar actualización del temporizador
+const timerTick = ref(0)
+
 const todasLasComandas = computed(() => {
   return pedidosStore.pedidosKDS
 })
 
 function getEstadoColor(estado: string) {
   const colors: Record<string, string> = {
-    'pendiente': 'bg-red-500 text-white',
-    'preparando': 'bg-yellow-500 text-white',
-    'listo': 'bg-green-500 text-white',
-    'entregado': 'bg-blue-500 text-white',
-    'cuenta_solicitada': 'bg-purple-500 text-white'
+    'pendiente': 'bg-red-500',
+    'preparando': 'bg-yellow-500', 
+    'listo': 'bg-green-500',
+    'entregado': 'bg-blue-500',
+    'cuenta_solicitada': 'bg-purple-500'
   }
-  return colors[estado] || 'bg-gray-500 text-white'
+  return colors[estado] || 'bg-gray-500'
 }
 
 function getEstadoLabel(estado: string) {
@@ -41,6 +44,41 @@ function getTipoOrdenEmoji(tipo: string) {
     'uber_eats': '🚗'
   }
   return emojis[tipo] || '📋'
+}
+
+function calcularTiempoTranscurrido(fechaCreacion: string) {
+  // Forzar re-renderizado con timerTick
+  timerTick.value
+  
+  const ahora = new Date()
+  const fechaPedido = new Date(fechaCreacion)
+  const diferenciaMs = ahora.getTime() - fechaPedido.getTime()
+  
+  const minutos = Math.floor(diferenciaMs / (1000 * 60))
+  const segundos = Math.floor((diferenciaMs % (1000 * 60)) / 1000)
+  
+  if (minutos >= 60) {
+    const horas = Math.floor(minutos / 60)
+    const minutosRestantes = minutos % 60
+    return `${horas}h ${minutosRestantes}m`
+  } else if (minutos > 0) {
+    return `${minutos}m ${segundos}s`
+  } else {
+    return `${segundos}s`
+  }
+}
+
+function getTiempoColor(fechaCreacion: string) {
+  const ahora = new Date()
+  const fechaPedido = new Date(fechaCreacion)
+  const diferenciaMs = ahora.getTime() - fechaPedido.getTime()
+  const minutos = Math.floor(diferenciaMs / (1000 * 60))
+  
+  // Colores para el temporizador como en la imagen
+  if (minutos < 5) return 'bg-green-500 text-white'        // Verde sólido
+  if (minutos < 10) return 'bg-yellow-500 text-white'      // Amarillo sólido
+  if (minutos < 15) return 'bg-orange-500 text-white'      // Naranja sólido
+  return 'bg-red-600 text-white'                           // Rojo sólido
 }
 
 onMounted(async () => {
@@ -73,81 +111,87 @@ onMounted(async () => {
         pedidosStore.refreshPedidos()
       }, 5000)
     }
+
+    // Inicializar temporizador para actualizar tiempo transcurrido cada segundo
+    timerInterval = window.setInterval(() => {
+      timerTick.value++
+    }, 1000)
+
   } catch (error) {
     console.error('❌ KDS View: Error en inicialización:', error)
   }
 })
 
 let timer: number | undefined
+let timerInterval: number | undefined
 
 onUnmounted(() => {
   console.log('👋 KDS View: Cleanup...')
   if (timer) {
     clearInterval(timer)
   }
+  if (timerInterval) {
+    clearInterval(timerInterval)
+  }
   // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-[#0a0e27]">
-    <main class="flex-1 p-2 overflow-hidden">
-      <!-- Grid compacto de comandas -->
-      <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); grid-auto-rows: max-content;">
-        <div v-for="p in todasLasComandas" :key="p.id" :class="['rounded-lg p-3 border-2 transition-all', getEstadoColor(p.estado)]" style="border-color: currentColor; opacity: 0.95;">
-          <!-- Estado, número y tipo de orden -->
-          <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-2">
-              <div class="text-3xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</div>
-              <div class="text-2xl font-black">{{ p.numero_display }}</div>
-            </div>
-            <div class="text-xs font-bold px-2 py-1 bg-black bg-opacity-30 rounded">{{ getEstadoLabel(p.estado) }}</div>
+  <div class="min-h-screen bg-slate-900 p-2">
+    <!-- Grid optimizado para TV - más comandas visibles -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+      <div v-for="p in todasLasComandas" :key="p.id" 
+           :class="['rounded-lg p-3 text-white shadow-lg', getEstadoColor(p.estado)]">
+        
+        <!-- Header compacto: emoji + número + temporizador -->
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-2xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
+            <span class="text-2xl font-black">{{ p.numero_display }}</span>
           </div>
-
-          <!-- Información de mesa/cliente -->
-          <div v-if="p.mesa || (p.nombre_cliente && p.tipo_orden === 'llevar')" class="mb-2">
-            <div v-if="p.mesa" class="bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-bold text-center mb-1">
-              🪑 MESA {{ p.mesa }}
-            </div>
-            <div v-if="p.nombre_cliente && p.tipo_orden === 'llevar'" class="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold text-center">
-              📦 {{ p.nombre_cliente }}
-            </div>
-          </div>
-
-          <!-- Items compactos -->
-          <div class="text-xs space-y-0.5 bg-black bg-opacity-20 rounded p-2">
-            <div v-for="a in p.articulos_pedido || []" :key="a.id" :class="['px-2 py-1 rounded truncate', a.estado_item === 'listo' ? 'bg-green-500 text-white font-bold' : '']">
-              <span class="font-bold">{{ a.cantidad }}x</span> {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}
-              <div v-if="a.modificaciones" class="text-xs opacity-90">{{ a.modificaciones }}</div>
-            </div>
+          <div :class="['px-2 py-1 rounded-full text-xs font-bold', getTiempoColor(p.fecha_creacion)]">
+            {{ calcularTiempoTranscurrido(p.fecha_creacion) }}
           </div>
         </div>
 
-        <!-- Loading state -->
-        <div v-if="pedidosStore.loading" class="col-span-full text-center py-20 text-gray-400">
-          <p class="text-4xl mb-4">⏳</p>
-          <p class="text-xl font-semibold">Cargando comandas...</p>
+        <!-- Mesa compacta -->
+        <div v-if="p.mesa" class="text-center mb-2">
+          <div class="text-lg font-bold">Mesa {{ p.mesa }}</div>
+        </div>
+        <div v-else-if="p.nombre_cliente" class="text-center mb-2">
+          <div class="text-sm font-semibold truncate">{{ p.nombre_cliente }}</div>
         </div>
 
-        <!-- Error state -->
-        <div v-else-if="pedidosStore.error" class="col-span-full text-center py-20 text-red-400">
-          <p class="text-4xl mb-4">❌</p>
-          <p class="text-xl font-semibold">Error: {{ pedidosStore.error }}</p>
-          <button @click="pedidosStore.refreshPedidos()" class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-            🔄 Reintentar
-          </button>
-        </div>
-
-        <!-- Empty state -->
-        <div v-else-if="todasLasComandas.length === 0" class="col-span-full text-center py-20 text-gray-400">
-          <p class="text-4xl mb-4">✨</p>
-          <p class="text-xl font-semibold">Sin comandas activas</p>
-          <p class="text-sm mt-2 opacity-75">
-            WebSocket: {{ pedidosStore.wsConnected ? '🟢 Conectado' : '🔴 Desconectado' }}
-          </p>
+        <!-- Lista de platillos - fondo negro con texto blanco -->
+        <div class="space-y-1">
+          <div v-for="a in p.articulos_pedido || []" :key="a.id" 
+               :class="['p-2 rounded text-white text-sm', 
+                       a.estado_item === 'listo' 
+                         ? 'bg-green-600 bg-opacity-40 line-through opacity-70' 
+                         : 'bg-black bg-opacity-60']">
+            <div class="font-medium">
+              {{ a.cantidad }}x {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}
+            </div>
+            <div v-if="a.modificaciones" class="text-xs opacity-90 mt-0.5">
+              {{ a.modificaciones }}
+            </div>
+          </div>
         </div>
       </div>
-    </main>
+
+      <!-- Estados vacíos -->
+      <div v-if="pedidosStore.loading" class="col-span-full text-center py-16 text-white">
+        <p class="text-5xl mb-3">⏳</p>
+        <p class="text-xl font-bold">Cargando...</p>
+      </div>
+
+      <div v-else-if="todasLasComandas.length === 0" class="col-span-full text-center py-16 text-white">
+        <p class="text-5xl mb-3">✨</p>
+        <p class="text-xl font-bold">¡Todo listo!</p>
+        <p class="text-sm opacity-75 mt-1">Sin comandas pendientes</p>
+      </div>
+    </div>
   </div>
 </template>
 

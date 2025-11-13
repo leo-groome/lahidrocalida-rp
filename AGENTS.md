@@ -225,7 +225,7 @@ proyecto/
 
 ## 🔧 Estado de Desarrollo
 
-### ✅ Completado - SISTEMA COMPLETO + PANEL ADMIN
+## ✅ **Completado - SISTEMA COMPLETO + PANEL ADMIN + KDS OPTIMIZADO**
 
 **Backend Completo:**
 - ✅ Modelos de datos con flujo post-pago
@@ -246,11 +246,13 @@ proyecto/
 - ✅ **Reportes semanales** - Métricas detalladas por período
 - ✅ **Analytics de productos** - Top 10 más vendidos
 - ✅ **Gestión de gastos** - CRUD completo con categorías
+- ✅ **Auto-marcar artículos** - Al marcar pedido como listo, todos los artículos se marcan automáticamente
 
 **Frontend Completo:**
 - ✅ Sistema de meseros para toma de pedidos
 - ✅ Vista de caja para procesar pagos + **solicitar cuenta**
-- ✅ KDS completo (lectura y gestión)
+- ✅ **KDS View optimizado** - Vista TV para cocina con temporizadores en tiempo real
+- ✅ **KDS Manager optimizado** - Herramienta de control ultra-rápida para tablet
 - ✅ **Panel de Administración** - Dashboard completo con reportes
 - ✅ **Vista Dashboard** - Métricas del día en tiempo real
 - ✅ **Reportes Semanales** - Analytics por período configurable
@@ -265,10 +267,15 @@ proyecto/
 - ✅ **Fallback automático** - Polling si WebSocket falla
 - ✅ **Notificaciones tiempo real** - Estados de pedidos
 - ✅ **Debug indicators** - Estado de conexión WebSocket
+- ✅ **Temporizadores KDS** - Tiempo transcurrido por pedido en tiempo real
+- ✅ **Updates optimísticos** - Performance mejorado sin loading innecesario
 - ✅ Notificaciones y feedback al usuario
 
 **Flujo Operativo Completo + Tiempo Real + Administración:**
 - ✅ Mesero toma pedidos con mesa → **Aparece instantáneamente en KDS**
+- ✅ **Cocina ve temporizadores** → **Tiempo transcurrido por pedido en tiempo real**
+- ✅ **KDS Manager optimizado** → **Control ultra-rápido en tablet sin demoras**
+- ✅ **Auto-marcar artículos** → **Al marcar pedido listo, todos los artículos se marcan**
 - ✅ Cocina gestiona preparación → **Updates en tiempo real**
 - ✅ Mesero entrega → **Notificación automática**
 - ✅ **Caja solicita cuenta** → **Botón en overview**
@@ -278,16 +285,16 @@ proyecto/
 - ✅ **Gestión de gastos** → **CRUD completo con categorías**
 - ✅ **Impresión en consola** → **Tickets se imprimen en consola del navegador**
 
-### 🚧 Funcionalidades Pendientes para Producción Completa
+### **🚧 Funcionalidades Pendientes para Producción Completa**
 
 **Críticas para Producción:**
 - 📅 **Estadísticas operativas** - Rendimiento por mesero, tiempos promedio
 - 📊 **Reportes mensuales** - Analytics extendidos por mes/año
 - 🖨️ **Impresión física** - Integración con impresora térmica (opcional)
+- 🔍 **Búsqueda avanzada en caja** - Herramientas para encontrar pedidos rápidamente
 
 **Optimizaciones Necesarias:**
 - ⚡ **Performance** - Paginación, cache, optimización de queries
-- 🔍 **Búsqueda avanzada** - Filtros por fecha, cliente, productos
 - 🔧 **Configuración** - Ajustes de impresora, horarios, precios
 - 📱 **Responsividad móvil** - Optimización para tablets/móviles
 - 🧪 **Testing** - Tests automatizados para estabilidad
@@ -590,8 +597,12 @@ psql $DATABASE_URL
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + WebSockets tiempo real**
-**Flujo: Post-pago + Dashboard + Reportes + Administración + Impresión en consola**
-**Pendiente: Reportes mensuales, optimizaciones, impresión física opcional**
-**Funcionalidad nueva: Impresión de tickets en consola del navegador**
+**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + WebSockets tiempo real**
+**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Temporizadores + Administración**
+**Pendiente: Búsqueda avanzada caja, reportes mensuales, optimizaciones, impresión física**
+**Funcionalidades nuevas:** 
+- **Temporizadores en tiempo real** en KDS View para monitoreo de urgencia
+- **KDS Manager ultra-optimizado** para tablet con updates instantáneos sin loading
+- **Auto-marcar artículos** cuando se marca pedido como listo
+- **Performance mejorado** eliminando refrescos innecesarios
 **Mantenido por: AI Agents & Development Team**

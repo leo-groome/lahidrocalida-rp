@@ -29,6 +29,12 @@ const selectedPozoleColor = ref<'Verde' | 'Blanco' | 'Rojo' | null>(null)
 const showMobileCart = ref(false)
 const isMobile = ref(false)
 
+// Control de categorías colapsables
+const categoriasAbiertas = ref<Set<string>>(new Set())
+
+// Control del modal de mesas
+const showMesaModal = ref(false)
+
 let timer: number | undefined
 
 // Detectar si es móvil
@@ -300,7 +306,7 @@ const showErrorNotification = (message: string) => {
   showNotification.value = true
   setTimeout(() => {
     showNotification.value = false
-  }, 5000)
+  }, 3000) // 3 segundos para errores - tiempo suficiente para leer
 }
 
 const showSuccessNotification = (message: string) => {
@@ -309,7 +315,7 @@ const showSuccessNotification = (message: string) => {
   showNotification.value = true
   setTimeout(() => {
     showNotification.value = false
-  }, 3000)
+  }, 1000) // 1 segundo para éxito - súper rápido
 }
 
 // Limpiar carrito
@@ -318,6 +324,54 @@ const limpiarCarrito = () => {
   nombreCliente.value = ''
   mesa.value = ''
 }
+
+// Funciones de colapso de categorías
+const toggleCategoria = (categoria: string) => {
+  const nuevasAbiertas = new Set(categoriasAbiertas.value)
+  if (nuevasAbiertas.has(categoria)) {
+    nuevasAbiertas.delete(categoria)
+  } else {
+    nuevasAbiertas.add(categoria)
+  }
+  categoriasAbiertas.value = nuevasAbiertas
+}
+
+const isCategoriaAbierta = (categoria: string) => {
+  return categoriasAbiertas.value.has(categoria)
+}
+
+// Funciones para verificar estado del carrito
+const platilloEnCarrito = (platilloId: number): boolean => {
+  return carrito.value.some(item => item.platillo.id === platilloId && item.modificaciones === '')
+}
+
+const getCantidadEnCarrito = (platilloId: number): number => {
+  const item = carrito.value.find(item => item.platillo.id === platilloId && item.modificaciones === '')
+  return item?.cantidad || 0
+}
+
+// Funciones del modal de mesas
+const openMesaModal = () => {
+  showMesaModal.value = true
+}
+
+const closeMesaModal = () => {
+  showMesaModal.value = false
+}
+
+const seleccionarMesa = (numeroMesa: string) => {
+  mesa.value = numeroMesa
+  closeMesaModal()
+}
+
+// Layout de mesas organizado por pisos y posición
+const mesasLayout = [
+  ['11', '21', '31'],
+  ['12', '22', '32'],
+  ['13', '23', '33'],
+  ['14', '24', '34'],
+  ['15', '25', '35']
+]
 </script>
 
 <template>
@@ -365,16 +419,46 @@ const limpiarCarrito = () => {
 
           <!-- Otras Categorías -->
           <div v-for="categoria in categorias" :key="categoria" class="mb-6">
-            <div class="text-xl font-bold mb-4 px-4 py-2 rounded-lg border-2 text-white bg-gradient-to-r from-[#00126D] to-[#001a4d]">
-              {{ categoria }}
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <!-- Header de categoría clickeable -->
+            <button 
+              @click="toggleCategoria(categoria)"
+              class="w-full text-xl font-bold mb-4 px-4 py-3 rounded-lg border-2 text-white bg-gradient-to-r from-[#00126D] to-[#001a4d] hover:from-[#001a4d] hover:to-[#002866] transition-all duration-300 flex items-center justify-between group"
+            >
+              <span>{{ categoria }}</span>
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-blue-200">
+                  ({{ platillosPorCategoria[categoria].length }})
+                </span>
+                <span class="text-2xl transition-transform duration-300" :class="{ 'rotate-180': isCategoriaAbierta(categoria) }">
+                  ▼
+                </span>
+              </div>
+            </button>
+            
+            <!-- Contenido de la categoría (colapsable) -->
+            <div 
+              v-if="isCategoriaAbierta(categoria)"
+              class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 animate-in slide-in-from-top duration-300"
+            >
               <button
                 v-for="platillo in platillosPorCategoria[categoria]"
                 :key="platillo.id"
                 @click="agregarAlCarrito(platillo)"
-                class="bg-white border-2 border-gray-200 rounded-xl p-4 text-left hover:shadow-lg hover:border-[#FDB700] hover:scale-105 group transition-all active:scale-95"
+                :class="[
+                  'relative bg-white border-2 rounded-xl p-4 text-left hover:shadow-lg hover:border-[#FDB700] hover:scale-105 group transition-all active:scale-95',
+                  platilloEnCarrito(platillo.id) 
+                    ? 'border-[#FDB700] shadow-lg bg-yellow-50' 
+                    : 'border-gray-200'
+                ]"
               >
+                <!-- Badge de cantidad -->
+                <div 
+                  v-if="platilloEnCarrito(platillo.id)"
+                  class="absolute -top-2 -right-2 bg-[#FDB700] text-[#00126D] text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md"
+                >
+                  {{ getCantidadEnCarrito(platillo.id) }}
+                </div>
+                
                 <div class="text-sm font-semibold text-[#FDB700] mb-1">$ {{ Number(platillo.precio).toFixed(2) }}</div>
                 <div class="font-bold text-[#00126D] group-hover:text-[#3AAD08] text-sm">{{ platillo.kds_name || platillo.nombre }}</div>
                 <div class="text-xs text-gray-600 line-clamp-2 mt-1">{{ platillo.descripcion }}</div>
@@ -418,16 +502,18 @@ const limpiarCarrito = () => {
           <!-- Mesa (solo para "aquí") -->
           <div v-if="tipoOrden === 'aqui'">
             <label class="block text-sm font-bold text-[#00126D] mb-2">🪑 Mesa</label>
-            <select 
-              v-model="mesa" 
-              class="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white"
-              required
+            <button
+              @click="openMesaModal"
+              :class="[
+                'w-full p-3 border-2 rounded-xl transition text-left flex items-center justify-between',
+                mesa 
+                  ? 'border-[#FDB700] bg-yellow-50 text-[#00126D]' 
+                  : 'border-gray-200 bg-white text-gray-500 hover:border-[#FDB700]'
+              ]"
             >
-              <option value="">Selecciona mesa</option>
-              <option v-for="mesaNum in mesasDisponibles" :key="mesaNum" :value="mesaNum">
-                Mesa {{ mesaNum }}
-              </option>
-            </select>
+              <span>{{ mesa ? `Mesa ${mesa}` : 'Selecciona mesa' }}</span>
+              <span class="text-gray-400">📍</span>
+            </button>
           </div>
           
           <!-- Nombre cliente (solo para "llevar") -->
@@ -491,7 +577,7 @@ const limpiarCarrito = () => {
     <button
       v-if="isMobile"
       @click="toggleMobileCart"
-      class="fixed bottom-6 right-6 w-16 h-16 bg-[#00126D] text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:scale-110 transition-all"
+      class="fixed bottom-6 right-6 w-20 h-20 bg-[#00126D] text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:scale-110 transition-all"
     >
       <div class="text-center">
         <div class="text-xl">🛒</div>
@@ -550,16 +636,18 @@ const limpiarCarrito = () => {
             <!-- Mesa (solo para "aquí") -->
             <div v-if="tipoOrden === 'aqui'">
               <label class="block text-sm font-bold text-[#00126D] mb-2">🪑 Mesa</label>
-              <select 
-                v-model="mesa" 
-                class="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white"
-                required
+              <button
+                @click="openMesaModal"
+                :class="[
+                  'w-full p-3 border-2 rounded-xl transition text-left flex items-center justify-between',
+                  mesa 
+                    ? 'border-[#FDB700] bg-yellow-50 text-[#00126D]' 
+                    : 'border-gray-200 bg-white text-gray-500 hover:border-[#FDB700]'
+                ]"
               >
-                <option value="">Selecciona mesa</option>
-                <option v-for="mesaNum in mesasDisponibles" :key="mesaNum" :value="mesaNum">
-                  Mesa {{ mesaNum }}
-                </option>
-              </select>
+                <span>{{ mesa ? `Mesa ${mesa}` : 'Selecciona mesa' }}</span>
+                <span class="text-gray-400">📍</span>
+              </button>
             </div>
             
             <!-- Nombre cliente (solo para "llevar") -->
@@ -619,6 +707,67 @@ const limpiarCarrito = () => {
       </div>
     </div>
 
+    <!-- Modal de Selección de Mesas -->
+    <div
+      v-if="showMesaModal"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      @click.self="closeMesaModal"
+    >
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black bg-opacity-50"></div>
+      
+      <!-- Modal Content -->
+      <div class="relative bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+          <h3 class="text-xl font-bold text-[#00126D] flex items-center gap-2">
+            🪑 Selecciona Mesa
+          </h3>
+          <button @click="closeMesaModal" class="text-gray-400 hover:text-gray-600 text-2xl">
+            ×
+          </button>
+        </div>
+        
+        <!-- Layout de Mesas -->
+        <div class="mb-6">
+          <div class="text-center text-sm text-gray-600 mb-4">
+            <div class="flex items-center justify-center gap-2">
+              <span>🏢</span>
+              <span>Piso 1 | Piso 2 | Piso 3</span>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-3 gap-3">
+            <div v-for="(fila, index) in mesasLayout" :key="index" class="contents">
+              <button
+                v-for="numeroMesa in fila"
+                :key="numeroMesa"
+                @click="seleccionarMesa(numeroMesa)"
+                :class="[
+                  'aspect-square rounded-lg border-2 font-bold text-lg transition-all',
+                  mesa === numeroMesa
+                    ? 'bg-[#FDB700] border-[#FDB700] text-[#00126D] shadow-lg'
+                    : 'bg-white border-gray-200 text-[#00126D] hover:border-[#FDB700] hover:bg-yellow-50'
+                ]"
+              >
+                {{ numeroMesa }}
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="text-center">
+          <button
+            @click="closeMesaModal"
+            class="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-[#00126D] rounded-lg transition-all"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Pozole Variant Modal -->
     <PozoleVariantModal
       v-if="selectedPozoleColor"
@@ -670,14 +819,6 @@ const limpiarCarrito = () => {
   }
 }
 
-.animate-in {
-  animation: slideInFromTop 0.3s ease-out;
-}
-
-.fade-in {
-  animation: fadeIn 0.3s ease-out;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -687,7 +828,45 @@ const limpiarCarrito = () => {
   }
 }
 
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scaleY(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+.animate-in {
+  animation: slideInFromTop 0.3s ease-out;
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.slide-in-from-top {
+  animation: slideDown 0.4s ease-out;
+}
+
 .slide-in-from-top-5 {
   animation: slideInFromTop 0.3s ease-out;
+}
+
+/* Transiciones suaves para los iconos */
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+/* Hover effects mejorados */
+.group:hover .text-2xl {
+  transform: scale(1.1);
+}
+
+/* Animación de entrada para categorías */
+.duration-300 {
+  transition-duration: 300ms;
 }
 </style>
