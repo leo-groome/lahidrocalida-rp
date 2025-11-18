@@ -173,13 +173,24 @@ proyecto/
 - Redirección automática basada en rol
 - Manejo de errores y validaciones
 
-**2. MeseroView (/mesero)**
+**2. MeseroView (/mesero) - ULTRA-OPTIMIZADO VELOCIDAD**
 - **Rol:** mesero, administrador
 - **Modal inicial obligatorio** - Configuración de tipo de orden al inicio
 - **Flujo optimizado**: Tipo orden → Mesa/Nombre → Menú → Especificaciones → Carrito
-- **Mesas ocupadas en tiempo real** - Visualización de disponibilidad
-- **Carrito full-screen móvil** - Máximo aprovechamiento del espacio
+- **Mesas ocupadas TIEMPO REAL** - WebSocket sincronización automática entre meseros
+- **Carrito full-screen móvil** - Scroll funcional con botón "Enviar a Cocina" siempre visible
 - **Especificaciones inmediatas** - Modal al seleccionar cualquier platillo
+- **Especificaciones rápidas** - Botones por categoría para máxima velocidad:
+  * Pozole: Sin lechuga, Poco grano, Muy caliente
+  * Enchiladas: Sin crema, Sin lechuga, Sin queso, Sin cueritos, Sin papa y zanahoria, Con jalapeño
+  * Flautas: Sin crema, Sin lechuga, Sin queso
+  * Sopes: Sin crema, Sin lechuga, Sin queso, Sin frijoles
+  * Tacos: Sin crema, Sin lechuga, Sin queso
+  * Tostadas: Sin crema, Sin lechuga, Sin queso, Sin frijoles
+- **Selector cantidad discreto** - En modal de especificaciones sin distraer
+- **Botón eliminar separado** - En carrito para evitar toques accidentales
+- **Categorías auto-cerradas** - Se cierran después de agregar artículo
+- **Orden estandarizado** - Especificaciones consistentes entre categorías
 - **Pozoles completos** - 36 variaciones con 4 proteínas (Puerco/Pollo/Surtida/Mixta)
 - **Cancelar pedido** - Opción para reiniciar en cualquier momento
 - **Sin método de pago** - envío directo a cocina
@@ -318,9 +329,10 @@ proyecto/
 
 **Flujo Operativo Completo + Tiempo Real + Administración + UX Ultra-Optimizada:**
 - ✅ **Mesero: Modal inicial** → **Tipo orden → Mesa/Nombre → Menú instantáneo**
-- ✅ **Mesero: Especificaciones** → **Modal inmediato al clic platillo → Sin scrolling**
-- ✅ **Mesero: Mesas tiempo real** → **Ve ocupadas/disponibles automáticamente**
-- ✅ **Mesero: Carrito inteligente** → **Full-screen móvil, cancelar pedido**
+- ✅ **Mesero: Especificaciones ULTRA-RÁPIDAS** → **Botones por categoría + cantidad en modal**
+- ✅ **Mesero: Mesas TIEMPO REAL** → **WebSocket sincronización automática entre meseros**
+- ✅ **Mesero: Carrito optimizado** → **Scroll funcional + botón siempre visible + eliminar separado**
+- ✅ **Mesero: Categorías auto-cerradas** → **Se cierran después de agregar para mayor velocidad**
 - ✅ **Pozoles completos** → **36 variaciones con 4 proteínas (Surtida/Mixta nuevas)**
 - ✅ Cocina recibe pedido → **Aparece instantáneamente en KDS**
 - ✅ **Cocina ve temporizadores** → **Tiempo transcurrido por pedido en tiempo real**
@@ -692,17 +704,17 @@ Para evitar cambiar la IP en múltiples lugares:
 **Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO para TV/Tablet + WebSockets + IMPRESIÓN FÍSICA**
 **Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Mapa de mesas + Impresión automática**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
-**Últimos cambios - KDS ULTRA-OPTIMIZADO:**
+**Últimos cambios - MESERO ULTRA-OPTIMIZADO + KDS + CONFIGURACIÓN:**
+- ✅ **MeseroView velocidad máxima**: Especificaciones rápidas por categoría con botones inteligentes
+- ✅ **Mesas tiempo real**: WebSocket para meseros, sincronización automática entre dispositivos
+- ✅ **Carrito optimizado**: Scroll funcional, botón siempre visible, eliminar separado
+- ✅ **Categorías auto-cerradas**: Mayor velocidad, se cierran después de agregar artículo
+- ✅ **Selector cantidad discreto**: En modal sin distraer del flujo principal
+- ✅ **Orden estandarizado**: Especificaciones consistentes (Sin crema → Sin lechuga → Sin queso)
 - ✅ **KDS View TV optimizado**: Legibilidad desde 8 metros, máximo 4 pedidos, texto gigante
-- ✅ **Mesa/Nombre punto focal**: text-4xl/3xl/2xl como elemento principal visible
-- ✅ **Indicador de urgencia**: Badge rojo animado con pedidos no visibles (+X más)
-- ✅ **Artículos texto GIGANTE**: text-4xl/3xl/2xl escalado por cantidad de pedidos
-- ✅ **Sin tachado artículos**: Eliminado line-through, texto completamente legible
-- ✅ **KDS Manager tablet**: Optimizado para dispositivos móviles y tablet
-- ✅ **Artículos táctiles grandes**: text-lg/xl/2xl para uso en tablet
-- ✅ **Modificaciones destacadas**: Fondo amarillo, texto XL, border destacado
-- ✅ **Emojis prominentes**: text-5xl/4xl tipo de orden, completamente visibles
-- ✅ **Temporizadores grandes**: Tiempo transcurrido prominente con borders
+- ✅ **KDS Manager tablet**: Artículos táctiles grandes text-lg/xl/2xl sin tachado
+- ✅ **Configuración sistema**: JWT 24 horas, favicon corporativo, título profesional
+- ✅ **WebSocket mejorado**: Notificaciones a meseros para mesas ocupadas en tiempo real
 **Funcionalidades nuevas:** 
 - **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
 - **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)
