@@ -155,6 +155,32 @@ function getTipoOrdenEmoji(tipo: string) {
   return emojis[tipo] || '📋'
 }
 
+function getArticuloStyles(estado: string) {
+  switch (estado) {
+    case 'pendiente':
+      return 'bg-slate-700 text-white hover:bg-slate-600 active:scale-95'
+    case 'preparando':
+      return 'bg-yellow-600 bg-opacity-50 text-yellow-100 hover:bg-yellow-500 active:scale-95'
+    case 'listo':
+      return 'bg-green-600 bg-opacity-50 text-green-100 line-through opacity-80'
+    default:
+      return 'bg-slate-700 text-white hover:bg-slate-600 active:scale-95'
+  }
+}
+
+function getArticuloIcon(estado: string) {
+  switch (estado) {
+    case 'pendiente':
+      return '⭕'
+    case 'preparando':
+      return '🔥'
+    case 'listo':
+      return '✅'
+    default:
+      return '⭕'
+  }
+}
+
 function getEstadoColor(estado: string) {
   const colors: Record<string, string> = {
     'pendiente': 'bg-red-500',
@@ -197,8 +223,42 @@ function toggleArticuloEstado(articulo: Articulo) {
     error.value = 'Debes empezar a preparar el pedido primero'
     return
   }
-  const nuevoEstado = articulo.estado_item === 'pendiente' ? 'listo' : 'pendiente'
+  
+  // Ciclo: pendiente -> preparando -> listo -> preparando
+  let nuevoEstado: string
+  switch (articulo.estado_item) {
+    case 'pendiente':
+      nuevoEstado = 'preparando'
+      break
+    case 'preparando':
+      nuevoEstado = 'listo'
+      break
+    case 'listo':
+      nuevoEstado = 'preparando'
+      break
+    default:
+      nuevoEstado = 'preparando'
+  }
+  
   updateEstadoArticulo(articulo.id, nuevoEstado)
+}
+
+function ordenarArticulosPorEstado(articulos: any[]) {
+  if (!articulos || articulos.length === 0) return []
+  
+  // Ordenar artículos: pendiente → preparando → listo
+  return [...articulos].sort((a, b) => {
+    const prioridadEstado = {
+      'pendiente': 1,   // Arriba - más urgentes
+      'preparando': 2,  // Medio - en proceso
+      'listo': 3        // Abajo - completados
+    }
+    
+    const prioridadA = prioridadEstado[a.estado_item] || 999
+    const prioridadB = prioridadEstado[b.estado_item] || 999
+    
+    return prioridadA - prioridadB
+  })
 }
 
 function swipeToPreparando(pedido: Pedido) {
@@ -223,7 +283,21 @@ async function updateEstadoPedidoOptimistic(pedido: any, nuevoEstado: string) {
 
 // Función sin updates optimísticos problemáticos - usar store directamente
 async function toggleArticuloEstadoOptimistic(articulo: any) {
-  const nuevoEstado = articulo.estado_item === 'listo' ? 'pendiente' : 'listo'
+  // Ciclo: pendiente -> preparando -> listo -> preparando
+  let nuevoEstado: string
+  switch (articulo.estado_item) {
+    case 'pendiente':
+      nuevoEstado = 'preparando'
+      break
+    case 'preparando':
+      nuevoEstado = 'listo'
+      break
+    case 'listo':
+      nuevoEstado = 'preparando'
+      break
+    default:
+      nuevoEstado = 'preparando'
+  }
   
   try {
     // Usar la función del store directamente sin modificar el objeto local
@@ -343,8 +417,10 @@ onUnmounted(() => {
               <div class="flex items-center gap-2">
                 <span class="text-2xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
                 <span class="text-2xl font-black">{{ p.numero_display }}</span>
+                <!-- Información mesa/cliente consistente en desktop -->
                 <span v-if="p.mesa" class="text-lg font-bold hidden sm:inline">Mesa {{ p.mesa }}</span>
-                <span v-else-if="p.nombre_cliente" class="text-sm opacity-75 max-w-24 sm:max-w-32 truncate">{{ p.nombre_cliente }}</span>
+                <span v-else-if="p.nombre_cliente" class="text-sm opacity-75 max-w-32 truncate hidden sm:inline">{{ p.nombre_cliente }}</span>
+                <span v-else class="text-sm opacity-50 hidden sm:inline">Para llevar</span>
               </div>
               
               <!-- Temporizador siempre visible -->
@@ -353,10 +429,14 @@ onUnmounted(() => {
               </span>
             </div>
             
-            <!-- Fila 2: Mesa en móvil + Acción principal -->
+            <!-- Fila 2: Mesa/Cliente en móvil + Acción principal - Layout fijo -->
             <div class="flex items-center justify-between">
-              <div v-if="p.mesa" class="text-base font-bold sm:hidden">Mesa {{ p.mesa }}</div>
-              <div v-else class="hidden sm:block"></div>
+              <!-- Contenedor fijo para mesa/cliente - evita que botones salten -->
+              <div class="min-w-0 flex-shrink-0 sm:hidden">
+                <div v-if="p.mesa" class="text-base font-bold">Mesa {{ p.mesa }}</div>
+                <div v-else-if="p.nombre_cliente" class="text-sm font-medium truncate max-w-24">{{ p.nombre_cliente }}</div>
+                <div v-else class="text-sm opacity-50">Para llevar</div>
+              </div>
               
               <!-- Botón de acción optimizado para móvil -->
               <button
@@ -392,13 +472,11 @@ onUnmounted(() => {
           <!-- Artículos táctiles para marcar individualmente -->
           <div v-if="p.estado === 'preparando'" class="grid grid-cols-1 gap-2">
             <div
-              v-for="articulo in p.articulos_pedido || []"
+              v-for="articulo in ordenarArticulosPorEstado(p.articulos_pedido || [])"
               :key="articulo.id"
               :class="[
                 'p-3 rounded-lg flex items-center justify-between transition-all cursor-pointer',
-                articulo.estado_item === 'listo' 
-                  ? 'bg-green-600 bg-opacity-50 text-green-100 line-through opacity-80' 
-                  : 'bg-slate-700 text-white hover:bg-slate-600 active:scale-95'
+                getArticuloStyles(articulo.estado_item)
               ]"
               @click="toggleArticuloEstadoOptimistic(articulo)"
             >
@@ -411,7 +489,7 @@ onUnmounted(() => {
                 </div>
               </div>
               <div class="text-xl sm:text-2xl font-bold ml-2">
-                {{ articulo.estado_item === 'listo' ? '✅' : '⭕' }}
+                {{ getArticuloIcon(articulo.estado_item) }}
               </div>
             </div>
           </div>

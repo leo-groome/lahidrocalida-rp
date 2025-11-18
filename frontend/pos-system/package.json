@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "build:analyze": "vite build && echo '🚀 Bundle analysis available at dist/bundle-analysis.html'",
+    "preview": "vite preview",
+    "bundle-size": "du -sh dist/assets/* | sort -hr"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.13",
@@ -21,7 +23,9 @@
     "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
+    "rollup-plugin-visualizer": "^6.0.5",
     "tailwindcss": "^4.1.13",
+    "terser": "^5.44.1",
     "typescript": "~5.8.3",
     "vite": "^7.1.7",
     "vue-tsc": "^3.0.7"

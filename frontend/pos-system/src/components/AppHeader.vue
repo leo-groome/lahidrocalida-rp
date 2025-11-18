@@ -5,7 +5,7 @@
         <!-- Logo y título -->
         <div class="flex items-center space-x-4">
           <div class="bg-white rounded-lg p-2 shadow-lg">
-            <img src="/src/assets/Logo.png" alt="La Hidrocálida" class="h-8 w-8" />
+            <img src="/src/assets/LogoOptimized.png" alt="La Hidrocálida" class="h-8 w-8" />
           </div>
           <div>
             <h1 class="text-xl md:text-2xl font-bold text-white">{{ title }}</h1>

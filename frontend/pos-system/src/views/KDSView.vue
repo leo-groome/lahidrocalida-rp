@@ -81,6 +81,50 @@ function getTiempoColor(fechaCreacion: string) {
   return 'bg-red-600 text-white'                           // Rojo sólido
 }
 
+function getArticuloItemStyles(estado_item: string) {
+  switch (estado_item) {
+    case 'pendiente':
+      return 'bg-black bg-opacity-60'
+    case 'preparando':
+      return 'bg-yellow-600 bg-opacity-50 border-2 border-yellow-400'
+    case 'listo':
+      return 'bg-green-600 bg-opacity-40 line-through opacity-70'
+    default:
+      return 'bg-black bg-opacity-60'
+  }
+}
+
+function getArticuloIcon(estado_item: string) {
+  switch (estado_item) {
+    case 'pendiente':
+      return '⭕'
+    case 'preparando':
+      return '🔥'
+    case 'listo':
+      return '✅'
+    default:
+      return '⭕'
+  }
+}
+
+function ordenarArticulosPorEstado(articulos: any[]) {
+  if (!articulos || articulos.length === 0) return []
+  
+  // Ordenar artículos: pendiente → preparando → listo
+  return [...articulos].sort((a, b) => {
+    const prioridadEstado = {
+      'pendiente': 1,   // Arriba - más urgentes
+      'preparando': 2,  // Medio - en proceso
+      'listo': 3        // Abajo - completados
+    }
+    
+    const prioridadA = prioridadEstado[a.estado_item] || 999
+    const prioridadB = prioridadEstado[b.estado_item] || 999
+    
+    return prioridadA - prioridadB
+  })
+}
+
 onMounted(async () => {
   if (!auth.isAuthenticated) {
     router.replace({ name: 'login' })
@@ -155,23 +199,21 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Mesa compacta -->
-        <div v-if="p.mesa" class="text-center mb-2">
-          <div class="text-lg font-bold">Mesa {{ p.mesa }}</div>
-        </div>
-        <div v-else-if="p.nombre_cliente" class="text-center mb-2">
-          <div class="text-sm font-semibold truncate">{{ p.nombre_cliente }}</div>
+        <!-- Mesa/Cliente - Layout fijo para consistencia visual -->
+        <div class="text-center mb-2 min-h-[2rem] flex items-center justify-center">
+          <div v-if="p.mesa" class="text-lg font-bold">Mesa {{ p.mesa }}</div>
+          <div v-else-if="p.nombre_cliente" class="text-sm font-semibold truncate px-2">{{ p.nombre_cliente }}</div>
+          <div v-else class="text-sm opacity-50">Para llevar</div>
         </div>
 
         <!-- Lista de platillos - fondo negro con texto blanco -->
         <div class="space-y-1">
-          <div v-for="a in p.articulos_pedido || []" :key="a.id" 
+          <div v-for="a in ordenarArticulosPorEstado(p.articulos_pedido || [])" :key="a.id" 
                :class="['p-2 rounded text-white text-sm', 
-                       a.estado_item === 'listo' 
-                         ? 'bg-green-600 bg-opacity-40 line-through opacity-70' 
-                         : 'bg-black bg-opacity-60']">
-            <div class="font-medium">
-              {{ a.cantidad }}x {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}
+                       getArticuloItemStyles(a.estado_item)]">
+            <div class="font-medium flex items-center justify-between">
+              <span>{{ a.cantidad }}x {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}</span>
+              <span class="text-lg">{{ getArticuloIcon(a.estado_item) }}</span>
             </div>
             <div v-if="a.modificaciones" class="text-xs opacity-90 mt-0.5">
               {{ a.modificaciones }}

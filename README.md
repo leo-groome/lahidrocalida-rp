@@ -72,14 +72,16 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - JWT con expiración configurable
 - Redirección automática por rol
 
-### 2. Vista de Mesero (/mesero)
-- **Toma de pedidos sin pago inicial**
-- Selección obligatoria de mesa
-- Grid de productos por categorías
-- Carrito de compras con modificaciones
-- Modal para variantes de pozole
+### 2. Vista de Mesero (/mesero) - ULTRA-OPTIMIZADA
+- **Modal inicial obligatorio** - Configura tipo de orden primero
+- **Flujo sin scrolling** - Tipo → Mesa/Nombre → Menú instantáneo
+- **Mesas tiempo real** - Ve cuáles están ocupadas automáticamente
+- **Especificaciones inmediatas** - Modal automático al clic en platillo
+- **Carrito inteligente** - Full-screen móvil con animaciones suaves
+- **36 variaciones de pozole** - Con nuevas proteínas Surtida y Mixta
+- **Cancelar pedido** - Reiniciar flujo completo en cualquier momento
 - Tipos de orden: Mesa, Llevar, UberEats
-- Envío directo a cocina
+- **Toma de pedidos sin pago inicial** - Envío directo a cocina
 
 ### 3. Kitchen Display System (KDS) - OPTIMIZADO
 - **Vista TV optimizada** (/kds-view) - Pantalla para toda la cocina
@@ -126,17 +128,22 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 
 ## 📊 Flujo Operativo
 
-### Flujo Principal (Post-Pago)
+### Flujo Principal Ultra-Optimizado (Post-Pago)
 
 ```mermaid
 graph LR
-    A[Mesero toma pedido] --> B[Selecciona mesa]
-    B --> C[Envía a cocina: PENDIENTE]
-    C --> D[Cocina: PREPARANDO]
-    D --> E[Cocina: LISTO]
-    E --> F[Mesero: ENTREGADO]
-    F --> G[Cliente solicita: CUENTA_SOLICITADA]
-    G --> H[Caja procesa: PAGADO]
+    A[Modal Inicial] --> B[Tipo Orden]
+    B --> C[Mesa/Nombre]
+    C --> D[Menú Instantáneo]
+    D --> E[Clic Platillo]
+    E --> F[Modal Especificaciones]
+    F --> G[Carrito Full-Screen]
+    G --> H[Envía: PENDIENTE]
+    H --> I[Cocina: PREPARANDO]
+    I --> J[Cocina: LISTO]
+    J --> K[Mesero: ENTREGADO]
+    K --> L[Cliente: CUENTA_SOLICITADA]
+    L --> M[Caja: PAGADO + Impresión]
 ```
 
 ### Estados del Pedido
@@ -207,16 +214,19 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 cd frontend/pos-system
-npm install
+
+# Instalar dependencias (USAR PNPM)
+pnpm install
 
 # Configurar variables de entorno
-echo "VITE_API_URL=http://localhost:8000" > .env
+cp .env.example .env
+# Editar .env con la URL correcta del backend
 
 # Ejecutar en desarrollo
-npm run dev
+pnpm run dev
 
 # Build para producción
-npm run build
+pnpm run build
 ```
 
 ### Variables de Entorno
@@ -350,4 +360,4 @@ TOTAL: $285.00
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
 **Sistema completo con Panel Admin - Enero 2025**  
-**Gestión integral: Post-pago + UX Optimizada + Reportes + Analytics + Mapa de Mesas + Auto-limpieza**
+**Gestión integral: Post-pago + MeseroView Ultra-Optimizado + UX Sin Scrolling + 36 Pozoles + Mesas Tiempo Real + Carrito Inteligente + Especificaciones Inmediatas**

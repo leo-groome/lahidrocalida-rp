@@ -34,13 +34,18 @@ Sistema de gestión de pedidos con **flujo post-pago** desarrollado específicam
 - **WebSockets** - Conexión tiempo real con fallback polling
 - **pnpm** - Gestor de paquetes (usar en este entorno)
 
+**🖨️ Sistema de Impresión:**
+- **Print Server Python** - Servidor independiente para impresoras térmicas
+- **ESC/POS Commands** - Formato profesional de tickets
+- **Multi-plataforma** - Windows y Linux soportados
+- **Integración automática** - Impresión desde CajaView
+
 ### Estructura de Directorios
 
 ```
 proyecto/
 ├── backend/                    # API FastAPI + WebSockets
 │   ├── .venv/                 # Entorno virtual Python (USAR SIEMPRE)
-│   │   └── versions/          # Archivos de migración
 │   ├── app/
 │   │   ├── core/              # Configuración
 │   │   ├── db/                # Sesión de base de datos
@@ -51,19 +56,28 @@ proyecto/
 │   │   ├── schemas.py         # Schemas Pydantic
 │   │   ├── websocket_manager.py  # Gestor WebSockets
 │   │   └── websocket_routes.py   # Rutas WebSockets
+│   ├── add_missing_categories.py # Script de utilidad para categorías
 │   └── requirements.txt       # Dependencias Python
 ├── frontend/pos-system/       # Aplicación Vue.js + WebSockets
 │   ├── src/
 │   │   ├── api/               # Cliente HTTP (Axios)
 │   │   ├── components/        # Componentes reutilizables
-│   │   ├── services/          # WebSocket service
+│   │   ├── services/          # WebSocket + Print services
 │   │   ├── stores/            # Estado Pinia (auth, pedidos)
 │   │   ├── views/             # Vistas principales del sistema
 │   │   ├── router/            # Configuración rutas
 │   │   └── types.ts           # Tipos TypeScript
 │   ├── package.json           # Dependencias Node.js
-│   └── pnpm-lock.yaml         # Lock file pnpm (USAR PNPM)
+│   ├── pnpm-lock.yaml         # Lock file pnpm (USAR PNPM)
+│   └── PERFORMANCE_OPTIMIZATIONS.md # Optimizaciones implementadas
+├── print_service/             # Sistema de Impresión Física
+│   ├── print_server.py        # Servidor de impresión independiente
+│   ├── requirements.txt       # Dependencias del print server
+│   ├── install.sh/.bat        # Scripts de instalación multi-plataforma
+│   ├── inicio_rapido.bat      # Script de inicio rápido Windows
+│   └── README.md              # Documentación de impresión
 ├── README.md                  # Documentación del proyecto
+├── MEJORAS_PROYECTO.md        # Plan detallado de mejoras futuras
 └── AGENTS.md                  # Este documento - Contexto para AI
 ```
 
@@ -105,11 +119,12 @@ proyecto/
 - `id`, `descripcion`, `monto`, `categoria`, `fecha_gasto`
 - `sucursal_id`
 
-### Migraciones Aplicadas
-- **001_add_kds_name**: Agregó campo `kds_name` a platillos
-- **002_add_estado_item**: Agregó campo `estado_item` a artículos_pedido
-- **003_add_mesa_field**: Agregó campo `mesa` a pedidos
-- **fix_numero_display_unique_constraint**: Constraint único por día/sucursal
+### Cambios de Base de Datos Aplicados
+- **Campo kds_name**: Agregado a platillos para nombres cortos en KDS
+- **Campo estado_item**: Agregado a artículos_pedido para control granular
+- **Campo mesa**: Agregado a pedidos para gestión de mesas
+- **Constraint único**: numero_display único por día/sucursal
+- **Nota**: Las migraciones se aplican directamente en models.py (no se usa Alembic)
 
 ---
 
@@ -160,10 +175,13 @@ proyecto/
 
 **2. MeseroView (/mesero)**
 - **Rol:** mesero, administrador
-- Toma de pedidos con selección obligatoria de mesa
-- Grid de categorías de platillos con colores
-- Carrito de compras con modificaciones
-- Modal para variantes de pozole
+- **Modal inicial obligatorio** - Configuración de tipo de orden al inicio
+- **Flujo optimizado**: Tipo orden → Mesa/Nombre → Menú → Especificaciones → Carrito
+- **Mesas ocupadas en tiempo real** - Visualización de disponibilidad
+- **Carrito full-screen móvil** - Máximo aprovechamiento del espacio
+- **Especificaciones inmediatas** - Modal al seleccionar cualquier platillo
+- **Pozoles completos** - 36 variaciones con 4 proteínas (Puerco/Pollo/Surtida/Mixta)
+- **Cancelar pedido** - Opción para reiniciar en cualquier momento
 - **Sin método de pago** - envío directo a cocina
 - Tipos de orden (aquí/llevar/UberEats)
 
@@ -225,7 +243,7 @@ proyecto/
 
 ## 🔧 Estado de Desarrollo
 
-## ✅ **Completado - SISTEMA COMPLETO + PANEL ADMIN + KDS OPTIMIZADO + UX MEJORADA**
+## ✅ **Completado - SISTEMA COMPLETO + PANEL ADMIN + KDS OPTIMIZADO + UX MEJORADA + IMPRESIÓN FÍSICA**
 
 **Backend Completo:**
 - ✅ Modelos de datos con flujo post-pago
@@ -247,6 +265,8 @@ proyecto/
 - ✅ **Analytics de productos** - Top 10 más vendidos
 - ✅ **Gestión de gastos** - CRUD completo con categorías
 - ✅ **Auto-marcar artículos** - Al marcar pedido como listo, todos los artículos se marcan automáticamente
+- ✅ **Configuración avanzada** - Timezone, versioning, debug mode
+- ✅ **Scripts de utilidades** - Gestión de categorías automática
 
 **Frontend Completo:**
 - ✅ Sistema de meseros para toma de pedidos
@@ -273,14 +293,30 @@ proyecto/
 - ✅ **Debug indicators** - Estado de conexión WebSocket
 - ✅ **Temporizadores KDS** - Tiempo transcurrido por pedido en tiempo real
 - ✅ **Updates optimísticos** - Performance mejorado sin loading innecesario
+- ✅ **Sistema de impresión integrado** - Impresión automática de tickets desde CajaView
+- ✅ **Performance optimizado** - Bundle size reducido 99% (logo), chunks separados
+- ✅ **Build analysis tools** - Herramientas de análisis de bundle implementadas
 - ✅ Notificaciones y feedback al usuario
 
-**Flujo Operativo Completo + Tiempo Real + Administración + UX Optimizada:**
-- ✅ Mesero toma pedidos con mesa → **Aparece instantáneamente en KDS**
+**🖨️ Sistema de Impresión Física Completo:**
+- ✅ **Print Server independiente** - Servidor Python para impresoras térmicas
+- ✅ **Formato ESC/POS** - Tickets profesionales con formato estándar
+- ✅ **Auto-impresión** - Tickets se imprimen automáticamente al procesar pago
+- ✅ **Multi-plataforma** - Scripts de instalación para Windows y Linux
+- ✅ **Notificaciones de impresión** - Feedback de éxito/error en CajaView
+- ✅ **Configuración flexible** - Servidor configurable por puerto/IP
+- ✅ **Fallback a consola** - Si no hay impresora, imprime en consola del navegador
+
+**Flujo Operativo Completo + Tiempo Real + Administración + UX Ultra-Optimizada:**
+- ✅ **Mesero: Modal inicial** → **Tipo orden → Mesa/Nombre → Menú instantáneo**
+- ✅ **Mesero: Especificaciones** → **Modal inmediato al clic platillo → Sin scrolling**
+- ✅ **Mesero: Mesas tiempo real** → **Ve ocupadas/disponibles automáticamente**
+- ✅ **Mesero: Carrito inteligente** → **Full-screen móvil, cancelar pedido**
+- ✅ **Pozoles completos** → **36 variaciones con 4 proteínas (Surtida/Mixta nuevas)**
+- ✅ Cocina recibe pedido → **Aparece instantáneamente en KDS**
 - ✅ **Cocina ve temporizadores** → **Tiempo transcurrido por pedido en tiempo real**
 - ✅ **KDS Manager optimizado** → **Control ultra-rápido en tablet sin demoras**
 - ✅ **Auto-marcar artículos** → **Al marcar pedido listo, todos los artículos se marcan**
-- ✅ Cocina gestiona preparación → **Updates en tiempo real**
 - ✅ Mesero entrega → **Notificación automática**
 - ✅ **Caja ve mapa de mesas** → **Estado visual en tiempo real**
 - ✅ **Caja hace clic en mesa** → **Ve detalles del pedido o va directo a cobrar**
@@ -289,22 +325,25 @@ proyecto/
 - ✅ **Panel de administración** → **Dashboard + reportes implementados**
 - ✅ **Reportes semanales** → **Analytics completos con métricas**
 - ✅ **Gestión de gastos** → **CRUD completo con categorías**
-- ✅ **Impresión en consola** → **Tickets se imprimen en consola del navegador**
+- ✅ **Impresión física automática** → **Tickets se imprimen en impresora térmica + fallback consola**
 
 ### **🚧 Funcionalidades Pendientes para Producción Completa**
 
 **Críticas para Producción:**
 - 📅 **Estadísticas operativas** - Rendimiento por mesero, tiempos promedio
 - 📊 **Reportes mensuales** - Analytics extendidos por mes/año
-- 🖨️ **Impresión física** - Integración con impresora térmica (opcional)
 - 🔍 **Búsqueda avanzada en caja** - Herramientas para encontrar pedidos rápidamente
+- 🔧 **Configuración de impresora UI** - Interface para configurar impresoras desde admin
+- ⌨️ **Shortcuts de teclado** - Navegación rápida para cajeros
+- 🔊 **Notificaciones sonoras** - Alertas para nueva orden en cocina
+- 🌙 **Modo oscuro** - Para uso en horarios nocturnos
 
 **Optimizaciones Necesarias:**
-- ⚡ **Performance** - Paginación, cache, optimización de queries
-- 🔧 **Configuración** - Ajustes de impresora, horarios, precios
+- ⚡ **Performance avanzado** - Paginación, cache, optimización de queries
+- 🔧 **Configuración UI** - Interface para ajustar horarios, precios desde admin
 - 📱 **Responsividad móvil** - Optimización para tablets/móviles
 - 🧪 **Testing** - Tests automatizados para estabilidad
-- 📊 **Monitoreo** - Logs, alertas, health checks
+- 📊 **Monitoreo** - Logs, alertas, health checks avanzados
 
 **Mejoras UX Importantes:**
 - ⌨️ **Shortcuts de teclado** - Navegación rápida para cajeros
@@ -313,6 +352,7 @@ proyecto/
 - ♿ **Accesibilidad** - Cumplimiento WCAG para inclusividad
 - 📱 **PWA** - Funcionalidad offline y app móvil
 - 💳 **Integración TPV** - Conexión con terminales de pago
+- 🎯 **Configuración de impresora UI** - Panel admin para gestionar impresoras
 
 ---
 
@@ -393,7 +433,8 @@ try {
 - `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration
 
 **Variables de Entorno Frontend:**
-- `VITE_API_URL`: Backend API base URL
+- `VITE_API_URL`: Backend API base URL (usa .env.example como plantilla)
+- Fallback por defecto: `http://localhost:8000`
 
 ### Puntos de Integración
 
@@ -545,9 +586,23 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Frontend (USAR pnpm obligatorio)
 cd frontend/pos-system
+cp .env.example .env  # Configurar API URL
+# Editar .env con la IP/URL correcta del backend
 pnpm install          # NO usar npm
 pnpm run dev          # NO usar npm run dev
 pnpm run build        # NO usar npm run build
+pnpm run build:analyze # Análisis de bundle size
+pnpm run bundle-size  # Ver tamaños de archivos
+
+# Print Service (Sistema de impresión)
+cd print_service
+python print_server.py --port 3001  # Puerto configurable
+# Windows: inicio_rapido.bat
+# Linux: ./start_print_service.sh
+
+# Utilidades
+cd backend
+python add_missing_categories.py  # Agregar categorías faltantes
 
 # Base de datos
 psql $DATABASE_URL
@@ -555,6 +610,7 @@ psql $DATABASE_URL
 # WebSockets test
 # Backend debe estar corriendo en :8000
 # Frontend debe estar corriendo en :5173
+# Print Service corriendo en :3001
 # WebSocket endpoint: ws://localhost:8000/ws/{tipo_usuario}
 ```
 
@@ -564,19 +620,38 @@ psql $DATABASE_URL
 - **Frontend**: SIEMPRE usar `pnpm` - No usar npm/yarn
 - **WebSockets**: Puerto 8000 backend, 5173 frontend
 - **Base de datos**: PostgreSQL en Neon Cloud (ver env vars)
+- **API URL**: Configurar en un solo lugar usando `.env.example` como plantilla
+
+### 🔧 **Configuración de IP/URL centralizada:**
+
+Para evitar cambiar la IP en múltiples lugares:
+
+1. **Copia el template**: `cp frontend/pos-system/.env.example frontend/pos-system/.env`
+2. **Edita una sola vez**: Cambia `VITE_API_URL` en `.env` según tu entorno
+3. **Ejemplos comunes**:
+   - Desarrollo: `VITE_API_URL=http://localhost:8000`
+   - Red local: `VITE_API_URL=http://192.168.1.100:8000`
+   - Testing: `VITE_API_URL=http://172.24.13.255:8000`
 
 ### Archivos críticos:
 - `app/models.py` - Modelos con campo mesa y estados
 - `app/routers/pedidos.py` - Lógica de flujo post-pago
+- `app/core/config.py` - **Configuración con timezone y versioning**
 - `app/websocket_manager.py` - **Gestor WebSockets tiempo real**
 - `app/websocket_routes.py` - **Rutas WebSocket por tipo usuario**
+- `add_missing_categories.py` - **Script utilidades para categorías**
+- `src/api/client.ts` - **Cliente HTTP con fallback localhost**
 - `src/services/websocket.ts` - **Cliente WebSocket frontend**
+- `src/services/printService.ts` - **Servicio de impresión integrado**
 - `src/stores/pedidos.ts` - **Estado global con WebSockets**
 - `src/views/MeseroView.vue` - Interface de meseros
-- `src/views/CajaView.vue` - **Interface de caja + solicitar cuenta**
+- `src/views/CajaView.vue` - **Interface de caja + impresión automática**
 - `src/views/KDSView.vue` - **Vista cocina tiempo real**
 - `src/views/KDSManager.vue` - **Gestión cocina tiempo real**
 - `src/router/index.ts` - Rutas y permisos
+- `frontend/pos-system/.env.example` - **Template de configuración**
+- `print_service/print_server.py` - **Servidor de impresión independiente**
+- `PERFORMANCE_OPTIMIZATIONS.md` - **Optimizaciones implementadas**
 
 ---
 
@@ -603,9 +678,20 @@ psql $DATABASE_URL
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + UX Mejorada + WebSockets tiempo real**
-**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Mapa de mesas inteligente + UX optimizada**
-**Pendiente: Reportes mensuales, optimizaciones, impresión física**
+**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + UX Mejorada + WebSockets tiempo real + IMPRESIÓN FÍSICA**
+**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Mapa de mesas inteligente + UX optimizada + Impresión automática**
+**Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
+**Últimos cambios:**
+- ✅ **Documentación corregida**: Eliminadas referencias a Alembic (no se usa)
+- ✅ **Comandos actualizados**: README.md ahora usa `pnpm` en lugar de `npm`
+- ✅ **Configuración centralizada**: `.env.example` para evitar cambiar IP en múltiples lugares
+- ✅ **Fallback mejorado**: client.ts usa localhost por defecto en lugar de IP hardcodeada
+- ✅ **MeseroView optimizado**: Modal inicial obligatorio, flujo ultra-rápido
+- ✅ **Carrito full-screen**: Móvil ocupa toda la pantalla con animaciones
+- ✅ **Mesas ocupadas**: Visualización tiempo real de disponibilidad
+- ✅ **Pozoles completos**: 36 variaciones con proteínas Surtida y Mixta
+- ✅ **Especificaciones inmediatas**: Modal automático al seleccionar platillo
+- ✅ **Cancelar pedido**: Opción para reiniciar flujo en cualquier momento
 **Funcionalidades nuevas:** 
 - **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
 - **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)
@@ -617,4 +703,8 @@ psql $DATABASE_URL
 - **KDS Manager ultra-optimizado** para tablet con updates instantáneos sin loading
 - **Auto-marcar artículos** cuando se marca pedido como listo
 - **Performance mejorado** eliminando refrescos innecesarios
+- **🖨️ Sistema de impresión física completo** - Print server + integración frontend
+- **📦 Bundle optimization** - Size reducido 99% con chunks inteligentes
+- **🔧 Scripts de utilidades** - Gestión automática de categorías
+- **⚙️ Configuración avanzada** - Timezone, versioning, debug mode
 **Mantenido por: AI Agents & Development Team**

@@ -6,6 +6,7 @@ Escucha en puerto 3001 y maneja impresora térmica ESC/POS
 
 import json
 import sys
+import traceback
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -207,12 +208,12 @@ def print_to_device(data, device_path='/dev/usb/lp0'):
                     logger.warning(f"❌ No se pudo imprimir en {port}: {e}")
                     continue
         else:
-            # Linux/Mac
-            possible_devices = ['/dev/usb/lp0', '/dev/ttyUSB0', '/dev/ttyACM0']
+            # Linux/Mac - usar modo binario para comandos ESC/POS
+            possible_devices = ['/dev/usb/lp0', '/dev/ttyUSB0', '/dev/ttyACM0', '/dev/lp0']
             for device in possible_devices:
                 try:
-                    with open(device, 'w') as printer:
-                        printer.write(data)
+                    with open(device, 'wb') as printer:
+                        printer.write(data.encode('cp437', errors='replace'))
                     logger.info(f"✅ Impreso exitosamente en {device}")
                     return True
                 except Exception as e:
@@ -234,6 +235,70 @@ def health_check():
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/test-format', methods=['POST'])
+def test_format():
+    """Endpoint de test para verificar comandos ESC/POS"""
+    try:
+        logger.info("🧪 Ejecutando test de formato ESC/POS...")
+        
+        # Ticket de prueba simple
+        test_data = {
+            "numero_display": "TEST",
+            "mesa": "99",
+            "nombre_cliente": "Test Format",
+            "articulos": [
+                {
+                    "cantidad": 1,
+                    "nombre": "Pozole Test",
+                    "precio": 50.00,
+                    "modificaciones": "Sin cebolla, extra chile"
+                }
+            ],
+            "total": 50.00
+        }
+        
+        # Generar comandos
+        escpos_data = generate_escpos_commands(test_data)
+        
+        # Log detallado
+        logger.info(f"📏 Test - Longitud: {len(escpos_data)} chars")
+        
+        # Verificar comandos específicos
+        commands_check = {
+            "INIT \\x1b@": '\x1b@' in escpos_data,
+            "BOLD_ON \\x1bE1": '\x1bE1' in escpos_data,
+            "BOLD_OFF \\x1bE0": '\x1bE0' in escpos_data,
+            "CENTER \\x1ba1": '\x1ba1' in escpos_data,
+            "LEFT \\x1ba0": '\x1ba0' in escpos_data,
+            "DOUBLE_BOTH \\x1d!11": '\x1d!11' in escpos_data,
+            "NORMAL_SIZE \\x1d!00": '\x1d!00' in escpos_data,
+            "CUT \\x1dV1": '\x1dV1' in escpos_data,
+        }
+        
+        for cmd, found in commands_check.items():
+            status = "✅" if found else "❌"
+            logger.info(f"   {status} {cmd}: {'ENCONTRADO' if found else 'FALTANTE'}")
+        
+        # Intentar impresión de test
+        success = print_to_device(escpos_data)
+        
+        return jsonify({
+            "status": "success" if success else "error",
+            "message": "Test de formato completado",
+            "commands_found": sum(commands_check.values()),
+            "commands_total": len(commands_check),
+            "print_success": success,
+            "data_length": len(escpos_data),
+            "commands_detail": commands_check
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error en test de formato: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error en test: {str(e)}"
+        }), 500
+
 @app.route('/print', methods=['POST'])
 def print_ticket():
     """Endpoint principal para imprimir tickets"""
@@ -244,34 +309,107 @@ def print_ticket():
         if not ticket_data:
             return jsonify({"error": "No se recibieron datos del ticket"}), 400
         
+        # Validaciones básicas
+        required_fields = ['numero_display', 'total']
+        missing_fields = [field for field in required_fields if not ticket_data.get(field)]
+        if missing_fields:
+            return jsonify({
+                "error": f"Campos requeridos faltantes: {', '.join(missing_fields)}"
+            }), 400
+        
         logger.info(f"📄 Procesando impresión del pedido #{ticket_data.get('numero_display', 'N/A')}")
         
         # Generar comandos ESC/POS
         escpos_data = generate_escpos_commands(ticket_data)
         
+        # Log del ticket generado para debugging
+        logger.info(f"📏 Longitud del ticket: {len(escpos_data)} caracteres")
+        logger.info("🔍 Comandos ESC/POS detectados:")
+        
+        # Verificar comandos ESC/POS en el ticket
+        escpos_commands_found = []
+        if '\x1b@' in escpos_data:
+            escpos_commands_found.append("INIT")
+        if '\x1bE1' in escpos_data:
+            escpos_commands_found.append("BOLD_ON")
+        if '\x1bE0' in escpos_data:
+            escpos_commands_found.append("BOLD_OFF")
+        if '\x1ba1' in escpos_data:
+            escpos_commands_found.append("CENTER")
+        if '\x1ba0' in escpos_data:
+            escpos_commands_found.append("LEFT")
+        if '\x1d!11' in escpos_data:
+            escpos_commands_found.append("DOUBLE_BOTH")
+        if '\x1dV1' in escpos_data:
+            escpos_commands_found.append("CUT")
+            
+        logger.info(f"   {', '.join(escpos_commands_found) if escpos_commands_found else 'NINGUNO DETECTADO'}")
+        
+        # Mostrar primeras líneas del ticket (solo texto visible)
+        visible_lines = escpos_data.replace('\x1b', '[ESC]').replace('\x1d', '[GS]').split('\n')[:10]
+        logger.info("📝 Primeras líneas del ticket:")
+        for i, line in enumerate(visible_lines, 1):
+            if line.strip():
+                logger.info(f"   {i}: {line[:50]}")
+        
+        if app.debug:
+            logger.debug("🔧 Ticket completo (con comandos de control):")
+            logger.debug(repr(escpos_data))
+        
         # Intentar imprimir
         success = print_to_device(escpos_data)
         
         if success:
-            logger.info("🖨️ Ticket impreso exitosamente")
+            logger.info("🖨️ Ticket impreso exitosamente en impresora térmica")
             return jsonify({
                 "status": "success",
                 "message": "Ticket impreso exitosamente",
-                "pedido": ticket_data.get('numero_display', 'N/A')
+                "method": "thermal_printer",
+                "pedido": ticket_data.get('numero_display', 'N/A'),
+                "timestamp": datetime.now().isoformat()
             })
         else:
-            logger.error("❌ No se pudo imprimir el ticket")
+            # Si falla la impresión, log detallado pero respuesta simple
+            logger.warning("⚠️ Impresora térmica no disponible - datos guardados para reintento")
+            
+            # Guardar ticket para reintento posterior (opcional)
+            save_failed_ticket(ticket_data)
+            
             return jsonify({
                 "status": "error", 
-                "message": "No se pudo acceder a la impresora"
-            }), 500
+                "message": "Impresora térmica no disponible",
+                "fallback_required": True,
+                "pedido": ticket_data.get('numero_display', 'N/A')
+            }), 503  # Service Unavailable
             
     except Exception as e:
         logger.error(f"❌ Error en impresión: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        
         return jsonify({
             "status": "error",
-            "message": f"Error interno: {str(e)}"
+            "message": "Error interno del servidor de impresión",
+            "fallback_required": True,
+            "details": str(e) if app.debug else "Error interno"
         }), 500
+
+def save_failed_ticket(ticket_data):
+    """Guarda tickets fallidos para reintento posterior"""
+    try:
+        import os
+        failed_dir = "failed_tickets"
+        if not os.path.exists(failed_dir):
+            os.makedirs(failed_dir)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{failed_dir}/ticket_{ticket_data.get('numero_display', 'unknown')}_{timestamp}.json"
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(ticket_data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"💾 Ticket guardado para reintento: {filename}")
+    except Exception as e:
+        logger.warning(f"No se pudo guardar ticket fallido: {e}")
 
 @app.route('/test', methods=['POST'])
 def test_print():

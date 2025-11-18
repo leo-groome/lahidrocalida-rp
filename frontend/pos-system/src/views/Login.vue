@@ -50,7 +50,7 @@ async function onSubmit() {
   <div class="min-h-screen flex items-center justify-center bg-[#FFFFFF]">
     <div class="w-full max-w-sm p-8 rounded-xl shadow border border-gray-100">
       <div class="flex flex-col items-center gap-3 mb-6">
-        <img src="/src/assets/Logo.png" alt="Logo" class="h-14" />
+        <img src="/src/assets/LogoOptimized.png" alt="Logo" class="h-14" />
         <h1 class="text-2xl font-semibold text-[#00126D]">Iniciar sesión</h1>
       </div>
       <form @submit.prevent="onSubmit" class="space-y-4">

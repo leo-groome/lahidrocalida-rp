@@ -6,6 +6,7 @@ import { usePedidosStore } from '../stores/pedidos'
 import type { PedidoResponse } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
 import api from '@/api/client'
+import printService from '@/services/printService'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -399,44 +400,39 @@ const cerrarCalculadoraEfectivo = () => {
   cambioCalculado.value = 0
 }
 
-// Función para imprimir ticket (solo consola)
+// Función para imprimir ticket (impresora térmica + fallbacks)
 const imprimirTicket = async (pedido: PedidoResponse) => {
   try {
+    console.log('🖨️ Iniciando proceso de impresión de ticket...')
+    
     // Asegurar que tenemos los artículos del pedido
     const pedidoCompleto = await getPedidoCompleto(pedido.id)
     if (!pedidoCompleto) throw new Error('Pedido no encontrado para impresión')
 
-    // Imprimir en consola
-    console.log('=== IMPRIMIENDO TICKET ===')
-    console.log('Pozolería La Hidrocálida')
-    console.log('==========================')
-    console.log(`Pedido: #${pedido.numero_display}`)
-    console.log(`Fecha: ${new Date().toLocaleString('es-MX')}`)
-    if (pedido.mesa) console.log(`Mesa: ${pedido.mesa}`)
-    if (pedido.nombre_cliente) console.log(`Cliente: ${pedido.nombre_cliente}`)
-    console.log('==========================')
+    // Usar el servicio de impresión con fallbacks automáticos
+    const result = await printService.printTicket(pedidoCompleto)
     
-    if (pedidoCompleto?.articulos_pedido) {
-      pedidoCompleto.articulos_pedido.forEach((articulo) => {
-        const nombre = articulo.platillo?.nombre || 'Producto'
-        const cantidad = articulo.cantidad
-        const precio = Number(articulo.precio_cobrado).toFixed(2)
-        console.log(`${cantidad}x ${nombre} - $${precio}`)
-        if (articulo.modificaciones) console.log(`   ${articulo.modificaciones}`)
-      })
+    if (result.success) {
+      console.log(`✅ Ticket impreso exitosamente usando: ${result.method}`)
+      
+      // Mostrar notificación al usuario sobre el método usado
+      if (result.method === 'Impresora térmica ESC/POS') {
+        // No mostrar notificación para impresora térmica, es el flujo esperado
+      } else {
+        // Para fallbacks, mostrar breve notificación informativa
+        showSuccessNotification(`Ticket generado (${result.method})`)
+      }
+    } else {
+      throw new Error(result.error || 'Error desconocido en impresión')
     }
-    console.log('==========================')
-    console.log(`TOTAL: $${Number(pedido.total).toFixed(2)}`)
-    console.log('==========================')
-    console.log('¡Gracias por su visita!')
-    console.log('=== FIN TICKET ===')
     
-    // Simula impresión
-    await new Promise(resolve => setTimeout(resolve, 800))
-    console.log('🖨️ Ticket impreso en consola')
   } catch (e: any) {
-    console.error('❌ Error al imprimir ticket:', e.message)
-    throw e
+    console.error('❌ Error en proceso de impresión:', e.message)
+    
+    // En caso de error total, mostrar mensaje pero no fallar el flujo
+    showErrorNotification('Error en impresión, verifique la impresora')
+    
+    // No lanzar error para no interrumpir el flujo de solicitar cuenta
   }
 }
 

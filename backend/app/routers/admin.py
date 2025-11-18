@@ -234,8 +234,57 @@ def get_weekly_report(
         )
     ).scalar() or Decimal('0.00')
     
+    # === NUEVAS MÉTRICAS DETALLADAS ===
+    
+    # Gastos por categoría
+    gastos_por_categoria = db.query(
+        Gasto.categoria,
+        func.sum(Gasto.monto).label('total')
+    ).filter(
+        and_(
+            func.date(Gasto.fecha_gasto) >= tuesday,
+            func.date(Gasto.fecha_gasto) <= sunday,
+            Gasto.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(Gasto.categoria).all()
+    
+    # Análisis por tipo de orden
+    tipos_orden = db.query(
+        Pedido.tipo_orden,
+        func.count(Pedido.id).label('cantidad'),
+        func.sum(Pedido.total).label('ingresos')
+    ).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) >= tuesday,
+            func.date(Pedido.fecha_creacion) <= sunday,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(Pedido.tipo_orden).all()
+    
+    # Análisis de cancelaciones (todos los pedidos de la semana)
+    total_pedidos_creados = db.query(Pedido).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) >= tuesday,
+            func.date(Pedido.fecha_creacion) <= sunday,
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).count()
+    
+    pedidos_cancelados = db.query(Pedido).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) >= tuesday,
+            func.date(Pedido.fecha_creacion) <= sunday,
+            Pedido.estado == "cancelado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).count()
+    
+    tasa_cancelacion = (pedidos_cancelados / total_pedidos_creados * 100) if total_pedidos_creados > 0 else 0
+    
     total_ingresos = efectivo_total + tarjeta_total + transferencia_total
     utilidad_bruta = total_ingresos - gastos_total
+    promedio_ticket = float(total_ingresos / total_pedidos) if total_pedidos > 0 else 0
     
     return {
         "periodo": {
@@ -243,7 +292,13 @@ def get_weekly_report(
             "fin": sunday.isoformat(),
             "descripcion": f"Semana del {tuesday.strftime('%d/%m/%Y')} al {sunday.strftime('%d/%m/%Y')}"
         },
-        "total_pedidos": total_pedidos,
+        "resumen": {
+            "total_pedidos": total_pedidos,
+            "total_pedidos_creados": total_pedidos_creados,
+            "pedidos_cancelados": pedidos_cancelados,
+            "tasa_cancelacion": round(tasa_cancelacion, 2),
+            "promedio_ticket": round(promedio_ticket, 2)
+        },
         "ingresos": {
             "efectivo": float(efectivo_total),
             "tarjeta": float(tarjeta_total),
@@ -251,8 +306,26 @@ def get_weekly_report(
             "total": float(total_ingresos)
         },
         "gastos": {
-            "total": float(gastos_total)
+            "total": float(gastos_total),
+            "por_categoria": [
+                {
+                    "categoria": categoria,
+                    "total": float(total),
+                    "porcentaje": round(float(total) / float(gastos_total) * 100, 2) if gastos_total > 0 else 0
+                }
+                for categoria, total in gastos_por_categoria
+            ]
         },
+        "analisis_tipos_orden": [
+            {
+                "tipo": tipo,
+                "cantidad": int(cantidad),
+                "ingresos": float(ingresos),
+                "porcentaje_pedidos": round(int(cantidad) / total_pedidos * 100, 2) if total_pedidos > 0 else 0,
+                "porcentaje_ingresos": round(float(ingresos) / float(total_ingresos) * 100, 2) if total_ingresos > 0 else 0
+            }
+            for tipo, cantidad, ingresos in tipos_orden
+        ],
         "utilidad_bruta": float(utilidad_bruta),
         "productos_mas_vendidos": [
             {"nombre": nombre, "cantidad": int(cantidad)}
@@ -262,7 +335,8 @@ def get_weekly_report(
             {
                 "fecha": fecha.isoformat(),
                 "total": float(total),
-                "pedidos": int(pedidos)
+                "pedidos": int(pedidos),
+                "promedio_ticket_dia": round(float(total) / int(pedidos), 2) if pedidos > 0 else 0
             }
             for fecha, total, pedidos in ventas_por_dia
         ]

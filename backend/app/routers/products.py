@@ -81,3 +81,76 @@ def get_platillos_ordenados_popularidad(
     return [platillo for platillo, _ in platillos_con_popularidad]
 
 
+@router.get("/{platillo_id}", response_model=PlatilloResponse)
+def get_platillo(
+    platillo_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
+    if not platillo:
+        raise HTTPException(status_code=404, detail="Platillo no encontrado")
+    return platillo
+
+
+@router.put("/{platillo_id}", response_model=PlatilloResponse)
+def update_platillo(
+    platillo_id: int,
+    data: PlatilloCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    # Solo admin puede actualizar platillos
+    if current_user.rol != "administrador":
+        raise HTTPException(status_code=403, detail="No autorizado para actualizar platillos")
+
+    platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
+    if not platillo:
+        raise HTTPException(status_code=404, detail="Platillo no encontrado")
+
+    # Actualizar campos
+    platillo.nombre = data.nombre
+    platillo.descripcion = data.descripcion
+    platillo.precio = data.precio
+    platillo.categoria = data.categoria
+    platillo.estado = data.estado
+    
+    # Generar kds_name si no se proporciona
+    if hasattr(data, 'kds_name') and data.kds_name:
+        platillo.kds_name = data.kds_name
+    else:
+        platillo.kds_name = data.nombre[:20]  # Truncar a 20 caracteres
+
+    db.commit()
+    db.refresh(platillo)
+    return platillo
+
+
+@router.delete("/{platillo_id}")
+def delete_platillo(
+    platillo_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    # Solo admin puede eliminar platillos
+    if current_user.rol != "administrador":
+        raise HTTPException(status_code=403, detail="No autorizado para eliminar platillos")
+
+    platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
+    if not platillo:
+        raise HTTPException(status_code=404, detail="Platillo no encontrado")
+
+    # Verificar si tiene pedidos asociados
+    pedidos_count = db.query(ArticuloPedido).filter(ArticuloPedido.platillo_id == platillo_id).count()
+    if pedidos_count > 0:
+        # En lugar de eliminar, cambiar estado a no_disponible
+        platillo.estado = "no_disponible"
+        db.commit()
+        return {"message": "Platillo marcado como no disponible (tiene pedidos asociados)"}
+    
+    # Si no tiene pedidos, eliminar completamente
+    db.delete(platillo)
+    db.commit()
+    return {"message": "Platillo eliminado correctamente"}
+
+

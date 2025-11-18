@@ -433,10 +433,10 @@ async def update_articulo_estado(
         )
     
     # Validar estado
-    if data.estado_item not in ["pendiente", "listo"]:
+    if data.estado_item not in ["pendiente", "preparando", "listo"]:
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, listo"
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo"
         )
     
     # Actualizar estado del artículo

@@ -27,9 +27,24 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/4] Creando acceso directo...
+echo [3/4] Creando archivos de control...
 echo @echo off > start_print_service.bat
-echo echo Iniciando servicio de impresion La Hidrocalida... >> start_print_service.bat
+echo title Servicio de Impresion - La Hidrocalida >> start_print_service.bat
+echo echo ======================================== >> start_print_service.bat
+echo echo   SERVICIO DE IMPRESION - LA HIDROCALIDA >> start_print_service.bat
+echo echo ======================================== >> start_print_service.bat
+echo echo. >> start_print_service.bat
+echo echo Verificando puerto 3001... >> start_print_service.bat
+echo netstat -an ^| find "3001" ^>nul >> start_print_service.bat
+echo if not errorlevel 1 ^( >> start_print_service.bat
+echo     echo Cerrando servicio anterior... >> start_print_service.bat
+echo     taskkill /f /im python.exe ^>nul 2^>^&1 >> start_print_service.bat
+echo     timeout /t 2 /nobreak ^>nul >> start_print_service.bat
+echo ^) >> start_print_service.bat
+echo echo Iniciando servidor en puerto 3001... >> start_print_service.bat
+echo echo Endpoint: http://localhost:3001 >> start_print_service.bat
+echo echo Presiona Ctrl+C para detener >> start_print_service.bat
+echo echo. >> start_print_service.bat
 echo python print_server.py >> start_print_service.bat
 echo pause >> start_print_service.bat
 

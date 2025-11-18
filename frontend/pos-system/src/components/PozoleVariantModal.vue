@@ -20,26 +20,25 @@ const selectedTamaño = ref<string | null>(null)
 const selectedProteína = ref<string | null>(null)
 
 const tamaños = ['Infantil', 'Regular', 'Grande']
-const proteínas = ['Puerco', 'Pollo']
+const proteínas = ['Puerco', 'Pollo', 'Surtida', 'Mixta']
 
 const tamañosDisponibles = computed(() => {
   return tamaños.filter(t => 
-    props.platillos.some(p => p.nombre.includes(t))
+    props.platillos.some(p => p.nombre.includes(`Pozole ${t} ${props.color}`))
   )
 })
 
 const proteínasDisponibles = computed(() => {
   return proteínas.filter(p => 
-    props.platillos.some(pl => pl.nombre.includes(p))
+    props.platillos.some(pl => pl.nombre.includes(`${props.color} ${p}`))
   )
 })
 
 const selectedPlatillo = computed(() => {
   if (!selectedTamaño.value || !selectedProteína.value) return null
-  return props.platillos.find(p => 
-    p.nombre.includes(selectedTamaño.value!) && 
-    p.nombre.includes(selectedProteína.value!)
-  )
+  // Buscar por formato exacto: "Pozole [Tamaño] [Color] [Proteína]"
+  const nombreBuscado = `Pozole ${selectedTamaño.value} ${props.color} ${selectedProteína.value}`
+  return props.platillos.find(p => p.nombre === nombreBuscado)
 })
 
 function handleSelect() {
