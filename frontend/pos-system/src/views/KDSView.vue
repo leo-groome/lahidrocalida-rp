@@ -12,7 +12,20 @@ const pedidosStore = usePedidosStore()
 const timerTick = ref(0)
 
 const todasLasComandas = computed(() => {
+  // Filtrar solo pedidos pendientes y preparando, limitados a 4, más antiguos primero
   return pedidosStore.pedidosKDS
+    .filter(p => ['pendiente', 'preparando'].includes(p.estado))
+    .sort((a, b) => new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime())
+    .slice(0, 4)
+})
+
+const totalPedidosPendientes = computed(() => {
+  return pedidosStore.pedidosKDS
+    .filter(p => ['pendiente', 'preparando'].includes(p.estado)).length
+})
+
+const pedidosNoVisibles = computed(() => {
+  return Math.max(0, totalPedidosPendientes.value - 4)
 })
 
 function getEstadoColor(estado: string) {
@@ -88,7 +101,7 @@ function getArticuloItemStyles(estado_item: string) {
     case 'preparando':
       return 'bg-yellow-600 bg-opacity-50 border-2 border-yellow-400'
     case 'listo':
-      return 'bg-green-600 bg-opacity-40 line-through opacity-70'
+      return 'bg-green-600 bg-opacity-60 border-2 border-green-300 shadow-lg'
     default:
       return 'bg-black bg-opacity-60'
   }
@@ -182,40 +195,96 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-900 p-2">
-    <!-- Grid optimizado para TV - más comandas visibles -->
-    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
+  <div class="min-h-screen bg-slate-900 p-4">
+    <!-- Indicador de pedidos no visibles -->
+    <div v-if="pedidosNoVisibles > 0" 
+         class="fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-xl font-black text-2xl shadow-2xl border-4 border-white animate-pulse z-50">
+      +{{ pedidosNoVisibles }} más pendientes
+    </div>
+
+    <!-- Grid adaptativo - máximo 4 pedidos, mejor legibilidad -->
+    <div class="grid gap-6" :class="{
+      'grid-cols-1': todasLasComandas.length <= 1,
+      'grid-cols-2': todasLasComandas.length === 2,
+      'grid-cols-3': todasLasComandas.length === 3,
+      'grid-cols-2 lg:grid-cols-4': todasLasComandas.length === 4
+    }">
       <div v-for="p in todasLasComandas" :key="p.id" 
-           :class="['rounded-lg p-3 text-white shadow-lg', getEstadoColor(p.estado)]">
+           :class="['rounded-xl p-4 text-white shadow-2xl border-4 border-white border-opacity-30', getEstadoColor(p.estado)]">
         
-        <!-- Header compacto: emoji + número + temporizador -->
+        <!-- Header: temporizador + mesa + emoji centrado -->
         <div class="flex items-center justify-between mb-2">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
-            <span class="text-2xl font-black">{{ p.numero_display }}</span>
-          </div>
-          <div :class="['px-2 py-1 rounded-full text-xs font-bold', getTiempoColor(p.fecha_creacion)]">
+          <!-- Temporizador (izquierda) -->
+          <div :class="['px-3 py-2 rounded-full font-black shadow-lg border-2 border-white border-opacity-50', 
+                       getTiempoColor(p.fecha_creacion), {
+                         'text-xl': todasLasComandas.length <= 2,
+                         'text-lg': todasLasComandas.length === 3,
+                         'text-base': todasLasComandas.length >= 4
+                       }]">
             {{ calcularTiempoTranscurrido(p.fecha_creacion) }}
           </div>
-        </div>
 
-        <!-- Mesa/Cliente - Layout fijo para consistencia visual -->
-        <div class="text-center mb-2 min-h-[2rem] flex items-center justify-center">
-          <div v-if="p.mesa" class="text-lg font-bold">Mesa {{ p.mesa }}</div>
-          <div v-else-if="p.nombre_cliente" class="text-sm font-semibold truncate px-2">{{ p.nombre_cliente }}</div>
-          <div v-else class="text-sm opacity-50">Para llevar</div>
-        </div>
-
-        <!-- Lista de platillos - fondo negro con texto blanco -->
-        <div class="space-y-1">
-          <div v-for="a in ordenarArticulosPorEstado(p.articulos_pedido || [])" :key="a.id" 
-               :class="['p-2 rounded text-white text-sm', 
-                       getArticuloItemStyles(a.estado_item)]">
-            <div class="font-medium flex items-center justify-between">
-              <span>{{ a.cantidad }}x {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}</span>
-              <span class="text-lg">{{ getArticuloIcon(a.estado_item) }}</span>
+          <!-- Mesa/Nombre (centro - más grande) -->
+          <div class="text-center flex-1 px-2">
+            <div v-if="p.mesa" 
+                 :class="['font-black text-white', {
+                   'text-4xl': todasLasComandas.length <= 2,
+                   'text-3xl': todasLasComandas.length === 3,
+                   'text-2xl': todasLasComandas.length >= 4
+                 }]">
+              MESA {{ p.mesa }}
             </div>
-            <div v-if="a.modificaciones" class="text-xs opacity-90 mt-0.5">
+            <div v-else-if="p.nombre_cliente" 
+                 :class="['font-black text-white leading-tight', {
+                   'text-3xl': todasLasComandas.length <= 2,
+                   'text-2xl': todasLasComandas.length === 3,
+                   'text-xl': todasLasComandas.length >= 4
+                 }]">
+              {{ p.nombre_cliente.toUpperCase() }}
+            </div>
+            <div v-else 
+                 :class="['font-bold text-yellow-300', {
+                   'text-2xl': todasLasComandas.length <= 2,
+                   'text-xl': todasLasComandas.length === 3,
+                   'text-lg': todasLasComandas.length >= 4
+                 }]">
+              PARA LLEVAR
+            </div>
+          </div>
+
+          <!-- Solo emoji tipo de orden (derecha - centrado) -->
+          <div class="flex justify-center">
+            <span :class="{
+              'text-5xl': todasLasComandas.length <= 2,
+              'text-4xl': todasLasComandas.length === 3,
+              'text-3xl': todasLasComandas.length >= 4
+            }">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
+          </div>
+        </div>
+
+        <!-- Lista de artículos - FONT MÁXIMO PARA 8 METROS -->
+        <div class="space-y-2">
+          <div v-for="a in ordenarArticulosPorEstado(p.articulos_pedido || [])" :key="a.id" 
+               :class="['p-3 rounded-lg text-white border-2 border-white border-opacity-30', 
+                       getArticuloItemStyles(a.estado_item)]">
+            <!-- Platillo principal - FONT GIGANTE -->
+            <div class="font-black flex items-center justify-between"
+                 :class="{
+                   'text-4xl': todasLasComandas.length <= 2,
+                   'text-3xl': todasLasComandas.length === 3,
+                   'text-2xl': todasLasComandas.length >= 4
+                 }">
+              <span class="leading-tight">{{ a.cantidad }}x {{ a.platillo?.kds_name || a.platillo?.nombre || 'Platillo' }}</span>
+              <span class="text-5xl ml-2 flex-shrink-0">{{ getArticuloIcon(a.estado_item) }}</span>
+            </div>
+            <!-- Modificaciones - FONT GRANDE -->
+            <div v-if="a.modificaciones" 
+                 class="mt-1 font-bold leading-snug bg-yellow-900 bg-opacity-60 p-2 rounded border-l-4 border-yellow-400"
+                 :class="{
+                   'text-2xl': todasLasComandas.length <= 2,
+                   'text-xl': todasLasComandas.length === 3,
+                   'text-lg': todasLasComandas.length >= 4
+                 }">
               {{ a.modificaciones }}
             </div>
           </div>
@@ -223,15 +292,15 @@ onUnmounted(() => {
       </div>
 
       <!-- Estados vacíos -->
-      <div v-if="pedidosStore.loading" class="col-span-full text-center py-16 text-white">
-        <p class="text-5xl mb-3">⏳</p>
-        <p class="text-xl font-bold">Cargando...</p>
+      <div v-if="pedidosStore.loading" class="col-span-full text-center py-20 text-white">
+        <p class="text-8xl mb-6">⏳</p>
+        <p class="text-4xl font-bold">Cargando comandas...</p>
       </div>
 
-      <div v-else-if="todasLasComandas.length === 0" class="col-span-full text-center py-16 text-white">
-        <p class="text-5xl mb-3">✨</p>
-        <p class="text-xl font-bold">¡Todo listo!</p>
-        <p class="text-sm opacity-75 mt-1">Sin comandas pendientes</p>
+      <div v-else-if="todasLasComandas.length === 0" class="col-span-full text-center py-20 text-white">
+        <p class="text-8xl mb-6">✨</p>
+        <p class="text-4xl font-bold">¡Todo listo!</p>
+        <p class="text-xl opacity-75 mt-3">Sin comandas pendientes o en preparación</p>
       </div>
     </div>
   </div>

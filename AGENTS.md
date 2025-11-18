@@ -6,7 +6,7 @@
 
 Sistema de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El **flujo operativo está completo** con WebSockets en tiempo real, pero faltan funcionalidades adicionales para producción completa.
 
-**Estado Actual: SISTEMA COMPLETO - Panel Admin + WebSockets + Reportes implementados**
+**Estado Actual: SISTEMA COMPLETO - Panel Admin + WebSockets + Reportes + KDS Optimizado para TV/Tablet**
 
 ---
 
@@ -196,24 +196,33 @@ proyecto/
 - **Debug indicators** - Estado conexión WebSocket (🟢/🟡)
 - Total de pedidos pendientes en tiempo real
 
-**4. KDS View (/kds-view)**
+**4. KDS View (/kds-view) - OPTIMIZADO TV 8 METROS**
 - **Rol:** cocina, administrador
-- Vista de solo lectura para pantallas de cocina
-- Muestra números de mesa y nombres de cliente
-- Estados visuales expandidos con colores distintivos
-- **WebSocket tiempo real** - Updates instantáneos
+- **Vista TV optimizada** para pantallas de cocina a 8 metros de distancia
+- **Mesa/Nombre como punto focal** - Texto gigante (text-4xl) para máxima visibilidad
+- **Máximo 4 pedidos** en pantalla para evitar saturación
+- **Indicador de urgencia** - Badge rojo con pedidos no visibles (+X más pendientes)
+- **Artículos con texto GIGANTE** - text-4xl/3xl/2xl escalado por cantidad
+- **Modificaciones destacadas** - Fondo amarillo, texto XL para legibilidad
+- **Sin tachado** en artículos listos - Completamente legibles
+- **Temporizadores prominentes** - Tiempo transcurrido en tiempo real
+- **Emojis grandes** - text-5xl/4xl/3xl para tipo de orden
+- **WebSocket tiempo real** - Updates instantáneos sin polling
 - **Fallback polling** - 3 segundos si WebSocket falla
-- Indicadores por tipo de orden (emojis)
 
-**5. KDS Manager (/kds-manager)**
+**5. KDS Manager (/kds-manager) - OPTIMIZADO TABLET/MÓVIL**
 - **Rol:** cocina, administrador
-- Gestión activa de pedidos de cocina
-- Cambio de estados con permisos por rol
-- Control individual de artículos
-- Información de mesa/cliente contextual
-- Filtrado por estados
+- **Gestión táctil** optimizada para tablet y dispositivos móviles
+- **Mesa/Nombre prominentes** - text-2xl/xl desktop, text-xl/lg móvil
+- **Artículos ULTRA-legibles** - text-lg/xl/2xl para uso en tablet
+- **Modificaciones grandes** - text-base/lg/xl con fondo destacado
+- **Sin tachado** en artículos listos - Texto completamente visible
+- **Botones táctiles** grandes para cambio de estados
+- **Íconos grandes** - text-3xl/4xl para estados de artículos
+- **Filtrado rápido** por estados con contadores en tiempo real
+- **Layout responsivo** - Optimizado para móvil y tablet
 - **WebSocket tiempo real** - Actualizaciones instantáneas
-- **Notificaciones automáticas** - Nuevos pedidos y cambios
+- **Control granular** de artículos individuales
 
 ### ✅ Características Técnicas
 
@@ -271,8 +280,8 @@ proyecto/
 **Frontend Completo:**
 - ✅ Sistema de meseros para toma de pedidos
 - ✅ Vista de caja para procesar pagos + **solicitar cuenta**
-- ✅ **KDS View optimizado** - Vista TV para cocina con temporizadores en tiempo real
-- ✅ **KDS Manager optimizado** - Herramienta de control ultra-rápida para tablet
+- ✅ **KDS View ULTRA-OPTIMIZADO** - Vista TV para 8 metros con texto gigante y máximo 4 pedidos
+- ✅ **KDS Manager ULTRA-OPTIMIZADO** - Tablet/móvil con artículos legibles y sin tachado
 - ✅ **Panel de Administración** - Dashboard completo con reportes
 - ✅ **Vista Dashboard** - Métricas del día en tiempo real
 - ✅ **Reportes Semanales** - Analytics por período configurable
@@ -315,7 +324,9 @@ proyecto/
 - ✅ **Pozoles completos** → **36 variaciones con 4 proteínas (Surtida/Mixta nuevas)**
 - ✅ Cocina recibe pedido → **Aparece instantáneamente en KDS**
 - ✅ **Cocina ve temporizadores** → **Tiempo transcurrido por pedido en tiempo real**
-- ✅ **KDS Manager optimizado** → **Control ultra-rápido en tablet sin demoras**
+- ✅ **KDS View ULTRA-optimizado** → **Vista TV legible desde 8 metros con máximo 4 pedidos**
+- ✅ **KDS Manager ULTRA-optimizado** → **Tablet/móvil con texto gigante sin tachado**
+- ✅ **Indicador de urgencia** → **Badge rojo mostrando pedidos no visibles (+X más)**
 - ✅ **Auto-marcar artículos** → **Al marcar pedido listo, todos los artículos se marcan**
 - ✅ Mesero entrega → **Notificación automática**
 - ✅ **Caja ve mapa de mesas** → **Estado visual en tiempo real**
@@ -678,20 +689,20 @@ Para evitar cambiar la IP en múltiples lugares:
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS Optimizado + UX Mejorada + WebSockets tiempo real + IMPRESIÓN FÍSICA**
-**Flujo: Post-pago + Dashboard + Reportes + KDS ultra-rápido + Mapa de mesas inteligente + UX optimizada + Impresión automática**
+**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO para TV/Tablet + WebSockets + IMPRESIÓN FÍSICA**
+**Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Mapa de mesas + Impresión automática**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
-**Últimos cambios:**
-- ✅ **Documentación corregida**: Eliminadas referencias a Alembic (no se usa)
-- ✅ **Comandos actualizados**: README.md ahora usa `pnpm` en lugar de `npm`
-- ✅ **Configuración centralizada**: `.env.example` para evitar cambiar IP en múltiples lugares
-- ✅ **Fallback mejorado**: client.ts usa localhost por defecto en lugar de IP hardcodeada
-- ✅ **MeseroView optimizado**: Modal inicial obligatorio, flujo ultra-rápido
-- ✅ **Carrito full-screen**: Móvil ocupa toda la pantalla con animaciones
-- ✅ **Mesas ocupadas**: Visualización tiempo real de disponibilidad
-- ✅ **Pozoles completos**: 36 variaciones con proteínas Surtida y Mixta
-- ✅ **Especificaciones inmediatas**: Modal automático al seleccionar platillo
-- ✅ **Cancelar pedido**: Opción para reiniciar flujo en cualquier momento
+**Últimos cambios - KDS ULTRA-OPTIMIZADO:**
+- ✅ **KDS View TV optimizado**: Legibilidad desde 8 metros, máximo 4 pedidos, texto gigante
+- ✅ **Mesa/Nombre punto focal**: text-4xl/3xl/2xl como elemento principal visible
+- ✅ **Indicador de urgencia**: Badge rojo animado con pedidos no visibles (+X más)
+- ✅ **Artículos texto GIGANTE**: text-4xl/3xl/2xl escalado por cantidad de pedidos
+- ✅ **Sin tachado artículos**: Eliminado line-through, texto completamente legible
+- ✅ **KDS Manager tablet**: Optimizado para dispositivos móviles y tablet
+- ✅ **Artículos táctiles grandes**: text-lg/xl/2xl para uso en tablet
+- ✅ **Modificaciones destacadas**: Fondo amarillo, texto XL, border destacado
+- ✅ **Emojis prominentes**: text-5xl/4xl tipo de orden, completamente visibles
+- ✅ **Temporizadores grandes**: Tiempo transcurrido prominente con borders
 **Funcionalidades nuevas:** 
 - **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
 - **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)

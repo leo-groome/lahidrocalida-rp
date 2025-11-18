@@ -83,17 +83,25 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - Tipos de orden: Mesa, Llevar, UberEats
 - **Toma de pedidos sin pago inicial** - Envío directo a cocina
 
-### 3. Kitchen Display System (KDS) - OPTIMIZADO
-- **Vista TV optimizada** (/kds-view) - Pantalla para toda la cocina
-  - **Temporizadores en tiempo real** - Tiempo transcurrido por pedido
-  - **Colores de urgencia** - Verde → Amarillo → Naranja → Rojo
-  - **Layout denso** - Máxima información visible
-  - **WebSocket tiempo real** - Updates instantáneos
-- **Vista de control rápido** (/kds-manager) - Tablet personal
-  - **Updates optimísticos** - Cambios instantáneos sin loading
-  - **Auto-marcar artículos** - Al marcar pedido listo, todos los artículos se marcan
-  - **Control ultra-rápido** - Mínimos taps para máxima eficiencia
-  - **Layout vertical móvil** - Optimizado para tablet
+### 3. Kitchen Display System (KDS) - ULTRA-OPTIMIZADO TV/TABLET
+- **Vista TV (/kds-view)** - OPTIMIZADA PARA 8 METROS DE DISTANCIA
+  - **Mesa/Nombre GIGANTES** - text-4xl/3xl/2xl como punto focal principal
+  - **Máximo 4 pedidos** en pantalla para evitar saturación visual
+  - **Indicador urgencia** - Badge rojo animado con "+X más pendientes"
+  - **Artículos texto GIGANTE** - text-4xl/3xl/2xl escalado por cantidad
+  - **Sin tachado** - Artículos listos completamente legibles
+  - **Emojis prominentes** - text-5xl/4xl/3xl para tipo de orden
+  - **Temporizadores grandes** - Tiempo transcurrido prominente con borders
+  - **WebSocket tiempo real** - Updates instantáneos sin polling
+- **Vista Manager (/kds-manager)** - OPTIMIZADA PARA TABLET/MÓVIL
+  - **Mesa/Nombre prominentes** - text-2xl/xl desktop, text-xl/lg móvil
+  - **Artículos táctiles GRANDES** - text-lg/xl/2xl para uso en tablet
+  - **Modificaciones destacadas** - Fondo amarillo, texto XL, border
+  - **Sin tachado** - Texto completamente visible en artículos listos
+  - **Botones táctiles** grandes optimizados para dedos
+  - **Íconos grandes** - text-3xl/4xl para estados de artículos
+  - **Auto-marcar artículos** - Al marcar pedido listo, todos se marcan
+  - **Layout responsivo** - Perfecto para tablet y móvil
 - Estados visuales con colores distintivos:
   - 🟡 Pendiente
   - 🟠 Preparando  
@@ -359,5 +367,5 @@ TOTAL: $285.00
 ---
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
-**Sistema completo con Panel Admin - Enero 2025**  
-**Gestión integral: Post-pago + MeseroView Ultra-Optimizado + UX Sin Scrolling + 36 Pozoles + Mesas Tiempo Real + Carrito Inteligente + Especificaciones Inmediatas**
+**Sistema completo con KDS Ultra-Optimizado - Enero 2025**  
+**Gestión integral: Post-pago + KDS TV 8 metros + KDS Tablet táctil + MeseroView Ultra-Optimizado + Mesas Tiempo Real + Panel Admin + Impresión Física**

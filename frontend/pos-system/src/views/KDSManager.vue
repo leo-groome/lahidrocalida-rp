@@ -162,7 +162,7 @@ function getArticuloStyles(estado: string) {
     case 'preparando':
       return 'bg-yellow-600 bg-opacity-50 text-yellow-100 hover:bg-yellow-500 active:scale-95'
     case 'listo':
-      return 'bg-green-600 bg-opacity-50 text-green-100 line-through opacity-80'
+      return 'bg-green-600 bg-opacity-60 text-green-100 hover:bg-green-500 active:scale-95 border-2 border-green-300'
     default:
       return 'bg-slate-700 text-white hover:bg-slate-600 active:scale-95'
   }
@@ -388,54 +388,58 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Lista ultra-optimizada para tablet -->
-    <div class="p-3">
-      <div v-if="loading" class="text-center py-16">
-        <div class="text-4xl mb-2">⏳</div>
-        <div class="text-lg">Cargando...</div>
+    <!-- Lista ultra-optimizada para tablet/móvil -->
+    <div class="p-4">
+      <div v-if="loading" class="text-center py-20">
+        <div class="text-6xl mb-4">⏳</div>
+        <div class="text-2xl font-bold">Cargando...</div>
       </div>
       
-      <div v-else-if="pedidosFiltrados.length === 0" class="text-center py-16">
-        <div class="text-4xl mb-2">✨</div>
-        <div class="text-lg">{{ filtroEstado ? 'Sin pedidos en este estado' : '¡Todo listo!' }}</div>
+      <div v-else-if="pedidosFiltrados.length === 0" class="text-center py-20">
+        <div class="text-6xl mb-4">✨</div>
+        <div class="text-2xl font-bold">{{ filtroEstado ? 'Sin pedidos en este estado' : '¡Todo listo!' }}</div>
       </div>
       
       <!-- Layout de lista vertical optimizado -->
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-4">
         <div
           v-for="p in pedidosFiltrados"
           :key="p.id"
           :class="[
-            'rounded-lg p-4 transition-all duration-200',
+            'rounded-xl p-5 transition-all duration-200 shadow-lg border-4 border-white border-opacity-20',
             getEstadoStyles(p.estado)
           ]"
         >
           <!-- Header responsive - diferente layout para móvil -->
           <div class="space-y-3">
-            <!-- Fila 1: Info básica -->
+            <!-- Fila 1: Info básica optimizada -->
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
-                <span class="text-2xl font-black">{{ p.numero_display }}</span>
-                <!-- Información mesa/cliente consistente en desktop -->
-                <span v-if="p.mesa" class="text-lg font-bold hidden sm:inline">Mesa {{ p.mesa }}</span>
-                <span v-else-if="p.nombre_cliente" class="text-sm opacity-75 max-w-32 truncate hidden sm:inline">{{ p.nombre_cliente }}</span>
-                <span v-else class="text-sm opacity-50 hidden sm:inline">Para llevar</span>
+              <div class="flex items-center gap-3">
+                <!-- Emoji más grande -->
+                <span class="text-4xl sm:text-5xl">{{ getTipoOrdenEmoji(p.tipo_orden) }}</span>
+                <!-- Mesa/Nombre prominente en desktop -->
+                <div class="hidden sm:block">
+                  <span v-if="p.mesa" class="text-2xl font-black text-white">MESA {{ p.mesa }}</span>
+                  <span v-else-if="p.nombre_cliente" class="text-xl font-black text-white">{{ p.nombre_cliente.toUpperCase() }}</span>
+                  <span v-else class="text-lg font-bold text-yellow-300">PARA LLEVAR</span>
+                </div>
+                <!-- Número discreto -->
+                <span class="text-sm font-medium opacity-75">#{{ p.numero_display }}</span>
               </div>
               
-              <!-- Temporizador siempre visible -->
-              <span :class="['text-xs sm:text-sm font-bold px-2 py-1 rounded', getTiempoColor(p.fecha_creacion)]">
+              <!-- Temporizador más prominente -->
+              <span :class="['text-sm sm:text-lg font-black px-3 py-2 rounded-full border-2 border-white border-opacity-50', getTiempoColor(p.fecha_creacion)]">
                 {{ calcularTiempoTranscurrido(p.fecha_creacion) }}
               </span>
             </div>
             
             <!-- Fila 2: Mesa/Cliente en móvil + Acción principal - Layout fijo -->
             <div class="flex items-center justify-between">
-              <!-- Contenedor fijo para mesa/cliente - evita que botones salten -->
+              <!-- Mesa/Nombre GRANDE en móvil -->
               <div class="min-w-0 flex-shrink-0 sm:hidden">
-                <div v-if="p.mesa" class="text-base font-bold">Mesa {{ p.mesa }}</div>
-                <div v-else-if="p.nombre_cliente" class="text-sm font-medium truncate max-w-24">{{ p.nombre_cliente }}</div>
-                <div v-else class="text-sm opacity-50">Para llevar</div>
+                <div v-if="p.mesa" class="text-xl font-black text-white">MESA {{ p.mesa }}</div>
+                <div v-else-if="p.nombre_cliente" class="text-lg font-black text-white truncate max-w-32">{{ p.nombre_cliente.toUpperCase() }}</div>
+                <div v-else class="text-base font-bold text-yellow-300">PARA LLEVAR</div>
               </div>
               
               <!-- Botón de acción optimizado para móvil -->
@@ -469,26 +473,29 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- Artículos táctiles para marcar individualmente -->
-          <div v-if="p.estado === 'preparando'" class="grid grid-cols-1 gap-2">
+          <!-- Artículos táctiles para marcar individualmente - TEXTO GRANDE -->
+          <div v-if="p.estado === 'preparando'" class="grid grid-cols-1 gap-3">
             <div
               v-for="articulo in ordenarArticulosPorEstado(p.articulos_pedido || [])"
               :key="articulo.id"
               :class="[
-                'p-3 rounded-lg flex items-center justify-between transition-all cursor-pointer',
+                'p-4 rounded-lg flex items-center justify-between transition-all cursor-pointer border-2 border-white border-opacity-20',
                 getArticuloStyles(articulo.estado_item)
               ]"
               @click="toggleArticuloEstadoOptimistic(articulo)"
             >
               <div class="flex-1">
-                <div class="font-bold text-sm sm:text-base">
+                <!-- Platillo principal - TEXTO MUY GRANDE para tablet -->
+                <div class="font-black text-lg sm:text-xl lg:text-2xl leading-tight">
                   {{ articulo.cantidad }}x {{ articulo.platillo?.kds_name || articulo.platillo?.nombre || 'Platillo' }}
                 </div>
-                <div v-if="articulo.modificaciones" class="text-xs sm:text-sm opacity-75 mt-1">
+                <!-- Modificaciones - TEXTO GRANDE y legible -->
+                <div v-if="articulo.modificaciones" class="text-base sm:text-lg lg:text-xl font-bold mt-2 bg-yellow-900 bg-opacity-50 p-2 rounded border-l-4 border-yellow-400 leading-snug">
                   {{ articulo.modificaciones }}
                 </div>
               </div>
-              <div class="text-xl sm:text-2xl font-bold ml-2">
+              <!-- Ícono más grande -->
+              <div class="text-3xl sm:text-4xl font-bold ml-3">
                 {{ getArticuloIcon(articulo.estado_item) }}
               </div>
             </div>
