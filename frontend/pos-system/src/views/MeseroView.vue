@@ -47,9 +47,18 @@ const showEspecificacionesModal = ref(false)
 const platilloSeleccionado = ref<PlatilloResponse | null>(null)
 const especificacionesTemp = ref('')
 const proteinaSeleccionada = ref('')
+const cantidadTemp = ref(1)
 
-// Estado de mesas ocupadas
-const mesasOcupadas = ref<Set<string>>(new Set())
+// Computed reactivo para mesas ocupadas basado en el store - DATOS EN TIEMPO REAL
+const mesasOcupadasReactivo = computed(() => {
+  const pedidosActivos = pedidosStore.pedidos.filter((pedido: any) => 
+    pedido.tipo_orden === 'aqui' && 
+    ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada'].includes(pedido.estado) &&
+    pedido.mesa
+  )
+  
+  return new Set(pedidosActivos.map((pedido: any) => pedido.mesa))
+})
 
 let timer: number | undefined
 
@@ -72,26 +81,21 @@ onMounted(async () => {
   window.addEventListener('resize', checkIfMobile)
   
   try {
-    await loadPlatillos()
-    await loadMesasOcupadas()
+    // Cargar datos iniciales del store PRIMERO - esto incluye pedidos para mesas
+    await pedidosStore.loadInitialData()
     
-    // Inicializar WebSocket para mesero
+    // Luego cargar platillos en paralelo - mesas ya están en el store
+    await loadPlatillos()
+    
+    console.log('✅ Mesero View: Datos iniciales cargados, mesas disponibles desde el store')
+    
+    // Inicializar WebSocket para mantener todo actualizado
     const wsConnected = await pedidosStore.initWebSocket('mesero')
     
     if (wsConnected) {
-      console.log('✅ Mesero View: WebSocket conectado, notificaciones en tiempo real activas')
-      
-      // Escuchar cambios de estado para actualizar mesas ocupadas
-      pedidosStore.$onAction(({ name, after }) => {
-        if (name === 'handleWebSocketMessage') {
-          after(() => {
-            // Recargar mesas ocupadas cuando hay cambios
-            loadMesasOcupadas()
-          })
-        }
-      })
+      console.log('✅ Mesero View: WebSocket conectado, mesas actualizadas en tiempo real')
     } else {
-      console.warn('⚠️ Mesero View: WebSocket falló, continuando sin notificaciones en tiempo real')
+      console.warn('⚠️ Mesero View: WebSocket falló, datos sin tiempo real')
     }
   } catch (error) {
     console.error('❌ Mesero View: Error en inicialización:', error)
@@ -139,24 +143,6 @@ const loadPlatillos = async () => {
   }
 }
 
-// Cargar mesas ocupadas
-const loadMesasOcupadas = async () => {
-  try {
-    const { data } = await api.get('/pedidos')
-    const pedidosActivos = data.filter((pedido: any) => 
-      pedido.tipo_orden === 'aqui' && 
-      ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada'].includes(pedido.estado) &&
-      pedido.mesa
-    )
-    
-    const mesas = new Set(pedidosActivos.map((pedido: any) => pedido.mesa))
-    mesasOcupadas.value = mesas
-    
-    console.log('🪑 Mesas ocupadas cargadas:', Array.from(mesas))
-  } catch (error) {
-    console.error('❌ Error al cargar mesas ocupadas:', error)
-  }
-}
 
 // Categorías únicas de platillos (excluyendo Pozoles)
 const categorias = computed(() => {
@@ -202,6 +188,22 @@ const pozolesByColor = computed(() => {
 
 // Proteínas disponibles para pozoles (se pasan al modal)
 const proteinasPozole = ['Cerdo', 'Pollo', 'Surtida', 'Mixta']
+
+// Especificaciones rápidas por categoría - ESPECIFICACIONES REALES
+const especificacionesComunes = computed(() => {
+  const categoria = platilloSeleccionado.value?.categoria || ''
+  
+  const especificacionesPorCategoria: Record<string, string[]> = {
+    'Pozole': ['Sin lechuga', 'Poco grano', 'Muy caliente'],
+    'Enchiladas': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin cueritos', 'Sin papa y zanahoria', 'Con jalapeño'],
+    'Flautas': ['Sin crema', 'Sin lechuga', 'Sin queso'],
+    'Sopes': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin frijoles'],
+    'Tacos': ['Sin crema', 'Sin lechuga', 'Sin queso'],
+    'Tostadas': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin frijoles']
+  }
+  
+  return especificacionesPorCategoria[categoria] || []
+})
 
 // Total del carrito
 const totalCarrito = computed(() => {
@@ -325,10 +327,7 @@ const enviarPedido = async () => {
     const nuevoPedido = await pedidosStore.createPedido(pedidoData)
     
     if (nuevoPedido) {
-      // Actualizar mesas ocupadas si es pedido para aquí
-      if (tipoOrden.value === 'aqui' && mesa.value) {
-        mesasOcupadas.value.add(mesa.value)
-      }
+      // Las mesas ocupadas se actualizan automáticamente via WebSocket y computed reactivo
       
       // Limpiar formulario y reiniciar flujo
       carrito.value = []
@@ -402,25 +401,29 @@ const abrirEspecificaciones = (platillo: PlatilloResponse) => {
   platilloSeleccionado.value = platillo
   especificacionesTemp.value = ''
   proteinaSeleccionada.value = ''
+  cantidadTemp.value = 1
   showEspecificacionesModal.value = true
 }
 
 const confirmarEspecificaciones = () => {
-  if (platilloSeleccionado.value) {
+  if (platilloSeleccionado.value && cantidadTemp.value > 0) {
     const existente = carrito.value.find(item => 
       item.platillo.id === platilloSeleccionado.value!.id && 
       item.modificaciones === especificacionesTemp.value
     )
     
     if (existente) {
-      existente.cantidad++
+      existente.cantidad += cantidadTemp.value
     } else {
       carrito.value.push({
         platillo: platilloSeleccionado.value,
-        cantidad: 1,
+        cantidad: cantidadTemp.value,
         modificaciones: especificacionesTemp.value
       })
     }
+    
+    // Cerrar todas las categorías después de agregar artículo
+    categoriasAbiertas.value.clear()
   }
   cerrarEspecificaciones()
 }
@@ -430,6 +433,18 @@ const cerrarEspecificaciones = () => {
   platilloSeleccionado.value = null
   especificacionesTemp.value = ''
   proteinaSeleccionada.value = ''
+  cantidadTemp.value = 1
+}
+
+// Función para agregar especificación rápida
+const agregarEspecificacion = (especificacion: string) => {
+  if (especificacionesTemp.value) {
+    // Si ya hay texto, agregar con coma
+    especificacionesTemp.value += ', ' + especificacion
+  } else {
+    // Si está vacío, agregar directamente
+    especificacionesTemp.value = especificacion
+  }
 }
 
 // Funciones de notificación
@@ -500,6 +515,7 @@ const getCantidadEnCarrito = (platilloId: number): number => {
 
 // Funciones del modal de mesas
 const openMesaModal = () => {
+  // Abrir modal inmediatamente - los datos ya están en el store
   showMesaModal.value = true
 }
 
@@ -511,8 +527,8 @@ const closeMesaModal = () => {
 }
 
 const seleccionarMesa = (numeroMesa: string) => {
-  // Verificar si la mesa está ocupada
-  if (mesasOcupadas.value.has(numeroMesa)) {
+  // Verificar si la mesa está ocupada usando el computed reactivo
+  if (mesasOcupadasReactivo.value.has(numeroMesa)) {
     showErrorNotification(`Mesa ${numeroMesa} está ocupada`)
     return
   }
@@ -646,15 +662,19 @@ const mesasLayout = [
             <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-4">Sin artículos</div>
             <div v-for="(item, index) in carrito" :key="index" class="bg-white border-2 border-gray-100 rounded-lg p-3 hover:shadow-md transition">
               <div class="flex items-center justify-between mb-2">
-                <div>
+                <div class="flex-1">
                   <div class="font-bold text-[#00126D] text-sm">{{ item.platillo.kds_name || item.platillo.nombre }}</div>
                   <div class="text-xs text-[#FDB700] font-semibold">$ {{ Number(item.platillo.precio).toFixed(2) }}</div>
                 </div>
-                <div class="flex items-center gap-1.5 bg-gray-100 rounded-lg p-1">
-                  <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
-                  <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
-                  <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
-                  <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm" @click="eliminarDelCarrito(index)">✕</button>
+                <div class="flex items-center gap-3">
+                  <!-- Controles de cantidad -->
+                  <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
+                    <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
+                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
+                  </div>
+                  <!-- Botón eliminar separado -->
+                  <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm border border-red-200" @click="eliminarDelCarrito(index)">🗑️</button>
                 </div>
               </div>
               <input v-model="item.modificaciones" placeholder="Notas (opcional)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#FDB700]" />
@@ -730,24 +750,28 @@ const mesasLayout = [
           </button>
         </div>
 
-        <!-- Contenido del carrito móvil -->
-        <div class="flex flex-col h-full">
-          <!-- Items del carrito -->
-          <div class="flex-1 flex flex-col overflow-hidden p-6 pb-0">
+        <!-- Contenido del carrito móvil - ESTRUCTURA FIJA -->
+        <div class="flex flex-col h-[calc(100vh-80px)]">
+          <!-- Items del carrito - ÁREA SCROLLEABLE -->
+          <div class="flex-1 p-6 pb-0 min-h-0">
             <div class="text-xs font-semibold text-gray-600 mb-3">🛒 CARRITO ({{ carrito.length }} items)</div>
-            <div class="space-y-2 flex-1 overflow-y-auto pb-4">
-              <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-4">Sin artículos</div>
+            <div class="h-full overflow-y-auto space-y-2 pb-4">
+              <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-8">Sin artículos</div>
               <div v-for="(item, index) in carrito" :key="index" class="bg-gray-50 border-2 border-gray-100 rounded-lg p-3 hover:shadow-md transition">
                 <div class="flex items-center justify-between mb-2">
-                  <div>
+                  <div class="flex-1">
                     <div class="font-bold text-[#00126D] text-sm">{{ item.platillo.kds_name || item.platillo.nombre }}</div>
                     <div class="text-xs text-[#FDB700] font-semibold">$ {{ Number(item.platillo.precio).toFixed(2) }}</div>
                   </div>
-                  <div class="flex items-center gap-1.5 bg-gray-100 rounded-lg p-1">
-                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
-                    <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
-                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
-                    <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm" @click="eliminarDelCarrito(index)">✕</button>
+                  <div class="flex items-center gap-3">
+                    <!-- Controles de cantidad -->
+                    <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                      <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
+                      <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
+                      <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
+                    </div>
+                    <!-- Botón eliminar separado -->
+                    <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm border border-red-200" @click="eliminarDelCarrito(index)">🗑️</button>
                   </div>
                 </div>
                 <input v-model="item.modificaciones" placeholder="Notas (opcional)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#FDB700]" />
@@ -755,8 +779,8 @@ const mesasLayout = [
             </div>
           </div>
           
-          <!-- Total y botones - Siempre visible en la parte inferior -->
-          <div class="border-t bg-white p-6 space-y-3">
+          <!-- Total y botones - ANCLADO EN LA PARTE INFERIOR -->
+          <div class="flex-shrink-0 border-t bg-white p-6 space-y-3 shadow-lg">
             <!-- Botón cancelar móvil -->
             <button 
               @click="cancelarPedidoMovil" 
@@ -931,16 +955,16 @@ const mesasLayout = [
                 v-for="numeroMesa in fila"
                 :key="numeroMesa"
                 @click="seleccionarMesa(numeroMesa)"
-                :disabled="mesasOcupadas.has(numeroMesa)"
+                :disabled="mesasOcupadasReactivo.has(numeroMesa)"
                 :class="[
                   'aspect-square rounded-lg border-2 font-bold text-lg transition-all relative',
-                  mesasOcupadas.has(numeroMesa)
+                  mesasOcupadasReactivo.has(numeroMesa)
                     ? 'bg-red-100 border-red-300 text-red-400 cursor-not-allowed'
                     : 'bg-white border-gray-200 text-[#00126D] hover:border-[#FDB700] hover:bg-yellow-50'
                 ]"
               >
                 {{ numeroMesa }}
-                <span v-if="mesasOcupadas.has(numeroMesa)" class="absolute top-0 right-0 text-xs">🔴</span>
+                <span v-if="mesasOcupadasReactivo.has(numeroMesa)" class="absolute top-0 right-0 text-xs">🔴</span>
               </button>
             </div>
           </div>
@@ -990,19 +1014,60 @@ const mesasLayout = [
         </div>
         
 
+        <!-- Selector de cantidad discreto -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Cantidad
+          </label>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="cantidadTemp = Math.max(1, cantidadTemp - 1)"
+              class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-sm transition active:scale-95"
+            >
+              −
+            </button>
+            <div class="w-12 h-8 bg-gray-50 border-2 border-gray-200 rounded-lg flex items-center justify-center font-bold text-sm">
+              {{ cantidadTemp }}
+            </div>
+            <button 
+              @click="cantidadTemp = Math.min(99, cantidadTemp + 1)"
+              class="w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold text-sm transition active:scale-95"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <!-- Especificaciones rápidas -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            Especificaciones rápidas
+          </label>
+          <div class="grid grid-cols-2 gap-2 mb-3">
+            <button
+              v-for="esp in especificacionesComunes"
+              :key="esp"
+              @click="agregarEspecificacion(esp)"
+              class="px-3 py-2 bg-gray-100 hover:bg-[#FDB700] hover:text-[#00126D] text-gray-700 text-sm rounded-lg transition-all active:scale-95 font-medium"
+            >
+              {{ esp }}
+            </button>
+          </div>
+        </div>
+
         <!-- Campo de especificaciones -->
         <div class="mb-6">
           <label class="block text-sm font-bold text-[#00126D] mb-2">
-            📝 Especificaciones o modificaciones
+            📝 Especificaciones personalizadas
           </label>
           <textarea
             v-model="especificacionesTemp"
             placeholder="Ej: Sin crema, sin zanahoria, extra lechuga..."
             class="w-full p-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white resize-none"
-            rows="3"
+            rows="2"
           ></textarea>
           <div class="text-xs text-gray-500 mt-1">
-            💡 Déjalo vacío si no hay modificaciones
+            💡 Usa los botones de arriba o escribe aquí
           </div>
         </div>
         

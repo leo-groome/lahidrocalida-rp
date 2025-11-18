@@ -128,6 +128,9 @@ class WebSocketManager:
         # Notificar a CAJA (necesita ver todos los pedidos nuevos para overview)
         await self._broadcast_to_group("caja", message, sucursal_id)
         
+        # Notificar a MESEROS (necesitan actualizar mesas ocupadas en tiempo real)
+        await self._broadcast_to_group("mesero", message, sucursal_id)
+        
         # Notificar a administradores
         await self._broadcast_to_group("admin", message, sucursal_id)
         
