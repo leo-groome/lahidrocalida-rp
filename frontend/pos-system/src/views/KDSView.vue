@@ -12,14 +12,30 @@ const pedidosStore = usePedidosStore()
 const timerTick = ref(0)
 
 const todasLasComandas = computed(() => {
-  // Filtrar solo pedidos pendientes y preparando, limitados a 4, más antiguos primero
+  // Filtrar pedidos pendientes y preparando + pedidos que volvieron a pendiente con artículos nuevos
   return pedidosStore.pedidosKDS
     .filter(p => ['pendiente', 'preparando'].includes(p.estado))
+    .map(p => {
+      // Filtrar artículos: mostrar pendiente, preparando, listo. Ocultar entregado
+      const articulosVisibles = (p.articulos_pedido || []).filter(a => 
+        ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
+      )
+      
+      // Si hay artículos entregados (ocultos), marcar como artículos agregados
+      const tieneArticulosEntregados = (p.articulos_pedido || []).some(a => a.estado_item === 'entregado')
+      
+      return {
+        ...p,
+        articulos_pedido: articulosVisibles,
+        articulosAgregados: tieneArticulosEntregados // Flag para mostrar indicador
+      }
+    })
     .sort((a, b) => new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime())
     .slice(0, 4)
 })
 
 const totalPedidosPendientes = computed(() => {
+  // Contar pedidos pendientes y preparando (incluye los que volvieron a pendiente)
   return pedidosStore.pedidosKDS
     .filter(p => ['pendiente', 'preparando'].includes(p.estado)).length
 })
@@ -226,6 +242,15 @@ onUnmounted(() => {
 
           <!-- Mesa/Nombre (centro - más grande) -->
           <div class="text-center flex-1 px-2">
+            <!-- Número de pedido -->
+            <div :class="['font-black text-white mb-1', {
+              'text-2xl': todasLasComandas.length <= 2,
+              'text-xl': todasLasComandas.length === 3,
+              'text-lg': todasLasComandas.length >= 4
+            }]">
+              #{{ p.numero_display }}
+            </div>
+            
             <div v-if="p.mesa" 
                  :class="['font-black text-white', {
                    'text-4xl': todasLasComandas.length <= 2,
@@ -233,6 +258,11 @@ onUnmounted(() => {
                    'text-2xl': todasLasComandas.length >= 4
                  }]">
               MESA {{ p.mesa }}
+              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
+              <div v-if="p.articulosAgregados" 
+                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
+                ➕ AGREGADOS
+              </div>
             </div>
             <div v-else-if="p.nombre_cliente" 
                  :class="['font-black text-white leading-tight', {
@@ -241,6 +271,11 @@ onUnmounted(() => {
                    'text-xl': todasLasComandas.length >= 4
                  }]">
               {{ p.nombre_cliente.toUpperCase() }}
+              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
+              <div v-if="p.articulosAgregados" 
+                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
+                ➕ AGREGADOS
+              </div>
             </div>
             <div v-else 
                  :class="['font-bold text-yellow-300', {
@@ -249,6 +284,11 @@ onUnmounted(() => {
                    'text-lg': todasLasComandas.length >= 4
                  }]">
               PARA LLEVAR
+              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
+              <div v-if="p.articulosAgregados" 
+                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
+                ➕ AGREGADOS
+              </div>
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 # **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-**Estado: SISTEMA COMPLETO + KDS OPTIMIZADO + PANEL ADMIN**  
+**Estado: SISTEMA COMPLETO + KDS OPTIMIZADO + REACTIVACIÓN INTELIGENTE + PANEL ADMIN**  
 Fecha: Enero 2025
 
 ## 📋 Resumen del Proyecto
@@ -16,6 +16,7 @@ Fecha: Enero 2025
 - **✅ Estados Expandidos**: 7 estados del pedido para control completo del flujo
 - **✅ WebSockets tiempo real**: Actualizaciones instantáneas sin demoras ni loading innecesario
 - **✅ UI/UX Optimizada**: Diseño responsivo con colores corporativos y navegación intuitiva
+- **✅ Reactivación Inteligente**: Pedidos entregados pueden reactivarse con temporizador reiniciado
 
 ### 🚀 Estado Actual
 
@@ -72,7 +73,7 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - JWT con expiración configurable
 - Redirección automática por rol
 
-### 2. Vista de Mesero (/mesero) - ULTRA-OPTIMIZADA
+### 2. Vista de Mesero (/mesero) - ULTRA-OPTIMIZADA + WEBSOCKET MEJORADO
 - **Modal inicial obligatorio** - Configura tipo de orden primero
 - **Flujo sin scrolling** - Tipo → Mesa/Nombre → Menú instantáneo
 - **Mesas tiempo real** - Ve cuáles están ocupadas automáticamente
@@ -82,8 +83,10 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - **Cancelar pedido** - Reiniciar flujo completo en cualquier momento
 - Tipos de orden: Mesa, Llevar, UberEats
 - **Toma de pedidos sin pago inicial** - Envío directo a cocina
+- **📱 Modal "Ver Pedido" mejorado** - Actualizaciones WebSocket en tiempo real preservando cambios locales
+- **🔄 Agregar a pedidos entregados** - Funcionalidad completa con reactivación automática
 
-### 3. Kitchen Display System (KDS) - ULTRA-OPTIMIZADO TV/TABLET
+### 3. Kitchen Display System (KDS) - ULTRA-OPTIMIZADO + REACTIVACIÓN INTELIGENTE
 - **Vista TV (/kds-view)** - OPTIMIZADA PARA 8 METROS DE DISTANCIA
   - **Mesa/Nombre GIGANTES** - text-4xl/3xl/2xl como punto focal principal
   - **Máximo 4 pedidos** en pantalla para evitar saturación visual
@@ -93,6 +96,9 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
   - **Emojis prominentes** - text-5xl/4xl/3xl para tipo de orden
   - **Temporizadores grandes** - Tiempo transcurrido prominente con borders
   - **WebSocket tiempo real** - Updates instantáneos sin polling
+  - **🔄 Reactivación inteligente** - Pedidos entregados con nuevos artículos van al final de la cola
+  - **Filtrado automático** - Solo muestra artículos no entregados en comandas reactivadas
+  - **Indicador visual** - Badge amarillo pulsante "➕ AGREGADOS" para comandas reactivadas
 - **Vista Manager (/kds-manager)** - OPTIMIZADA PARA TABLET/MÓVIL
   - **Mesa/Nombre prominentes** - text-2xl/xl desktop, text-xl/lg móvil
   - **Artículos táctiles GRANDES** - text-lg/xl/2xl para uso en tablet
@@ -368,4 +374,4 @@ TOTAL: $285.00
 
 **Desarrollado para Pozolería "La Hidrocálida"**  
 **Sistema completo con KDS Ultra-Optimizado - Enero 2025**  
-**Gestión integral: Post-pago + KDS TV 8 metros + KDS Tablet táctil + MeseroView Ultra-Optimizado + Mesas Tiempo Real + Panel Admin + Impresión Física**
+**Gestión integral: Post-pago + KDS TV 8 metros + KDS Tablet táctil + MeseroView Ultra-Optimizado + Reactivación Inteligente + WebSocket Mejorado + Panel Admin + Impresión Física**

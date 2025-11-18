@@ -173,11 +173,21 @@ proyecto/
 - Redirección automática basada en rol
 - Manejo de errores y validaciones
 
-**2. MeseroView (/mesero) - ULTRA-OPTIMIZADO VELOCIDAD**
+**2. MeseroView (/mesero) - ULTRA-OPTIMIZADO + AGREGAR A PEDIDO EXISTENTE**
 - **Rol:** mesero, administrador
 - **Modal inicial obligatorio** - Configuración de tipo de orden al inicio
 - **Flujo optimizado**: Tipo orden → Mesa/Nombre → Menú → Especificaciones → Carrito
 - **Mesas ocupadas TIEMPO REAL** - WebSocket sincronización automática entre meseros
+- **FUNCIONALIDAD "AGREGAR A PEDIDO EXISTENTE"** - Sistema completo implementado:
+  * **Modal mesa ocupada** - Opciones: [➕ Agregar artículos] [👁️ Ver pedido actual] [← Cancelar]
+  * **Agregar artículos**: Cualquier estado antes de `cuenta_solicitada`
+  * **Modificar pedidos**: Solo estado `pendiente` (cambiar cantidades, eliminar artículos)
+  * **Ver pedido actual**: Modal con artículos actuales, editable si pendiente
+  * **Lógica diferenciada por estado**:
+    - Pendiente: Actualiza pedido completo, re-envía a KDS
+    - Preparando/listo/entregado: Solo artículos nuevos aparecen como "#001-A" en KDS
+  * **Endpoints backend**: `PUT /pedidos/{id}/agregar-articulos`, `PUT /pedidos/{id}/actualizar-articulos`
+  * **WebSocket tiempo real**: Notificaciones automáticas según contexto
 - **Carrito full-screen móvil** - Scroll funcional con botón "Enviar a Cocina" siempre visible
 - **Especificaciones inmediatas** - Modal al seleccionar cualquier platillo
 - **Especificaciones rápidas** - Botones por categoría para máxima velocidad:
@@ -285,6 +295,11 @@ proyecto/
 - ✅ **Analytics de productos** - Top 10 más vendidos
 - ✅ **Gestión de gastos** - CRUD completo con categorías
 - ✅ **Auto-marcar artículos** - Al marcar pedido como listo, todos los artículos se marcan automáticamente
+- ✅ **Auto-marcar artículos entregados** - Al marcar pedido como entregado, todos los artículos se marcan como entregado
+- ✅ **Pedidos entregados reactivados** - Agregar artículos a pedido entregado lo vuelve a estado pendiente
+- ✅ **Filtrado KDS por artículos** - KDS muestra solo artículos no entregados para comandas reactivadas
+- ✅ **Temporizador reiniciado** - Pedidos reactivados van al final de la cola con nueva fecha de creación
+- ✅ **WebSocket MeseroView mejorado** - Modal "Ver Pedido" se actualiza correctamente en tiempo real
 - ✅ **Configuración avanzada** - Timezone, versioning, debug mode
 - ✅ **Scripts de utilidades** - Gestión de categorías automática
 
@@ -329,6 +344,10 @@ proyecto/
 
 **Flujo Operativo Completo + Tiempo Real + Administración + UX Ultra-Optimizada:**
 - ✅ **Mesero: Modal inicial** → **Tipo orden → Mesa/Nombre → Menú instantáneo**
+- ✅ **Mesero: AGREGAR A PEDIDO EXISTENTE** → **Mesa ocupada → [Agregar artículos] [Ver pedido] [Cancelar]**
+- ✅ **Mesero: Modificar pedidos pendientes** → **Ver pedido actual permite editar cantidades y eliminar artículos**
+- ✅ **Mesero: Lógica diferenciada por estado** → **Pendiente: actualiza completo, otros: solo nuevos "#001-A"**
+- ✅ **Mesero: WebSocket tiempo real** → **Notificaciones automáticas según contexto de modificación**
 - ✅ **Mesero: Especificaciones ULTRA-RÁPIDAS** → **Botones por categoría + cantidad en modal**
 - ✅ **Mesero: Mesas TIEMPO REAL** → **WebSocket sincronización automática entre meseros**
 - ✅ **Mesero: Carrito optimizado** → **Scroll funcional + botón siempre visible + eliminar separado**
@@ -340,7 +359,10 @@ proyecto/
 - ✅ **KDS Manager ULTRA-optimizado** → **Tablet/móvil con texto gigante sin tachado**
 - ✅ **Indicador de urgencia** → **Badge rojo mostrando pedidos no visibles (+X más)**
 - ✅ **Auto-marcar artículos** → **Al marcar pedido listo, todos los artículos se marcan**
-- ✅ Mesero entrega → **Notificación automática**
+- ✅ Mesero entrega → **Todos los artículos se marcan como entregados automáticamente**
+- ✅ **Agregar a pedido entregado** → **Pedido vuelve a estado pendiente, aparece en KDS solo con artículos nuevos**
+- ✅ **Temporizador reiniciado** → **Pedidos reactivados van al FINAL de la cola con nueva fecha de creación**
+- ✅ **Filtrado inteligente KDS** → **Solo muestra artículos no entregados, indicador visual para comandas reactivadas**
 - ✅ **Caja ve mapa de mesas** → **Estado visual en tiempo real**
 - ✅ **Caja hace clic en mesa** → **Ve detalles del pedido o va directo a cobrar**
 - ✅ **Caja solicita cuenta** → **Botón en overview + auto-limpieza de filtros**
@@ -658,16 +680,21 @@ Para evitar cambiar la IP en múltiples lugares:
 
 ### Archivos críticos:
 - `app/models.py` - Modelos con campo mesa y estados
-- `app/routers/pedidos.py` - Lógica de flujo post-pago
+- `app/routers/pedidos.py` - **Lógica de flujo post-pago + AGREGAR A PEDIDO EXISTENTE**
+  * `PUT /pedidos/{id}/agregar-articulos` - Endpoint para agregar artículos a pedidos existentes
+  * `PUT /pedidos/{id}/actualizar-articulos` - Endpoint para modificar pedidos pendientes
 - `app/core/config.py` - **Configuración con timezone y versioning**
-- `app/websocket_manager.py` - **Gestor WebSockets tiempo real**
+- `app/websocket_manager.py` - **Gestor WebSockets tiempo real + notificaciones a meseros**
 - `app/websocket_routes.py` - **Rutas WebSocket por tipo usuario**
 - `add_missing_categories.py` - **Script utilidades para categorías**
 - `src/api/client.ts` - **Cliente HTTP con fallback localhost**
 - `src/services/websocket.ts` - **Cliente WebSocket frontend**
 - `src/services/printService.ts` - **Servicio de impresión integrado**
 - `src/stores/pedidos.ts` - **Estado global con WebSockets**
-- `src/views/MeseroView.vue` - Interface de meseros
+- `src/views/MeseroView.vue` - **Interface de meseros + AGREGAR A PEDIDO EXISTENTE**
+  * Modal mesa ocupada con opciones
+  * Modal "Ver pedido actual" con edición de cantidades
+  * Funciones: `verPedidoActual()`, `agregarArticulosMesa()`, `guardarCambiosPedido()`
 - `src/views/CajaView.vue` - **Interface de caja + impresión automática**
 - `src/views/KDSView.vue` - **Vista cocina tiempo real**
 - `src/views/KDSManager.vue` - **Gestión cocina tiempo real**
@@ -704,17 +731,20 @@ Para evitar cambiar la IP en múltiples lugares:
 **Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO para TV/Tablet + WebSockets + IMPRESIÓN FÍSICA**
 **Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Mapa de mesas + Impresión automática**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
-**Últimos cambios - MESERO ULTRA-OPTIMIZADO + KDS + CONFIGURACIÓN:**
+**Últimos cambios - AGREGAR A PEDIDO EXISTENTE + MESERO ULTRA-OPTIMIZADO + KDS:**
+- ✅ **AGREGAR A PEDIDO EXISTENTE**: Sistema completo implementado para modificar pedidos activos
+- ✅ **Modal mesa ocupada**: Opciones [➕ Agregar artículos] [👁️ Ver pedido actual] [← Cancelar]
+- ✅ **Ver/modificar pedidos**: Modal completo con edición de cantidades y eliminación de artículos
+- ✅ **Lógica diferenciada**: Pendiente actualiza completo, otros estados solo agregan "#001-A" en KDS
+- ✅ **Endpoints backend**: PUT /pedidos/{id}/agregar-articulos y PUT /pedidos/{id}/actualizar-articulos
+- ✅ **WebSocket inteligente**: Notificaciones según contexto (pedido_estado_changed vs pedido_created)
 - ✅ **MeseroView velocidad máxima**: Especificaciones rápidas por categoría con botones inteligentes
 - ✅ **Mesas tiempo real**: WebSocket para meseros, sincronización automática entre dispositivos
 - ✅ **Carrito optimizado**: Scroll funcional, botón siempre visible, eliminar separado
 - ✅ **Categorías auto-cerradas**: Mayor velocidad, se cierran después de agregar artículo
-- ✅ **Selector cantidad discreto**: En modal sin distraer del flujo principal
-- ✅ **Orden estandarizado**: Especificaciones consistentes (Sin crema → Sin lechuga → Sin queso)
 - ✅ **KDS View TV optimizado**: Legibilidad desde 8 metros, máximo 4 pedidos, texto gigante
 - ✅ **KDS Manager tablet**: Artículos táctiles grandes text-lg/xl/2xl sin tachado
 - ✅ **Configuración sistema**: JWT 24 horas, favicon corporativo, título profesional
-- ✅ **WebSocket mejorado**: Notificaciones a meseros para mesas ocupadas en tiempo real
 **Funcionalidades nuevas:** 
 - **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
 - **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)

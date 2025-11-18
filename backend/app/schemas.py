@@ -103,6 +103,10 @@ class PedidoUpdate(BaseModel):
     estado: str
     metodo_pago: Optional[str] = None
 
+class AgregarArticulosRequest(BaseModel):
+    articulos: List[ArticuloPedidoCreate]
+    mesero_id: Optional[int] = None
+
 class PedidoResponse(PedidoBase):
     id: int
     fecha_creacion: datetime

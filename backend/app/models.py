@@ -83,7 +83,7 @@ class ArticuloPedido(Base):
     cantidad = Column(Integer, nullable=False)
     precio_cobrado = Column(DECIMAL(8, 2), nullable=False)
     modificaciones = Column(Text)
-    estado_item = Column(String(20), default='pendiente')  # 'pendiente', 'listo'
+    estado_item = Column(String(20), default='pendiente')  # 'pendiente', 'preparando', 'listo', 'entregado'
     
     # Relaciones
     pedido = relationship("Pedido", back_populates="articulos_pedido")

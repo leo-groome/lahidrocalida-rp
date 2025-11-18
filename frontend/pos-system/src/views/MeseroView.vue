@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
@@ -34,10 +34,20 @@ const categoriasAbiertas = ref<Set<string>>(new Set())
 
 // Control del modal de mesas
 const showMesaModal = ref(false)
+const showMesaOcupadaModal = ref(false)
 
 // Control del modal inicial de tipo de orden
 const showTipoOrdenModal = ref(true)
 const pedidoConfigurado = ref(false)
+
+// Control del modo "agregar artículos"
+const modoAgregarArticulos = ref(false)
+const pedidoExistenteId = ref<number | null>(null)
+
+// Control del modal "ver pedido actual"
+const showVerPedidoModal = ref(false)
+const pedidoActual = ref<any>(null)
+const articulosEditables = ref<any[]>([])
 
 // Control del modal de nombre de cliente
 const showNombreClienteModal = ref(false)
@@ -99,6 +109,21 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('❌ Mesero View: Error en inicialización:', error)
+  }
+})
+
+// Watcher para actualizar modal cuando cambien los pedidos por WebSocket
+watch(() => pedidosStore.pedidos, (newPedidos, oldPedidos) => {
+  console.log('🔍 Pedidos store updated in MeseroView:', newPedidos?.length || 0, 'pedidos')
+  actualizarModalPedido()
+}, { deep: true })
+
+// Watcher adicional específico para cuando el modal esté abierto
+watch(() => showVerPedidoModal.value, (isOpen) => {
+  if (isOpen) {
+    console.log('👁️ Modal "Ver Pedido" abierto - iniciando escucha de WebSocket')
+  } else {
+    console.log('👁️ Modal "Ver Pedido" cerrado')
   }
 })
 
@@ -301,7 +326,7 @@ const validarFormulario = (): boolean => {
   return true
 }
 
-// Enviar pedido (sin pago - flujo mesero)
+// Enviar pedido (sin pago - flujo mesero) o agregar artículos a pedido existente
 const enviarPedido = async () => {
   if (!validarFormulario()) {
     return
@@ -317,42 +342,55 @@ const enviarPedido = async () => {
       modificaciones: item.modificaciones || ''
     }))
 
-    const pedidoData: PedidoCreate = {
-      nombre_cliente: (tipoOrden.value === 'llevar' || tipoOrden.value === 'uber_eats') ? nombreCliente.value : null,
-      mesa: tipoOrden.value === 'aqui' ? mesa.value : null,
-      tipo_orden: tipoOrden.value,
-      articulos
-    }
-
-    const nuevoPedido = await pedidosStore.createPedido(pedidoData)
-    
-    if (nuevoPedido) {
-      // Las mesas ocupadas se actualizan automáticamente via WebSocket y computed reactivo
+    if (modoAgregarArticulos.value && pedidoExistenteId.value) {
+      // Modo agregar artículos - usar endpoint PUT
+      const response = await api.put(`/pedidos/${pedidoExistenteId.value}/agregar-articulos`, {
+        articulos,
+        mesero_id: auth.user?.id
+      })
       
-      // Limpiar formulario y reiniciar flujo
-      carrito.value = []
-      nombreCliente.value = ''
-      mesa.value = ''
-      pedidoConfigurado.value = false
-      showTipoOrdenModal.value = true
-      showNombreClienteModal.value = false
-      
-      const mensajeExito = tipoOrden.value === 'aqui' 
-        ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}` 
-        : `Pedido #${nuevoPedido.numero_display} ${tipoOrden.value === 'uber_eats' ? 'Uber Eats' : 'para llevar'} enviado a cocina (${nombreCliente.value})`
-      
-      showSuccessNotification(mensajeExito)
-      
-      // Cerrar carrito móvil si está abierto
-      if (isMobile.value && showMobileCart.value) {
-        closeMobileCart()
+      if (response.status === 200) {
+        const mensajeExito = `Artículos agregados a Mesa ${mesa.value}`
+        showSuccessNotification(mensajeExito)
+        
+        // Limpiar y salir del modo agregar
+        limpiarModoAgregar()
+      } else {
+        showErrorNotification('Error al agregar artículos')
       }
+      
     } else {
-      showErrorNotification(pedidosStore.error || 'Error al crear pedido')
+      // Modo nuevo pedido - usar endpoint POST
+      const pedidoData: PedidoCreate = {
+        nombre_cliente: (tipoOrden.value === 'llevar' || tipoOrden.value === 'uber_eats') ? nombreCliente.value : null,
+        mesa: tipoOrden.value === 'aqui' ? mesa.value : null,
+        tipo_orden: tipoOrden.value,
+        articulos
+      }
+
+      const nuevoPedido = await pedidosStore.createPedido(pedidoData)
+      
+      if (nuevoPedido) {
+        // Limpiar formulario y reiniciar flujo
+        limpiarFormulario()
+        
+        const mensajeExito = tipoOrden.value === 'aqui' 
+          ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}` 
+          : `Pedido #${nuevoPedido.numero_display} ${tipoOrden.value === 'uber_eats' ? 'Uber Eats' : 'para llevar'} enviado a cocina (${nombreCliente.value})`
+        
+        showSuccessNotification(mensajeExito)
+      } else {
+        showErrorNotification(pedidosStore.error || 'Error al crear pedido')
+      }
+    }
+    
+    // Cerrar carrito móvil si está abierto
+    if (isMobile.value && showMobileCart.value) {
+      closeMobileCart()
     }
     
   } catch (e: any) {
-    showErrorNotification(e?.response?.data?.detail || 'Error al enviar pedido')
+    showErrorNotification(e?.response?.data?.detail || 'Error al procesar pedido')
   } finally {
     loading.value = false
   }
@@ -476,6 +514,28 @@ const limpiarCarrito = () => {
   showNombreClienteModal.value = false
 }
 
+// Limpiar formulario completo (nuevo pedido)
+const limpiarFormulario = () => {
+  carrito.value = []
+  nombreCliente.value = ''
+  mesa.value = ''
+  pedidoConfigurado.value = false
+  showTipoOrdenModal.value = true
+  showNombreClienteModal.value = false
+  modoAgregarArticulos.value = false
+  pedidoExistenteId.value = null
+}
+
+// Limpiar modo agregar artículos (mantiene mesa)
+const limpiarModoAgregar = () => {
+  carrito.value = []
+  pedidoConfigurado.value = false
+  showTipoOrdenModal.value = true
+  modoAgregarArticulos.value = false
+  pedidoExistenteId.value = null
+  mesa.value = ''
+}
+
 // Cancelar pedido desde desktop (no cierra modal)
 const cancelarPedidoDesktop = () => {
   limpiarCarrito()
@@ -529,12 +589,15 @@ const closeMesaModal = () => {
 const seleccionarMesa = (numeroMesa: string) => {
   // Verificar si la mesa está ocupada usando el computed reactivo
   if (mesasOcupadasReactivo.value.has(numeroMesa)) {
-    showErrorNotification(`Mesa ${numeroMesa} está ocupada`)
+    // Mesa ocupada - mostrar opciones
+    mesa.value = numeroMesa
+    showMesaModal.value = false
+    showMesaOcupadaModal.value = true
     return
   }
   
+  // Mesa libre - continuar normal
   mesa.value = numeroMesa
-  // Automáticamente continuar cuando se selecciona una mesa
   pedidoConfigurado.value = true
   showMesaModal.value = false
 }
@@ -547,6 +610,201 @@ const mesasLayout = [
   ['14', '24', '34'],
   ['15', '25', '35']
 ]
+
+// Funciones del modal de mesa ocupada
+const cerrarMesaOcupadaModal = () => {
+  showMesaOcupadaModal.value = false
+  mesa.value = ''
+  // Regresar al modal de selección de mesas
+  showMesaModal.value = true
+}
+
+const agregarArticulosMesa = () => {
+  // Buscar el pedido existente de esta mesa
+  const pedidoExistente = pedidosStore.pedidos.find(pedido => 
+    pedido.mesa === mesa.value && 
+    pedido.tipo_orden === 'aqui' &&
+    ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada'].includes(pedido.estado)
+  )
+  
+  if (pedidoExistente) {
+    // Configurar modo agregar artículos
+    modoAgregarArticulos.value = true
+    pedidoExistenteId.value = pedidoExistente.id
+    tipoOrden.value = 'aqui'
+    
+    // Cerrar modal y continuar al flujo de menú
+    showMesaOcupadaModal.value = false
+    pedidoConfigurado.value = true
+    
+    console.log(`✅ Modo agregar artículos activado para pedido #${pedidoExistente.numero_display} (ID: ${pedidoExistente.id})`)
+  } else {
+    showErrorNotification('No se encontró pedido activo para esta mesa')
+    cerrarMesaOcupadaModal()
+  }
+}
+
+const verPedidoActual = async () => {
+  // Buscar el pedido existente de esta mesa
+  const pedidoExistente = pedidosStore.pedidos.find(pedido => 
+    pedido.mesa === mesa.value && 
+    pedido.tipo_orden === 'aqui' &&
+    ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada'].includes(pedido.estado)
+  )
+  
+  if (pedidoExistente) {
+    pedidoActual.value = pedidoExistente
+    // Crear copia editable de los artículos para no modificar el store directamente
+    articulosEditables.value = pedidoExistente.articulos_pedido.map((articulo: any) => ({
+      ...articulo,
+      cantidad_original: articulo.cantidad // Para detectar cambios
+    }))
+    
+    showMesaOcupadaModal.value = false
+    showVerPedidoModal.value = true
+    
+    console.log(`✅ Ver pedido actual #${pedidoExistente.numero_display} - Estado: ${pedidoExistente.estado}`)
+  } else {
+    showErrorNotification('No se encontró pedido activo para esta mesa')
+    cerrarMesaOcupadaModal()
+  }
+}
+
+// Función para actualizar el modal cuando cambien los datos por WebSocket
+const actualizarModalPedido = () => {
+  if (!showVerPedidoModal.value || !pedidoActual.value) return
+  
+  // Buscar versión actualizada del pedido en el store
+  const pedidoActualizado = pedidosStore.pedidos.find(p => p.id === pedidoActual.value.id)
+  
+  if (pedidoActualizado) {
+    console.log('🔄 WebSocket update detected for pedido:', pedidoActualizado.id, 'modal open:', showVerPedidoModal.value)
+    
+    // Actualizar siempre la información básica del pedido (estado, total, etc.)
+    pedidoActual.value = {
+      ...pedidoActual.value,
+      estado: pedidoActualizado.estado,
+      total: pedidoActualizado.total,
+      numero_display: pedidoActualizado.numero_display,
+      articulos_pedido: pedidoActualizado.articulos_pedido
+    }
+    
+    // Solo actualizar artículos editables si no hay cambios locales pendientes
+    if (!hayCantidadesCambiadas.value) {
+      articulosEditables.value = pedidoActualizado.articulos_pedido.map((articulo: any) => ({
+        ...articulo,
+        cantidad_original: articulo.cantidad
+      }))
+      console.log('📱 Modal artículos actualizados por WebSocket')
+    } else {
+      console.log('⚠️ Modal tiene cambios locales, solo actualizada info básica')
+    }
+  } else if (pedidoActual.value) {
+    // El pedido ya no existe en el store, probablemente fue eliminado/cancelado
+    console.log('❌ Pedido no encontrado en store, cerrando modal')
+    cerrarVerPedidoModal()
+  }
+}
+
+// Funciones del modal ver pedido
+const cerrarVerPedidoModal = () => {
+  showVerPedidoModal.value = false
+  pedidoActual.value = null
+  articulosEditables.value = []
+  // Regresar al modal de mesa ocupada
+  showMesaOcupadaModal.value = true
+}
+
+const esPedidoPendiente = computed(() => {
+  return pedidoActual.value?.estado === 'pendiente'
+})
+
+const hayCantidadesCambiadas = computed(() => {
+  if (!pedidoActual.value) return false
+  
+  // Verificar si se eliminaron artículos (diferente número de artículos)
+  const articulosOriginales = pedidoActual.value.articulos_pedido?.length || 0
+  if (articulosEditables.value.length !== articulosOriginales) {
+    return true
+  }
+  
+  // Verificar si hay cambios de cantidad
+  return articulosEditables.value.some(articulo => 
+    articulo.cantidad !== articulo.cantidad_original
+  )
+})
+
+const ajustarCantidadPedido = (index: number, cambio: number) => {
+  if (!esPedidoPendiente.value) return
+  
+  const articulo = articulosEditables.value[index]
+  const nuevaCantidad = articulo.cantidad + cambio
+  
+  if (nuevaCantidad > 0) {
+    articulo.cantidad = nuevaCantidad
+  }
+}
+
+const eliminarArticuloPedido = (index: number) => {
+  if (!esPedidoPendiente.value) {
+    console.log('❌ No se puede eliminar: pedido no está pendiente')
+    return
+  }
+  
+  console.log(`🗑️ Eliminando artículo ${index}:`, articulosEditables.value[index])
+  // Eliminar del array directamente para remover visualmente de inmediato
+  articulosEditables.value.splice(index, 1)
+  console.log('✅ Artículo eliminado del modal')
+}
+
+const irAAgregarMasArticulos = () => {
+  // Cerrar modal actual y activar modo agregar
+  showVerPedidoModal.value = false
+  modoAgregarArticulos.value = true
+  pedidoExistenteId.value = pedidoActual.value.id
+  pedidoConfigurado.value = true
+}
+
+const guardarCambiosPedido = async () => {
+  if (!esPedidoPendiente.value || !pedidoActual.value) return
+  
+  loading.value = true
+  error.value = ''
+  
+  try {
+    // Mapear artículos editables (los eliminados ya no están en el array)
+    const articulosActualizados = articulosEditables.value
+      .map(articulo => ({
+        id: articulo.id,
+        cantidad: articulo.cantidad,
+        modificaciones: articulo.modificaciones || ''
+      }))
+    
+    // Llamar al endpoint para actualizar el pedido
+    const response = await api.put(`/pedidos/${pedidoActual.value.id}/actualizar-articulos`, {
+      articulos: articulosActualizados
+    })
+    
+    if (response.status === 200) {
+      showSuccessNotification(`Pedido #${pedidoActual.value.numero_display} actualizado`)
+      
+      // Cerrar modal y limpiar
+      showVerPedidoModal.value = false
+      pedidoActual.value = null
+      articulosEditables.value = []
+      
+      // Volver al inicio
+      limpiarFormulario()
+    } else {
+      showErrorNotification('Error al guardar cambios')
+    }
+    
+  } catch (e: any) {
+    showErrorNotification(e?.response?.data?.detail || 'Error al guardar cambios del pedido')
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -706,7 +964,7 @@ const mesasLayout = [
               :disabled="loading || carrito.length === 0" 
               class="w-full py-3 rounded-lg text-[#00126D] bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
             >
-              {{ loading ? '⏳ Enviando...' : '🍳 Enviar a Cocina' }}
+              {{ loading ? '⏳ Procesando...' : (modoAgregarArticulos ? `➕ Agregar a Mesa ${mesa}` : '🍳 Enviar a Cocina') }}
             </button>
           </div>
         </div>
@@ -803,7 +1061,7 @@ const mesasLayout = [
                 :disabled="loading || carrito.length === 0" 
                 class="w-full py-3 rounded-lg text-[#00126D] bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
               >
-                {{ loading ? '⏳ Enviando...' : '🍳 Enviar a Cocina' }}
+                {{ loading ? '⏳ Procesando...' : (modoAgregarArticulos ? `➕ Agregar a Mesa ${mesa}` : '🍳 Enviar a Cocina') }}
               </button>
             </div>
           </div>
@@ -955,11 +1213,10 @@ const mesasLayout = [
                 v-for="numeroMesa in fila"
                 :key="numeroMesa"
                 @click="seleccionarMesa(numeroMesa)"
-                :disabled="mesasOcupadasReactivo.has(numeroMesa)"
                 :class="[
                   'aspect-square rounded-lg border-2 font-bold text-lg transition-all relative',
                   mesasOcupadasReactivo.has(numeroMesa)
-                    ? 'bg-red-100 border-red-300 text-red-400 cursor-not-allowed'
+                    ? 'bg-red-100 border-red-300 text-red-600 hover:bg-red-200 cursor-pointer'
                     : 'bg-white border-gray-200 text-[#00126D] hover:border-[#FDB700] hover:bg-yellow-50'
                 ]"
               >
@@ -982,6 +1239,201 @@ const mesasLayout = [
           </div>
         </div>
         
+      </div>
+    </div>
+
+    <!-- Modal de Mesa Ocupada -->
+    <div
+      v-if="showMesaOcupadaModal"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      @click.self="cerrarMesaOcupadaModal"
+    >
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+      
+      <!-- Modal Content -->
+      <div class="relative bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+        <!-- Header -->
+        <div class="text-center mb-8">
+          <div class="text-6xl mb-4">🍽️</div>
+          <h3 class="text-2xl font-bold text-[#00126D] mb-2">Mesa {{ mesa }} Ocupada</h3>
+          <p class="text-gray-600">¿Qué quieres hacer?</p>
+        </div>
+        
+        <!-- Opciones -->
+        <div class="space-y-4">
+          <button
+            @click="agregarArticulosMesa"
+            class="w-full p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-[#FDB700] hover:bg-yellow-50 transition-all group text-left"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-4xl">➕</div>
+              <div>
+                <div class="text-lg font-bold text-[#00126D] group-hover:text-[#FDB700]">Agregar artículos</div>
+                <div class="text-sm text-gray-600">Añadir más platillos al pedido existente</div>
+              </div>
+            </div>
+          </button>
+          
+          <button
+            @click="verPedidoActual"
+            class="w-full p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all group text-left"
+          >
+            <div class="flex items-center gap-4">
+              <div class="text-4xl">👁️</div>
+              <div>
+                <div class="text-lg font-bold text-[#00126D] group-hover:text-blue-600">Ver pedido actual</div>
+                <div class="text-sm text-gray-600">Revisar lo que ya pidieron</div>
+              </div>
+            </div>
+          </button>
+          
+          <button
+            @click="cerrarMesaOcupadaModal"
+            class="w-full p-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all text-center"
+          >
+            ← Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Ver Pedido Actual -->
+    <div
+      v-if="showVerPedidoModal"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+      @click.self="cerrarVerPedidoModal"
+    >
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+      
+      <!-- Modal Content -->
+      <div class="relative bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h3 class="text-xl font-bold text-[#00126D]">Mesa {{ mesa }}</h3>
+            <p class="text-sm text-gray-600">
+              Pedido #{{ pedidoActual?.numero_display }} - 
+              <span :class="pedidoActual?.estado === 'pendiente' ? 'text-orange-600' : 'text-blue-600'">
+                {{ pedidoActual?.estado.toUpperCase() }}
+              </span>
+            </p>
+          </div>
+          <button @click="cerrarVerPedidoModal" class="text-gray-400 hover:text-gray-600 text-xl">
+            ←
+          </button>
+        </div>
+        
+        <!-- Lista de artículos - scrolleable -->
+        <div class="flex-1 overflow-y-auto mb-6">
+          <div v-if="articulosEditables.length === 0" class="text-center py-8 text-gray-500">
+            Sin artículos
+          </div>
+          <div v-else class="space-y-3">
+            <div 
+              v-for="(articulo, index) in articulosEditables" 
+              :key="articulo.id"
+              class="bg-gray-50 rounded-lg p-4 border"
+              :class="articulo.cantidad === 0 ? 'opacity-50 bg-red-50 border-red-200' : 'border-gray-200'"
+            >
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex-1">
+                  <div class="font-bold text-[#00126D]">
+                    {{ articulo.platillo?.kds_name || articulo.platillo?.nombre }}
+                  </div>
+                  <div class="text-sm text-[#FDB700] font-semibold">
+                    $ {{ Number(articulo.platillo?.precio).toFixed(2) }}
+                  </div>
+                </div>
+                
+                <!-- Controles de cantidad -->
+                <div v-if="esPedidoPendiente" class="flex items-center gap-2">
+                  <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <button 
+                      @click="ajustarCantidadPedido(index, -1)"
+                      class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm"
+                      :disabled="articulo.cantidad <= 0"
+                    >
+                      −
+                    </button>
+                    <div class="w-8 text-center font-bold text-sm">{{ articulo.cantidad }}</div>
+                    <button 
+                      @click="ajustarCantidadPedido(index, 1)"
+                      class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button 
+                    @click="eliminarArticuloPedido(index)"
+                    class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm border border-red-200"
+                    :disabled="articulo.cantidad === 0"
+                  >
+                    🗑️
+                  </button>
+                </div>
+                
+                <!-- Solo mostrar cantidad si no es editable -->
+                <div v-else class="text-lg font-bold text-gray-700">
+                  {{ articulo.cantidad }}x
+                </div>
+              </div>
+              
+              <!-- Modificaciones -->
+              <div v-if="articulo.modificaciones" class="text-xs text-gray-600 bg-yellow-50 p-2 rounded border-l-4 border-yellow-400">
+                {{ articulo.modificaciones }}
+              </div>
+              
+              <!-- Indicador de cambio -->
+              <div v-if="esPedidoPendiente && articulo.cantidad !== articulo.cantidad_original" class="text-xs mt-2">
+                <span v-if="articulo.cantidad === 0" class="text-red-600 font-bold">
+                  ❌ Se eliminará
+                </span>
+                <span v-else class="text-orange-600 font-bold">
+                  📝 Cambio: {{ articulo.cantidad_original }}x → {{ articulo.cantidad }}x
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Total -->
+        <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] rounded-xl p-4 text-white mb-4">
+          <div class="flex items-center justify-between">
+            <span class="font-bold">💰 TOTAL</span>
+            <span class="text-xl font-black">$ {{ Number(pedidoActual?.total || 0).toFixed(2) }}</span>
+          </div>
+        </div>
+        
+        <!-- Botones -->
+        <div class="space-y-3">
+          <!-- Guardar cambios (solo si hay cambios y es pendiente) -->
+          <button 
+            v-if="esPedidoPendiente && hayCantidadesCambiadas"
+            @click="guardarCambiosPedido"
+            :disabled="loading"
+            class="w-full py-3 bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-[#00126D] font-bold rounded-lg transition-all"
+          >
+            {{ loading ? '⏳ Guardando...' : '💾 Guardar Cambios' }}
+          </button>
+          
+          <!-- Agregar más artículos -->
+          <button
+            @click="irAAgregarMasArticulos"
+            class="w-full py-3 bg-green-100 hover:bg-green-200 text-green-700 font-bold rounded-lg transition-all border border-green-300"
+          >
+            ➕ Agregar Más Artículos
+          </button>
+          
+          <!-- Cerrar -->
+          <button
+            @click="cerrarVerPedidoModal"
+            class="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-all"
+          >
+            ← Cerrar
+          </button>
+        </div>
       </div>
     </div>
 
