@@ -39,19 +39,18 @@ const pedidosActivos = computed(() => {
     .filter(p => ['pendiente', 'preparando', 'listo', 'entregado'].includes(p.estado))
     .map(p => {
       // Filtrar artículos: mostrar pendiente, preparando, listo. Ocultar entregado
+      // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
         ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
       )
       
-      // Si hay artículos entregados (ocultos), marcar como artículos agregados
-      const tieneArticulosEntregados = (p.articulos_pedido || []).some(a => a.estado_item === 'entregado')
-      
       return {
         ...p,
-        articulos_pedido: articulosVisibles,
-        articulosAgregados: tieneArticulosEntregados // Flag para mostrar indicador
+        articulos_pedido: articulosVisibles
       }
     })
+    // Filtrar pedidos que NO tienen artículos visibles
+    .filter(p => p.articulos_pedido.length > 0)
 })
 
 const selectedPedido = computed(() => {
@@ -438,11 +437,6 @@ onUnmounted(() => {
                   <span v-if="p.mesa" class="text-2xl font-black text-white">MESA {{ p.mesa }}</span>
                   <span v-else-if="p.nombre_cliente" class="text-xl font-black text-white">{{ p.nombre_cliente.toUpperCase() }}</span>
                   <span v-else class="text-lg font-bold text-yellow-300">PARA LLEVAR</span>
-                  <!-- Indicador PROMINENTE para artículos agregados - Desktop -->
-                  <div v-if="p.articulosAgregados" 
-                       class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-sm border-2 border-yellow-300 shadow-lg">
-                    ➕ AGREGADOS
-                  </div>
                 </div>
                 <!-- Número discreto -->
                 <span class="text-sm font-medium opacity-75">#{{ p.numero_display }}</span>
@@ -461,11 +455,6 @@ onUnmounted(() => {
                 <div v-if="p.mesa" class="text-xl font-black text-white">MESA {{ p.mesa }}</div>
                 <div v-else-if="p.nombre_cliente" class="text-lg font-black text-white truncate max-w-32">{{ p.nombre_cliente.toUpperCase() }}</div>
                 <div v-else class="text-base font-bold text-yellow-300">PARA LLEVAR</div>
-                <!-- Indicador PROMINENTE para artículos agregados - Móvil -->
-                <div v-if="p.articulosAgregados" 
-                     class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-xs border-2 border-yellow-300 shadow-lg">
-                  ➕ AGREGADOS
-                </div>
               </div>
               
               <!-- Botón de acción optimizado para móvil -->

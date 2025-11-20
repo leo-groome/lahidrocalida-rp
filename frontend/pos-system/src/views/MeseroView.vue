@@ -169,12 +169,25 @@ const loadPlatillos = async () => {
 }
 
 
-// Categorías únicas de platillos (excluyendo Pozoles)
+// Categorías únicas de platillos (excluyendo Pozoles) - Postres penúltimo, Bebidas último
 const categorias = computed(() => {
   const cats = [...new Set(platillos.value
     .filter(p => p.categoria !== 'Pozole' && p.estado === 'disponible')
     .map(p => p.categoria))]
-  return cats.sort()
+  
+  // Ordenamiento personalizado: Postres penúltimo, Bebidas último
+  return cats.sort((a, b) => {
+    // Si uno es Bebidas, va al final
+    if (a === 'Bebidas') return 1
+    if (b === 'Bebidas') return -1
+    
+    // Si uno es Postres, va después de todo excepto Bebidas
+    if (a === 'Postres') return 1
+    if (b === 'Postres') return -1
+    
+    // Resto en orden alfabético
+    return a.localeCompare(b)
+  })
 })
 
 // Platillos por categoría (excluyendo Pozoles)
@@ -224,7 +237,8 @@ const especificacionesComunes = computed(() => {
     'Flautas': ['Sin crema', 'Sin lechuga', 'Sin queso'],
     'Sopes': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin frijoles'],
     'Tacos': ['Sin crema', 'Sin lechuga', 'Sin queso'],
-    'Tostadas': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin frijoles']
+    'Tostadas': ['Sin crema', 'Sin lechuga', 'Sin queso', 'Sin frijoles'],
+    'Postres': ['Sin chocolate']
   }
   
   return especificacionesPorCategoria[categoria] || []

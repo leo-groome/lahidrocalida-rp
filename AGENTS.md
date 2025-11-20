@@ -383,6 +383,14 @@ proyecto/
 - 🔊 **Notificaciones sonoras** - Alertas para nueva orden en cocina
 - 🌙 **Modo oscuro** - Para uso en horarios nocturnos
 
+**🆕 NUEVO - Sistema de Bebidas y Postres Implementado:**
+- ✅ **Bebidas automáticamente entregadas** - Se marcan como "entregado" al crear pedido
+- ✅ **Filtrado inteligente KDS** - Bebidas nunca aparecen en pantallas de cocina
+- ✅ **Auto-promoción mejorada** - Pedidos pasan a "listo" considerando bebidas entregadas
+- ✅ **Orden de categorías optimizado** - Comida → Postres → Bebidas
+- ✅ **Especificaciones rápidas Postres** - "Sin chocolate" agregado
+- ✅ **KDS limpio** - Eliminado indicador de "agregados" que interfería
+
 **Optimizaciones Necesarias:**
 - ⚡ **Performance avanzado** - Paginación, cache, optimización de queries
 - 🔧 **Configuración UI** - Interface para ajustar horarios, precios desde admin
@@ -728,23 +736,23 @@ Para evitar cambiar la IP en múltiples lugares:
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO para TV/Tablet + WebSockets + IMPRESIÓN FÍSICA**
-**Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Mapa de mesas + Impresión automática**
+**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO + BEBIDAS Y POSTRES + WebSockets + IMPRESIÓN FÍSICA**
+**Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Sistema Bebidas Inteligente + Impresión automática**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
-**Últimos cambios - AGREGAR A PEDIDO EXISTENTE + MESERO ULTRA-OPTIMIZADO + KDS:**
-- ✅ **AGREGAR A PEDIDO EXISTENTE**: Sistema completo implementado para modificar pedidos activos
-- ✅ **Modal mesa ocupada**: Opciones [➕ Agregar artículos] [👁️ Ver pedido actual] [← Cancelar]
-- ✅ **Ver/modificar pedidos**: Modal completo con edición de cantidades y eliminación de artículos
-- ✅ **Lógica diferenciada**: Pendiente actualiza completo, otros estados solo agregan "#001-A" en KDS
-- ✅ **Endpoints backend**: PUT /pedidos/{id}/agregar-articulos y PUT /pedidos/{id}/actualizar-articulos
-- ✅ **WebSocket inteligente**: Notificaciones según contexto (pedido_estado_changed vs pedido_created)
-- ✅ **MeseroView velocidad máxima**: Especificaciones rápidas por categoría con botones inteligentes
-- ✅ **Mesas tiempo real**: WebSocket para meseros, sincronización automática entre dispositivos
-- ✅ **Carrito optimizado**: Scroll funcional, botón siempre visible, eliminar separado
-- ✅ **Categorías auto-cerradas**: Mayor velocidad, se cierran después de agregar artículo
+**Últimos cambios - SISTEMA BEBIDAS Y POSTRES COMPLETO:**
+- ✅ **BEBIDAS AUTOMÁTICAS**: Se marcan como "entregado" al crear pedido, nunca aparecen en KDS
+- ✅ **FILTRADO INTELIGENTE KDS**: Bebidas invisibles para cocina, solo ven comida a preparar
+- ✅ **AUTO-PROMOCIÓN MEJORADA**: Pedidos pasan a "listo" considerando bebidas+comida completados
+- ✅ **ORDEN CATEGORÍAS OPTIMIZADO**: Comida → Postres (penúltimo) → Bebidas (último)
+- ✅ **ESPECIFICACIONES POSTRES**: Agregado "Sin chocolate" para opciones rápidas
+- ✅ **KDS LIMPIO**: Eliminado indicador "agregados" que interfería con el flujo
+- ✅ **LÓGICA BACKEND INTELIGENTE**: Bebidas se crean como entregadas en creación y modificación
+- ✅ **FLUJO SIMPLIFICADO COCINA**: Interface limpia sin distracciones innecesarias
+- ✅ **ESTADOS COHERENTES**: Considera "listo" + "entregado" como artículos completados
+- ✅ **MESERO OPTIMIZADO COMPLETO**: Sistema completo con agregar a pedido existente
 - ✅ **KDS View TV optimizado**: Legibilidad desde 8 metros, máximo 4 pedidos, texto gigante
-- ✅ **KDS Manager tablet**: Artículos táctiles grandes text-lg/xl/2xl sin tachado
-- ✅ **Configuración sistema**: JWT 24 horas, favicon corporativo, título profesional
+- ✅ **KDS Manager tablet**: Artículos táctiles grandes sin elementos que interfieren
+- ✅ **WebSocket tiempo real perfecto**: Funciona sin problemas con el nuevo sistema
 **Funcionalidades nuevas:** 
 - **Mapa de mesas lateral** en vista caja con estados visuales en tiempo real
 - **Interacción contextual** - Clic en mesa libre (deshabilitado), ocupada (detalles), cuenta solicitada (cobro directo)

@@ -17,27 +17,34 @@ const todasLasComandas = computed(() => {
     .filter(p => ['pendiente', 'preparando'].includes(p.estado))
     .map(p => {
       // Filtrar artículos: mostrar pendiente, preparando, listo. Ocultar entregado
+      // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
         ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
       )
       
-      // Si hay artículos entregados (ocultos), marcar como artículos agregados
-      const tieneArticulosEntregados = (p.articulos_pedido || []).some(a => a.estado_item === 'entregado')
-      
       return {
         ...p,
-        articulos_pedido: articulosVisibles,
-        articulosAgregados: tieneArticulosEntregados // Flag para mostrar indicador
+        articulos_pedido: articulosVisibles
       }
     })
+    // Filtrar pedidos que NO tienen artículos visibles
+    .filter(p => p.articulos_pedido.length > 0)
     .sort((a, b) => new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime())
     .slice(0, 4)
 })
 
 const totalPedidosPendientes = computed(() => {
-  // Contar pedidos pendientes y preparando (incluye los que volvieron a pendiente)
+  // Contar pedidos pendientes y preparando que tienen artículos visibles
+  // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
   return pedidosStore.pedidosKDS
-    .filter(p => ['pendiente', 'preparando'].includes(p.estado)).length
+    .filter(p => ['pendiente', 'preparando'].includes(p.estado))
+    .filter(p => {
+      // Solo contar pedidos que tienen artículos no entregados
+      const articulosVisibles = (p.articulos_pedido || []).filter(a => 
+        ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
+      )
+      return articulosVisibles.length > 0
+    }).length
 })
 
 const pedidosNoVisibles = computed(() => {
@@ -258,11 +265,6 @@ onUnmounted(() => {
                    'text-2xl': todasLasComandas.length >= 4
                  }]">
               MESA {{ p.mesa }}
-              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
-              <div v-if="p.articulosAgregados" 
-                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
-                ➕ AGREGADOS
-              </div>
             </div>
             <div v-else-if="p.nombre_cliente" 
                  :class="['font-black text-white leading-tight', {
@@ -271,11 +273,6 @@ onUnmounted(() => {
                    'text-xl': todasLasComandas.length >= 4
                  }]">
               {{ p.nombre_cliente.toUpperCase() }}
-              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
-              <div v-if="p.articulosAgregados" 
-                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
-                ➕ AGREGADOS
-              </div>
             </div>
             <div v-else 
                  :class="['font-bold text-yellow-300', {
@@ -284,11 +281,6 @@ onUnmounted(() => {
                    'text-lg': todasLasComandas.length >= 4
                  }]">
               PARA LLEVAR
-              <!-- Indicador ULTRA-PROMINENTE para artículos agregados -->
-              <div v-if="p.articulosAgregados" 
-                   class="bg-yellow-500 text-black font-black px-2 py-1 rounded-lg mt-1 text-lg border-2 border-yellow-300 shadow-lg animate-pulse">
-                ➕ AGREGADOS
-              </div>
             </div>
           </div>
 

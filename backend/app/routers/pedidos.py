@@ -142,12 +142,19 @@ async def create_pedido(
 
             # Crear los artículos del pedido
             for articulo_data in articulos_calculados:
+                # Obtener el platillo para verificar si es bebida
+                platillo = db.query(Platillo).filter(Platillo.id == articulo_data['platillo_id']).first()
+                
+                # Si es bebida, marcarla como "entregado" automáticamente
+                estado_inicial = "entregado" if platillo and platillo.categoria == "Bebidas" else "pendiente"
+                
                 articulo = ArticuloPedido(
                     pedido_id=pedido.id,
                     platillo_id=articulo_data['platillo_id'],
                     cantidad=articulo_data['cantidad'],
                     precio_cobrado=articulo_data['precio_cobrado'],
-                    modificaciones=articulo_data['modificaciones']
+                    modificaciones=articulo_data['modificaciones'],
+                    estado_item=estado_inicial  # Bebidas = "entregado", resto = "pendiente"
                 )
                 db.add(articulo)
 
@@ -354,9 +361,10 @@ async def update_pedido(
     pedido.estado = data.estado
     
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
+    # EXCEPTO aquellos que ya están "entregado" (bebidas)
     if data.estado == "listo":
         for articulo in pedido.articulos_pedido:
-            if articulo.estado_item != "listo":
+            if articulo.estado_item not in ["listo", "entregado"]:
                 articulo.estado_item = "listo"
     
     # Si el pedido se marca como "entregado", marcar todos los artículos como "entregado"
@@ -454,12 +462,12 @@ async def update_articulo_estado(
     # Obtener el pedido asociado
     pedido = articulo.pedido
     
-    # Verificar si todos los artículos están listos
-    todos_listos = all(a.estado_item == "listo" for a in pedido.articulos_pedido)
+    # Verificar si todos los artículos están completados (listo o entregado)
+    todos_completados = all(a.estado_item in ["listo", "entregado"] for a in pedido.articulos_pedido)
     
-    # Si todos están listos y el pedido está en 'preparando', cambiar a 'listo'
+    # Si todos están completados y el pedido está en 'preparando', cambiar a 'listo'
     pedido_estado_changed = False
-    if todos_listos and pedido.estado == "preparando":
+    if todos_completados and pedido.estado == "preparando":
         pedido.estado = "listo"
         pedido_estado_changed = True
         db.commit()
@@ -615,13 +623,19 @@ async def agregar_articulos_pedido(
     # Crear los nuevos artículos
     nuevos_articulos = []
     for articulo_data in articulos_calculados:
+        # Obtener el platillo para verificar si es bebida
+        platillo = db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
+        
+        # Si es bebida, marcarla como "entregado" automáticamente
+        estado_inicial = "entregado" if platillo and platillo.categoria == "Bebidas" else "pendiente"
+        
         articulo = ArticuloPedido(
             pedido_id=pedido.id,
             platillo_id=articulo_data["platillo_id"],
             cantidad=articulo_data["cantidad"],
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
-            estado_item="pendiente"
+            estado_item=estado_inicial  # Bebidas = "entregado", resto = "pendiente"
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)

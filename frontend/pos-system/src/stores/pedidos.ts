@@ -111,6 +111,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     }
   }
 
+
   async function initWebSocket(clientType: 'kds' | 'caja' | 'mesero'): Promise<boolean> {
     const authStore = useAuthStore()
     
