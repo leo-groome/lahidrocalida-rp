@@ -6,7 +6,7 @@
 
 Sistema de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El **flujo operativo está completo** con WebSockets en tiempo real, pero faltan funcionalidades adicionales para producción completa.
 
-**Estado Actual: SISTEMA COMPLETO - Panel Admin + WebSockets + Reportes + KDS Optimizado para TV/Tablet**
+**Estado Actual: SISTEMA COMPLETAMENTE FUNCIONAL - Panel Admin + WebSockets + Reportes + KDS Optimizado + Pedidos Actuales FUNCIONAL**
 
 ---
 
@@ -173,9 +173,15 @@ proyecto/
 - Redirección automática basada en rol
 - Manejo de errores y validaciones
 
-**2. MeseroView (/mesero) - ULTRA-OPTIMIZADO + AGREGAR A PEDIDO EXISTENTE**
+**2. MeseroView (/mesero) - ULTRA-OPTIMIZADO + AGREGAR A PEDIDO EXISTENTE + PEDIDOS ACTUALES FUNCIONAL**
 - **Rol:** mesero, administrador
 - **Modal inicial obligatorio** - Configuración de tipo de orden al inicio
+- **PEDIDOS ACTUALES COMPLETAMENTE FUNCIONAL** - Sistema completo implementado:
+  * **Modal funcional** - Lista todos los pedidos activos del día en tiempo real
+  * **Filtrado automático** - Separación por "Para Aquí" y "Para Llevar/Uber Eats"
+  * **Información completa** - Mesa/Cliente, número, estado, total, hora de creación
+  * **Interacción directa** - Clic en pedido para ver/modificar directamente
+  * **Datos en tiempo real** - Sincronización WebSocket automática
 - **Flujo optimizado**: Tipo orden → Mesa/Nombre → Menú → Especificaciones → Carrito
 - **Mesas ocupadas TIEMPO REAL** - WebSocket sincronización automática entre meseros
 - **FUNCIONALIDAD "AGREGAR A PEDIDO EXISTENTE"** - Sistema completo implementado:
@@ -344,6 +350,7 @@ proyecto/
 
 **Flujo Operativo Completo + Tiempo Real + Administración + UX Ultra-Optimizada:**
 - ✅ **Mesero: Modal inicial** → **Tipo orden → Mesa/Nombre → Menú instantáneo**
+- ✅ **Mesero: PEDIDOS ACTUALES COMPLETAMENTE FUNCIONAL** → **Modal con todos los pedidos activos, filtrados por tipo, tiempo real**
 - ✅ **Mesero: AGREGAR A PEDIDO EXISTENTE** → **Mesa ocupada → [Agregar artículos] [Ver pedido] [Cancelar]**
 - ✅ **Mesero: Modificar pedidos pendientes** → **Ver pedido actual permite editar cantidades y eliminar artículos**
 - ✅ **Mesero: Lógica diferenciada por estado** → **Pendiente: actualiza completo, otros: solo nuevos "#001-A"**
@@ -736,10 +743,14 @@ Para evitar cambiar la IP en múltiples lugares:
 ---
 
 **Última actualización: Enero 2025**
-**Estado del proyecto: SISTEMA COMPLETO + Panel Admin + KDS ULTRA-OPTIMIZADO + BEBIDAS Y POSTRES + WebSockets + IMPRESIÓN FÍSICA**
-**Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Sistema Bebidas Inteligente + Impresión automática**
+**Estado del proyecto: SISTEMA COMPLETAMENTE FUNCIONAL + Panel Admin + KDS ULTRA-OPTIMIZADO + BEBIDAS Y POSTRES + WebSockets + IMPRESIÓN FÍSICA + PEDIDOS ACTUALES**
+**Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Sistema Bebidas Inteligente + Impresión automática + Pedidos Actuales funcional**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
-**Últimos cambios - SISTEMA BEBIDAS Y POSTRES COMPLETO:**
+**Últimos cambios - FIX CRÍTICO PEDIDOS ACTUALES + SISTEMA BEBIDAS Y POSTRES:**
+- ✅ **PEDIDOS ACTUALES RESUELTO**: Error crítico de renderizado solucionado - conversión de string a número para totales
+- ✅ **MODAL PEDIDOS ACTUALES FUNCIONAL**: Sistema completo para ver/modificar todos los pedidos activos
+- ✅ **FILTRADO POR TIPO**: Separación automática "Para Aquí" vs "Para Llevar/Uber Eats"
+- ✅ **TIEMPO REAL COMPLETO**: Datos actualizados instantáneamente via WebSocket
 - ✅ **BEBIDAS AUTOMÁTICAS**: Se marcan como "entregado" al crear pedido, nunca aparecen en KDS
 - ✅ **FILTRADO INTELIGENTE KDS**: Bebidas invisibles para cocina, solo ven comida a preparar
 - ✅ **AUTO-PROMOCIÓN MEJORADA**: Pedidos pasan a "listo" considerando bebidas+comida completados

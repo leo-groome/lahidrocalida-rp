@@ -1,6 +1,6 @@
 # **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-**Estado: SISTEMA COMPLETO + KDS OPTIMIZADO + SISTEMA BEBIDAS INTELIGENTE + PANEL ADMIN**  
+**Estado: SISTEMA COMPLETAMENTE FUNCIONAL + KDS OPTIMIZADO + SISTEMA BEBIDAS INTELIGENTE + PANEL ADMIN + PEDIDOS ACTUALES**  
 Fecha: Enero 2025
 
 ## 📋 Resumen del Proyecto
@@ -74,8 +74,9 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 - JWT con expiración configurable
 - Redirección automática por rol
 
-### 2. Vista de Mesero (/mesero) - ULTRA-OPTIMIZADA + WEBSOCKET MEJORADO
+### 2. Vista de Mesero (/mesero) - ULTRA-OPTIMIZADA + WEBSOCKET MEJORADO + PEDIDOS ACTUALES FUNCIONAL
 - **Modal inicial obligatorio** - Configura tipo de orden primero
+- **✅ PEDIDOS ACTUALES COMPLETAMENTE FUNCIONAL** - Modal con todos los pedidos activos del día en tiempo real
 - **Flujo sin scrolling** - Tipo → Mesa/Nombre → Menú instantáneo
 - **Mesas tiempo real** - Ve cuáles están ocupadas automáticamente
 - **Especificaciones inmediatas** - Modal automático al clic en platillo
