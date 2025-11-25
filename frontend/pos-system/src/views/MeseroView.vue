@@ -757,6 +757,34 @@ const verPedidoActual = async () => {
   }
 }
 
+// Solicitar cuenta para pedido entregado (NUEVA FUNCIONALIDAD EN MESERO)
+const solicitarCuenta = async (pedido: any) => {
+  try {
+    // Cambiar estado a cuenta_solicitada
+    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
+    
+    if (success) {
+      const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+      showSuccessNotification(`Cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+      
+      // Cerrar modal si está abierto
+      if (showVerPedidoModal.value) {
+        showVerPedidoModal.value = false
+      }
+      
+      // REINICIAR FLUJO COMPLETO AL MODAL INICIAL
+      limpiarFormulario()
+      
+      // Actualizar datos del modal si es necesario
+      actualizarModalPedido()
+    } else {
+      showErrorNotification(pedidosStore.error || 'Error al solicitar cuenta')
+    }
+  } catch (e: any) {
+    showErrorNotification('Error inesperado al solicitar cuenta')
+  }
+}
+
 // Función para actualizar el modal cuando cambien los datos por WebSocket
 const actualizarModalPedido = () => {
   // Si no hay pedido actual, no hay nada que actualizar
@@ -1689,6 +1717,15 @@ const guardarCambiosPedido = async () => {
             class="w-full py-3 bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-[#00126D] font-bold rounded-lg transition-all"
           >
             {{ loading ? '⏳ Guardando...' : '💾 Guardar Cambios' }}
+          </button>
+          
+          <!-- Solicitar cuenta (solo si está entregado) -->
+          <button
+            v-if="pedidoActual?.estado === 'entregado'"
+            @click="solicitarCuenta(pedidoActual)"
+            class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-all"
+          >
+            💳 Solicitar Cuenta
           </button>
           
           <!-- Agregar más artículos -->

@@ -6,7 +6,7 @@
 
 Sistema de gestión de pedidos con **flujo post-pago** desarrollado específicamente para pozolería. Incluye gestión de meseros, cocina digital (KDS) y procesamiento de pagos. El **flujo operativo está completo** con WebSockets en tiempo real, pero faltan funcionalidades adicionales para producción completa.
 
-**Estado Actual: SISTEMA COMPLETAMENTE FUNCIONAL - Panel Admin + WebSockets + Reportes + KDS Optimizado + Pedidos Actuales FUNCIONAL**
+**Estado Actual: SISTEMA COMPLETAMENTE FUNCIONAL - Panel Admin + WebSockets + Reportes + KDS Optimizado + Pedidos Actuales FUNCIONAL + Impresión Física**
 
 ---
 
@@ -315,7 +315,7 @@ proyecto/
 - ✅ **KDS View ULTRA-OPTIMIZADO** - Vista TV para 8 metros con texto gigante y máximo 4 pedidos
 - ✅ **KDS Manager ULTRA-OPTIMIZADO** - Tablet/móvil con artículos legibles y sin tachado
 - ✅ **Panel de Administración** - Dashboard completo con reportes
-- ✅ **Vista Dashboard** - Métricas del día en tiempo real
+- ✅ **Vista Dashboard** - Métricas del día en tiempo real (Ticket Promedio, Ventas por Hora, Tipos de Orden, Estado en Vivo)
 - ✅ **Reportes Semanales** - Analytics por período configurable
 - ✅ **Gestión de Gastos** - CRUD con categorización
 - ✅ **Top 10 Productos** - Analytics de ventas por producto
@@ -575,7 +575,6 @@ try {
 - **Testing automatizado** y control de calidad
 - **Configuración avanzada** (horarios, etc.)
 - **Analytics de meseros** (rendimiento individual)
-- **Impresión física** (opcional - actualmente solo en consola)
 
 ## 🎯 Casos de Uso del Sistema
 
@@ -742,7 +741,7 @@ Para evitar cambiar la IP en múltiples lugares:
 
 ---
 
-**Última actualización: Enero 2025**
+**Última actualización: Noviembre 2025**
 **Estado del proyecto: SISTEMA COMPLETAMENTE FUNCIONAL + Panel Admin + KDS ULTRA-OPTIMIZADO + BEBIDAS Y POSTRES + WebSockets + IMPRESIÓN FÍSICA + PEDIDOS ACTUALES**
 **Flujo: Post-pago + Dashboard + Reportes + KDS TV 8 metros + KDS Tablet táctil + Sistema Bebidas Inteligente + Impresión automática + Pedidos Actuales funcional**
 **Pendiente: Reportes mensuales, configuración UI impresora, testing automatizado**
@@ -779,4 +778,5 @@ Para evitar cambiar la IP en múltiples lugares:
 - **📦 Bundle optimization** - Size reducido 99% con chunks inteligentes
 - **🔧 Scripts de utilidades** - Gestión automática de categorías
 - **⚙️ Configuración avanzada** - Timezone, versioning, debug mode
+- **📊 Dashboard Mejorado** - Ticket promedio, ventas por hora, tipos de orden y estado en vivo
 **Mantenido por: AI Agents & Development Team**

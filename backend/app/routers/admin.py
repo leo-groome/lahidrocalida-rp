@@ -106,15 +106,79 @@ def get_dashboard_metrics(
         func.sum(ArticuloPedido.cantidad).desc()
     ).limit(5).all()
     
+    # Ticket promedio
+    total_ingresos = efectivo_total + tarjeta_total + transferencia_total
+    promedio_ticket = float(total_ingresos) / total_pedidos if total_pedidos > 0 else 0
+
+    # Ventas por hora
+    ventas_por_hora = db.query(
+        extract('hour', Pedido.fecha_creacion).label('hora'),
+        func.count(Pedido.id).label('cantidad'),
+        func.sum(Pedido.total).label('total')
+    ).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(extract('hour', Pedido.fecha_creacion)).order_by(extract('hour', Pedido.fecha_creacion)).all()
+
+    # Tipos de orden
+    tipos_orden_data = db.query(
+        Pedido.tipo_orden,
+        func.count(Pedido.id).label('cantidad')
+    ).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(Pedido.tipo_orden).all()
+
+    # Cancelaciones
+    cancelaciones = db.query(func.count(Pedido.id)).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "cancelado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).scalar() or 0
+
+    # Estado actual (Pedidos activos)
+    estado_actual_data = db.query(
+        Pedido.estado,
+        func.count(Pedido.id).label('cantidad')
+    ).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado.in_(['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada']),
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(Pedido.estado).all()
+    
     return {
         "fecha": today.isoformat(),
         "total_pedidos": total_pedidos,
+        "promedio_ticket": promedio_ticket,
+        "cancelaciones": cancelaciones,
         "ingresos": {
             "efectivo": float(efectivo_total),
             "tarjeta": float(tarjeta_total),
             "transferencia": float(transferencia_total),
-            "total": float(efectivo_total + tarjeta_total + transferencia_total)
+            "total": float(total_ingresos)
         },
+        "ventas_por_hora": [
+            {"hora": int(hora), "cantidad": int(cantidad), "total": float(total)}
+            for hora, cantidad, total in ventas_por_hora
+        ],
+        "tipos_orden": [
+            {"tipo": tipo, "cantidad": int(cantidad)}
+            for tipo, cantidad in tipos_orden_data
+        ],
+        "estado_actual": [
+            {"estado": estado, "cantidad": int(cantidad)}
+            for estado, cantidad in estado_actual_data
+        ],
         "productos_mas_vendidos": [
             {"nombre": nombre, "cantidad": int(cantidad)}
             for nombre, cantidad in productos_vendidos

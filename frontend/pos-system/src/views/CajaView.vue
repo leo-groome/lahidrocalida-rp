@@ -218,6 +218,10 @@ const handleMesaClick = (numeroMesa: string) => {
 const showDetailsModal = ref(false)
 const selectedPedidoDetails = ref<PedidoResponse | null>(null)
 
+// Estado para modal de confirmación de cancelación
+const showCancelConfirmModal = ref(false)
+const pedidoACancelar = ref<PedidoResponse | null>(null)
+
 // Mostrar detalles del pedido
 const showPedidoDetails = (pedido: PedidoResponse) => {
   selectedPedidoDetails.value = pedido
@@ -436,6 +440,64 @@ const imprimirTicket = async (pedido: PedidoResponse) => {
   }
 }
 
+// Imprimir ticket por separado (para pedidos ya en cuenta_solicitada)
+const imprimirTicketSeparado = async (pedido: PedidoResponse) => {
+  try {
+    console.log('🖨️ Imprimiendo ticket separado para pedido:', pedido.id)
+    
+    // Solo imprimir ticket sin cambiar estado
+    await imprimirTicket(pedido)
+    
+    const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+    showSuccessNotification(`Ticket reimpreso: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+    
+  } catch (e: any) {
+    showErrorNotification('Error al reimprimir ticket')
+  }
+}
+
+// Mostrar modal de confirmación de cancelación (primera confirmación)
+const mostrarConfirmacionCancelacion = (pedido: PedidoResponse) => {
+  pedidoACancelar.value = pedido
+  showCancelConfirmModal.value = true
+}
+
+// Cerrar modal de confirmación
+const cerrarConfirmacionCancelacion = () => {
+  showCancelConfirmModal.value = false
+  pedidoACancelar.value = null
+}
+
+// Cancelar pedido (segunda confirmación - ejecutar cancelación)
+const confirmarCancelacion = async () => {
+  if (!pedidoACancelar.value) return
+  
+  const pedido = pedidoACancelar.value
+  
+  try {
+    // Cambiar estado a cancelado
+    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cancelado')
+    
+    if (success) {
+      const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+      showSuccessNotification(`Pedido cancelado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+      
+      // Limpiar filtro después de acción completada
+      searchQuery.value = ''
+      
+      // Cerrar todos los modales
+      cerrarConfirmacionCancelacion()
+      if (showDetailsModal.value) {
+        closeDetailsModal()
+      }
+    } else {
+      showErrorNotification(pedidosStore.error || 'Error al cancelar pedido')
+    }
+  } catch (e: any) {
+    showErrorNotification('Error inesperado al cancelar pedido')
+  }
+}
+
 // Solicitar cuenta para pedido entregado
 const solicitarCuenta = async (pedido: PedidoResponse) => {
   try {
@@ -615,7 +677,8 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             <div 
               v-for="pedido in pedidosActivos" 
               :key="pedido.id"
-              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all"
+              @click="showPedidoDetails(pedido)"
+              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-[#FDB700] hover:scale-105"
             >
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
@@ -633,14 +696,21 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
                 <div class="text-[#FDB700] font-bold mt-1">$ {{ Number(pedido.total).toFixed(2) }}</div>
               </div>
 
-              <!-- Botón para solicitar cuenta si está entregado -->
-              <div v-if="pedido.estado === 'entregado'" class="mt-3 pt-3 border-t border-gray-200">
+              <!-- Indicador de clickeable y botones de acción -->
+              <div class="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                <!-- Botón solicitar cuenta si está entregado -->
                 <button
-                  @click="solicitarCuenta(pedido)"
+                  v-if="pedido.estado === 'entregado'"
+                  @click.stop="solicitarCuenta(pedido)"
                   class="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md"
                 >
                   💳 Solicitar Cuenta
                 </button>
+                
+                <!-- Indicador de acción -->
+                <div class="text-center text-xs text-gray-500 font-medium">
+                  👆 Clic para ver detalles del pedido
+                </div>
               </div>
             </div>
           </div>
@@ -688,21 +758,21 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             @click="selectPedido(pedido)"
             class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-[#FDB700] cursor-pointer transition-all hover:scale-105 group"
           >
-            <!-- Header del pedido -->
+            <!-- Header del pedido - PRIORIZADA MESA/CLIENTE -->
             <div class="flex items-center justify-center mb-4">
               <div class="flex items-center gap-3">
                 <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
-                <div class="text-2xl font-black text-[#00126D]">{{ pedido.numero_display }}</div>
+                <!-- Mesa o Cliente como prioridad principal -->
+                <div v-if="pedido.mesa" class="text-2xl font-black text-blue-600">MESA {{ pedido.mesa }}</div>
+                <div v-else-if="pedido.nombre_cliente" class="text-2xl font-black text-green-600">{{ pedido.nombre_cliente }}</div>
+                <div v-else class="text-2xl font-black text-[#00126D]">{{ pedido.numero_display }}</div>
               </div>
             </div>
 
-            <!-- Información de mesa/cliente -->
-            <div class="mb-4">
-              <div v-if="pedido.mesa" class="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-bold text-center mb-2">
-                🪑 MESA {{ pedido.mesa }}
-              </div>
-              <div v-if="pedido.nombre_cliente && pedido.tipo_orden === 'llevar'" class="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-bold text-center">
-                📦 {{ pedido.nombre_cliente }}
+            <!-- Número de pedido secundario -->
+            <div class="mb-4 text-center">
+              <div class="text-sm text-gray-500 font-medium">
+                Pedido #{{ pedido.numero_display }}
               </div>
             </div>
 
@@ -712,6 +782,23 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
                 <div class="text-sm text-gray-600 mb-1">Total a cobrar</div>
                 <div class="text-3xl font-black text-[#FDB700]">$ {{ Number(pedido.total).toFixed(2) }}</div>
               </div>
+            </div>
+
+            <!-- Botones de acción -->
+            <div class="mt-3 pt-3 border-t border-gray-200 space-y-2">
+              <button
+                @click.stop="imprimirTicketSeparado(pedido)"
+                class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+              >
+                🖨️ Imprimir Ticket
+              </button>
+              
+              <button
+                @click.stop="selectPedido(pedido)"
+                class="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+              >
+                💰 Cobrar
+              </button>
             </div>
 
             <!-- Información adicional de tiempo -->
@@ -1083,12 +1170,99 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
               💰 Cobrar Ahora
             </button>
             
+            <!-- Botón cancelar discreto (más pequeño) -->
+            <button
+              v-if="!['pagado', 'cancelado'].includes(selectedPedidoDetails.estado)"
+              @click="mostrarConfirmacionCancelacion(selectedPedidoDetails)"
+              class="w-full py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-md transition-all opacity-80 hover:opacity-100"
+            >
+              🗑️ Cancelar Pedido
+            </button>
+            
             <!-- Botón cerrar -->
             <button
               @click="closeDetailsModal"
               class="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all"
             >
               Cerrar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Confirmación de Cancelación -->
+    <div 
+      v-if="showCancelConfirmModal && pedidoACancelar" 
+      class="fixed inset-0 flex items-center justify-center z-[70] p-4"
+      @click.self="cerrarConfirmacionCancelacion"
+    >
+      <div class="bg-white rounded-xl max-w-md w-full shadow-2xl border-2 border-red-200">
+        <!-- Header de advertencia -->
+        <div class="bg-gradient-to-r from-red-600 to-red-700 px-6 py-4 rounded-t-xl">
+          <div class="flex items-center justify-between text-white">
+            <h2 class="text-lg font-bold flex items-center gap-2">
+              ⚠️ Confirmar Cancelación
+            </h2>
+            <button 
+              @click="cerrarConfirmacionCancelacion" 
+              class="text-white hover:text-gray-200 text-xl font-bold"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Contenido de confirmación -->
+        <div class="p-6">
+          <!-- Información del pedido a cancelar -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6 text-center">
+            <div class="text-sm text-gray-600 mb-2">Se cancelará este pedido:</div>
+            
+            <div v-if="pedidoACancelar.mesa" class="text-blue-600 font-bold text-lg mb-1">
+              🪑 Mesa {{ pedidoACancelar.mesa }}
+            </div>
+            <div v-else-if="pedidoACancelar.nombre_cliente" class="text-green-600 font-bold text-lg mb-1">
+              👤 {{ pedidoACancelar.nombre_cliente }}
+            </div>
+            
+            <div class="text-lg font-medium text-gray-700 mb-2">
+              Pedido #{{ pedidoACancelar.numero_display }}
+            </div>
+            
+            <div class="text-2xl font-black text-[#FDB700] mb-2">
+              ${{ Number(pedidoACancelar.total).toFixed(2) }}
+            </div>
+            
+            <div class="text-xs text-gray-500">
+              {{ new Date(pedidoACancelar.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
+            </div>
+          </div>
+
+          <!-- Advertencia final -->
+          <div class="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6">
+            <div class="flex items-center gap-2 text-red-700 font-medium mb-2">
+              ⚠️ Esta acción NO se puede deshacer
+            </div>
+            <div class="text-red-600 text-sm">
+              El pedido se marcará como cancelado y desaparecerá de todas las vistas activas.
+            </div>
+          </div>
+
+          <!-- Botones de confirmación final -->
+          <div class="space-y-3">
+            <button
+              @click="confirmarCancelacion"
+              class="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all hover:scale-105 flex items-center justify-center gap-2"
+            >
+              🗑️ SÍ, Cancelar Pedido
+            </button>
+            
+            <button
+              @click="cerrarConfirmacionCancelacion"
+              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all"
+            >
+              ← No, Mantener Pedido
             </button>
           </div>
         </div>

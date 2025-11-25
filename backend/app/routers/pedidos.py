@@ -332,7 +332,7 @@ async def update_pedido(
     # Validar permisos para cambiar estado según rol
     allowed_transitions = {
         "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
-        "cajero": ["entregado", "cuenta_solicitada", "pagado"],  # Cajero puede cambiar de entregado a cuenta_solicitada
+        "cajero": ["entregado", "cuenta_solicitada", "pagado", "cancelado"],  # Cajero puede cancelar pedidos
         "cocina": ["pendiente", "preparando", "listo"],
         "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]
     }

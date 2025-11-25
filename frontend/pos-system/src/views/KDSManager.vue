@@ -53,31 +53,49 @@ const pedidosActivos = computed(() => {
     .filter(p => p.articulos_pedido.length > 0)
 })
 
+// Pedidos recién completados (últimos 20 minutos) para recuperar errores
+const pedidosRecienCompletados = computed(() => {
+  const hace20Minutos = Date.now() - (20 * 60 * 1000)
+  
+  return pedidosStore.pedidosKDS
+    .filter(p => {
+      // Solo pedidos marcados como "listo" en los últimos 20 minutos
+      if (p.estado !== 'listo') return false
+      
+      const tiempoCreacion = new Date(p.fecha_creacion).getTime()
+      return tiempoCreacion >= hace20Minutos
+    })
+    .sort((a, b) => new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()) // Más recientes primero
+})
+
 const selectedPedido = computed(() => {
   return pedidosActivos.value.find(p => p.id === selectedPedidoId.value)
 })
 
-// Filtro de estados
-const filtroEstado = ref('')
+// Vista actual: activos, completados o disponibilidad
+const vistaActual = ref<'activos' | 'completados' | 'disponibilidad'>('activos')
 
-const pedidosFiltrados = computed(() => {
+// Estado para gestión de disponibilidad
+const platillos = ref<any[]>([])
+const searchPlatillo = ref('')
+const loading_platillos = ref(false)
+
+const pedidosMostrados = computed(() => {
+  if (vistaActual.value === 'completados') {
+    return pedidosRecienCompletados.value
+  }
+  
   const activos = pedidosActivos.value
   console.log('🔍 Debug pedidosFiltrados:', {
     totalPedidos: pedidosStore.pedidos.length,
     pedidosKDS: pedidosStore.pedidosKDS.length,
     pedidosActivos: activos.length,
-    filtroEstado: filtroEstado.value,
     wsConnected: pedidosStore.wsConnected,
     loading: pedidosStore.loading
   })
   
-  // Filtrar por estado si hay filtro activo
-  let filtered = filtroEstado.value 
-    ? activos.filter(p => p.estado === filtroEstado.value)
-    : activos
-  
   // Ordenamiento eficiente por prioridad para KDS Manager
-  return filtered.sort((a, b) => {
+  return activos.sort((a, b) => {
     // 1. Por urgencia de tiempo (más antiguos primero)
     const tiempoA = new Date(a.fecha_creacion).getTime()
     const tiempoB = new Date(b.fecha_creacion).getTime()
@@ -101,19 +119,85 @@ const pedidosFiltrados = computed(() => {
 
 const loading = computed(() => pedidosStore.loading)
 
-// Funciones para filtros rápidos
-function getCountByEstado(estado: string): number {
-  return pedidosActivos.value.filter(p => p.estado === estado).length
+// Función para volver un pedido de listo a preparando (recuperar error)
+function recuperarPedido(pedido: any) {
+  console.log('🔄 Recuperando pedido marcado por error:', pedido.id)
+  updateEstadoPedidoOptimistic(pedido, 'preparando')
 }
 
-function getEstadoLabel(estado: string): string {
-  const labels: Record<string, string> = {
-    'pendiente': 'PENDIENTES',
-    'preparando': 'PREPARANDO',
-    'listo': 'LISTOS',
-    'entregado': 'ENTREGADOS'
+// Funciones para gestión de disponibilidad
+async function cargarPlatillos() {
+  if (loading_platillos.value) return
+  
+  loading_platillos.value = true
+  try {
+    const response = await api.get('/platillos')
+    platillos.value = response.data
+    console.log('✅ Platillos cargados:', platillos.value.length)
+  } catch (e: any) {
+    console.error('❌ Error cargando platillos:', e)
+    error.value = 'Error al cargar platillos'
+  } finally {
+    loading_platillos.value = false
   }
-  return labels[estado] || estado.toUpperCase()
+}
+
+// Cambiar disponibilidad de un platillo
+async function toggleDisponibilidad(platillo: any) {
+  const nuevoEstado = platillo.estado === 'disponible' ? 'no_disponible' : 'disponible'
+  const estadoOriginal = platillo.estado
+  
+  // Optimistic update
+  platillo.estado = nuevoEstado
+  
+  try {
+    // Usar el nuevo endpoint específico para disponibilidad
+    await api.patch(`/platillos/${platillo.id}/disponibilidad`, { estado: nuevoEstado })
+    console.log(`✅ Platillo ${platillo.nombre} cambiado a ${nuevoEstado}`)
+    
+    // Aquí podríamos agregar notificación WebSocket a meseros
+  } catch (e: any) {
+    // Revertir cambio si falla
+    platillo.estado = estadoOriginal
+    console.error('❌ Error al cambiar disponibilidad:', e)
+    
+    // Mostrar error más específico
+    const errorMsg = e?.response?.data?.detail || 'Error al cambiar disponibilidad del platillo'
+    error.value = errorMsg
+    
+    // También mostrar en consola para debugging
+    console.error('Error details:', {
+      status: e?.response?.status,
+      data: e?.response?.data,
+      platillo: platillo.nombre,
+      nuevoEstado,
+      estadoOriginal
+    })
+  }
+}
+
+// Platillos filtrados por búsqueda y agrupados por categoría
+const platillosPorCategoria = computed(() => {
+  const filtrados = platillos.value.filter(p => 
+    p.nombre.toLowerCase().includes(searchPlatillo.value.toLowerCase())
+  )
+  
+  const categorias: Record<string, any[]> = {}
+  filtrados.forEach(platillo => {
+    if (!categorias[platillo.categoria]) {
+      categorias[platillo.categoria] = []
+    }
+    categorias[platillo.categoria].push(platillo)
+  })
+  
+  return categorias
+})
+
+// Contar disponibles por categoría
+function getDisponiblesPorCategoria(categoria: string): { disponibles: number, total: number } {
+  const platillosCategoria = platillosPorCategoria.value[categoria] || []
+  const disponibles = platillosCategoria.filter(p => p.estado === 'disponible').length
+  return { disponibles, total: platillosCategoria.length }
 }
 
 function getEstadoStyles(estado: string): string {
@@ -338,6 +422,9 @@ onMounted(async () => {
     // Cargar datos iniciales
     await pedidosStore.loadInitialData()
     
+    // Cargar platillos para gestión de disponibilidad
+    await cargarPlatillos()
+    
     // Inicializar WebSocket para KDS
     const wsConnected = await pedidosStore.initWebSocket('kds')
     
@@ -375,24 +462,46 @@ onUnmounted(() => {
 
 <template>
   <div class="min-h-screen bg-slate-900 text-white">
-    <!-- Header ultra-compacto -->
+    <!-- Header con pestañas -->
     <div class="bg-slate-800 p-2 border-b border-slate-600">
       <div class="flex items-center justify-between">
         <h1 class="text-lg font-bold">🍳 Control Rápido</h1>
         <div class="flex items-center gap-3">
-          <!-- Filtros rápidos -->
+          <!-- Pestañas de vista -->
           <button
-            v-for="estado in ['pendiente', 'preparando', 'listo']"
-            :key="estado"
-            @click="filtroEstado = filtroEstado === estado ? '' : estado"
+            @click="vistaActual = 'activos'"
             :class="[
-              'px-3 py-1 rounded text-sm font-bold transition-colors',
-              filtroEstado === estado 
-                ? getEstadoColor(estado) + ' text-white' 
+              'px-4 py-2 rounded-lg text-sm font-bold transition-colors',
+              vistaActual === 'activos' 
+                ? 'bg-blue-600 text-white' 
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             ]"
           >
-            {{ getCountByEstado(estado) }} {{ getEstadoLabel(estado) }}
+            🔥 Pedidos Activos ({{ pedidosActivos.length }})
+          </button>
+          
+          <button
+            @click="vistaActual = 'completados'"
+            :class="[
+              'px-4 py-2 rounded-lg text-sm font-bold transition-colors',
+              vistaActual === 'completados' 
+                ? 'bg-green-600 text-white' 
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            ]"
+          >
+            ✅ Recién Completados ({{ pedidosRecienCompletados.length }})
+          </button>
+          
+          <button
+            @click="vistaActual = 'disponibilidad'"
+            :class="[
+              'px-4 py-2 rounded-lg text-sm font-bold transition-colors',
+              vistaActual === 'disponibilidad' 
+                ? 'bg-purple-600 text-white' 
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            ]"
+          >
+            🍽️ Disponibilidad
           </button>
           
           <!-- Indicador conexión -->
@@ -410,15 +519,116 @@ onUnmounted(() => {
         <div class="text-2xl font-bold">Cargando...</div>
       </div>
       
-      <div v-else-if="pedidosFiltrados.length === 0" class="text-center py-20">
-        <div class="text-6xl mb-4">✨</div>
-        <div class="text-2xl font-bold">{{ filtroEstado ? 'Sin pedidos en este estado' : '¡Todo listo!' }}</div>
+      <!-- Vista de Disponibilidad -->
+      <div v-if="vistaActual === 'disponibilidad'" class="space-y-6">
+        <!-- Header con búsqueda -->
+        <div class="bg-slate-800 rounded-lg p-4">
+          <div class="flex items-center gap-4">
+            <h2 class="text-xl font-bold text-purple-400">🍽️ Gestión de Disponibilidad</h2>
+            <div class="flex-1">
+              <input
+                v-model="searchPlatillo"
+                type="text"
+                placeholder="🔍 Buscar platillo..."
+                class="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-purple-400 focus:outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading state para platillos -->
+        <div v-if="loading_platillos" class="text-center py-20">
+          <div class="text-6xl mb-4">⏳</div>
+          <div class="text-2xl font-bold">Cargando platillos...</div>
+        </div>
+
+        <!-- Lista de platillos por categoría -->
+        <div v-else-if="Object.keys(platillosPorCategoria).length === 0" class="text-center py-20">
+          <div class="text-6xl mb-4">🍽️</div>
+          <div class="text-2xl font-bold">No se encontraron platillos</div>
+          <div class="text-gray-400 mt-2">Verifica tu búsqueda o contacta al administrador</div>
+        </div>
+
+        <div v-else class="space-y-4">
+          <div
+            v-for="(platillosCategoria, categoria) in platillosPorCategoria"
+            :key="categoria"
+            class="bg-slate-800 rounded-lg p-4"
+          >
+            <!-- Header de categoría -->
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-600">
+              <h3 class="text-lg font-bold text-white">
+                {{ categoria }}
+              </h3>
+              <div class="text-sm text-gray-400">
+                {{ getDisponiblesPorCategoria(categoria).disponibles }}/{{ getDisponiblesPorCategoria(categoria).total }} disponibles
+              </div>
+            </div>
+
+            <!-- Lista de platillos de la categoría -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div
+                v-for="platillo in platillosCategoria"
+                :key="platillo.id"
+                :class="[
+                  'p-4 rounded-lg border-2 transition-all',
+                  platillo.estado === 'disponible'
+                    ? 'bg-green-900 border-green-600 text-green-100'
+                    : 'bg-red-900 border-red-600 text-red-100'
+                ]"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="flex-1">
+                    <div class="font-bold text-sm sm:text-base">
+                      {{ platillo.nombre }}
+                    </div>
+                    <div class="text-xs text-gray-400 mt-1">
+                      ${{ Number(platillo.precio).toFixed(2) }}
+                    </div>
+                  </div>
+                  
+                  <!-- Switch táctil grande -->
+                  <button
+                    @click="toggleDisponibilidad(platillo)"
+                    :class="[
+                      'relative w-16 h-8 rounded-full transition-colors',
+                      platillo.estado === 'disponible' ? 'bg-green-600' : 'bg-red-600'
+                    ]"
+                  >
+                    <div
+                      :class="[
+                        'absolute top-1 w-6 h-6 bg-white rounded-full transition-transform',
+                        platillo.estado === 'disponible' ? 'translate-x-9' : 'translate-x-1'
+                      ]"
+                    />
+                  </button>
+                </div>
+                
+                <!-- Estado visual -->
+                <div class="mt-2 text-center text-xs font-bold">
+                  {{ platillo.estado === 'disponible' ? '🟢 DISPONIBLE' : '🔴 NO DISPONIBLE' }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vista de pedidos (activos y completados) -->
+      <div v-else-if="pedidosMostrados.length === 0" class="text-center py-20">
+        <div class="text-6xl mb-4">{{ vistaActual === 'completados' ? '📋' : '✨' }}</div>
+        <div class="text-2xl font-bold">
+          {{ vistaActual === 'completados' ? 'No hay pedidos completados recientes' : '¡Todo listo!' }}
+        </div>
+        <div v-if="vistaActual === 'completados'" class="text-gray-400 mt-2">
+          Los pedidos aparecen aquí durante 20 minutos después de marcarlos como listos
+        </div>
       </div>
       
       <!-- Layout de lista vertical optimizado -->
       <div v-else class="space-y-4">
         <div
-          v-for="p in pedidosFiltrados"
+          v-for="p in pedidosMostrados"
           :key="p.id"
           :class="[
             'rounded-xl p-5 transition-all duration-200 shadow-lg border-4 border-white border-opacity-20',
@@ -457,33 +667,46 @@ onUnmounted(() => {
                 <div v-else class="text-base font-bold text-yellow-300">PARA LLEVAR</div>
               </div>
               
-              <!-- Botón de acción optimizado para móvil -->
-              <button
-                v-if="p.estado === 'pendiente'"
-                @click="updateEstadoPedidoOptimistic(p, 'preparando')"
-                class="bg-yellow-600 hover:bg-yellow-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
-              >
-                🔥 INICIAR
-              </button>
+              <!-- Botones según la vista actual -->
+              <div v-if="vistaActual === 'completados'">
+                <!-- Vista de completados: botón para recuperar -->
+                <button
+                  @click="recuperarPedido(p)"
+                  class="bg-orange-600 hover:bg-orange-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-40"
+                >
+                  🔄 RECUPERAR
+                </button>
+              </div>
               
-              <button
-                v-else-if="p.estado === 'preparando'"
-                @click="updateEstadoPedidoOptimistic(p, 'listo')"
-                class="bg-green-600 hover:bg-green-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
-              >
-                ✅ LISTO
-              </button>
-              
-              <button
-                v-else-if="p.estado === 'listo'"
-                @click="updateEstadoPedidoOptimistic(p, 'entregado')"
-                class="bg-blue-600 hover:bg-blue-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
-              >
-                📤 ENTREGAR
-              </button>
-              
-              <div v-else class="text-green-400 font-bold text-sm sm:text-lg py-2 px-4 sm:py-3 sm:px-6 text-center w-full sm:w-auto">
-                ✓ ENTREGADO
+              <div v-else>
+                <!-- Vista activos: botones normales -->
+                <button
+                  v-if="p.estado === 'pendiente'"
+                  @click="updateEstadoPedidoOptimistic(p, 'preparando')"
+                  class="bg-yellow-600 hover:bg-yellow-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+                >
+                  🔥 INICIAR
+                </button>
+                
+                <button
+                  v-else-if="p.estado === 'preparando'"
+                  @click="updateEstadoPedidoOptimistic(p, 'listo')"
+                  class="bg-green-600 hover:bg-green-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+                >
+                  ✅ LISTO
+                </button>
+                
+                <button
+                  v-else-if="p.estado === 'listo'"
+                  @click="updateEstadoPedidoOptimistic(p, 'entregado')"
+                  class="bg-blue-600 hover:bg-blue-700 text-white font-black py-2 px-4 sm:py-3 sm:px-6 rounded-lg text-sm sm:text-lg transition-colors w-full sm:w-auto sm:min-w-32"
+                >
+                  📤 ENTREGAR
+                </button>
+                
+                <div v-else class="text-green-400 font-bold text-sm sm:text-lg py-2 px-4 sm:py-3 sm:px-6 text-center w-full sm:w-auto">
+                  ✓ ENTREGADO
+                </div>
               </div>
             </div>
           </div>

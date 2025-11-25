@@ -118,6 +118,107 @@
               </div>
             </div>
           </div>
+
+          <!-- Ticket Promedio -->
+          <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-5">
+              <div class="flex items-center">
+                <div class="flex-shrink-0">
+                  <div class="w-8 h-8 bg-indigo-500 rounded-md flex items-center justify-center">
+                    <span class="text-white text-sm font-bold">🎫</span>
+                  </div>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt class="text-sm font-medium text-gray-500 truncate">Ticket Promedio</dt>
+                    <dd class="text-lg font-medium text-gray-900">${{ dashboardData.promedio_ticket.toFixed(2) }}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cancelaciones (si hay) -->
+          <div v-if="dashboardData.cancelaciones > 0" class="bg-red-50 overflow-hidden shadow rounded-lg border border-red-200">
+            <div class="p-5">
+              <div class="flex items-center">
+                <div class="flex-shrink-0">
+                  <div class="w-8 h-8 bg-red-500 rounded-md flex items-center justify-center">
+                    <span class="text-white text-sm font-bold">🚫</span>
+                  </div>
+                </div>
+                <div class="ml-5 w-0 flex-1">
+                  <dl>
+                    <dt class="text-sm font-medium text-red-700 truncate">Cancelaciones</dt>
+                    <dd class="text-lg font-medium text-red-900">{{ dashboardData.cancelaciones }}</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Nuevas Secciones: Gráficas y Estado -->
+        <div v-if="dashboardData" class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Ventas por Hora -->
+            <div class="lg:col-span-2 bg-white shadow rounded-lg p-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">⏰ Ventas por Hora</h3>
+                <div class="h-64 flex items-end justify-between space-x-1">
+                    <div v-for="hora in 24" :key="hora" class="flex flex-col items-center flex-1 h-full justify-end group">
+                         <div class="w-full bg-blue-100 rounded-t hover:bg-blue-200 transition-all relative"
+                              :style="{ height: `${Math.max(getPorcentajeHora(hora-1), 5)}%` }">
+                              <!-- Tooltip -->
+                              <div class="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-10 pointer-events-none">
+                                {{ hora-1 }}:00 - {{ getDataHora(hora-1).cantidad }} pedidos (${{ getDataHora(hora-1).total }})
+                              </div>
+                         </div>
+                         <span class="text-[10px] text-gray-500 mt-1">{{ hora-1 }}h</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estado y Tipos -->
+            <div class="space-y-6">
+                <!-- Estado en Vivo -->
+                <div class="bg-white shadow rounded-lg p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">🟢 Estado en Vivo</h3>
+                    <div class="space-y-3">
+                        <div v-for="estado in ['pendiente', 'preparando', 'listo', 'entregado']" :key="estado" 
+                             class="flex justify-between items-center">
+                            <span class="capitalize text-sm text-gray-600">{{ estado }}</span>
+                            <span class="px-3 py-1 rounded-full text-sm font-bold"
+                                  :class="{
+                                    'bg-red-100 text-red-800': estado === 'pendiente',
+                                    'bg-yellow-100 text-yellow-800': estado === 'preparando',
+                                    'bg-green-100 text-green-800': estado === 'listo',
+                                    'bg-blue-100 text-blue-800': estado === 'entregado'
+                                  }">
+                                {{ getCantidadEstado(estado) }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tipos de Orden -->
+                <div class="bg-white shadow rounded-lg p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">📊 Tipos de Orden</h3>
+                    <div class="space-y-4">
+                        <div v-for="tipo in dashboardData.tipos_orden" :key="tipo.tipo">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="capitalize">{{ tipo.tipo.replace('_', ' ') }}</span>
+                                <span class="font-medium">{{ tipo.cantidad }}</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-blue-600 h-2 rounded-full"
+                                     :style="{ width: `${(tipo.cantidad / dashboardData.total_pedidos) * 100}%` }"></div>
+                            </div>
+                        </div>
+                        <div v-if="dashboardData.tipos_orden.length === 0" class="text-sm text-gray-500 text-center">
+                          Sin datos aún
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
       </div>
 
@@ -798,6 +899,26 @@ const printConfig = ref({
   autoprint: true
 })
 
+// Helpers para dashboard
+const getDataHora = (hora: number) => {
+  if (!dashboardData.value) return { cantidad: 0, total: 0 }
+  const data = dashboardData.value.ventas_por_hora.find(d => d.hora === hora)
+  return data || { cantidad: 0, total: 0 }
+}
+
+const getPorcentajeHora = (hora: number) => {
+  if (!dashboardData.value) return 0
+  const maxVentas = Math.max(...dashboardData.value.ventas_por_hora.map(d => d.total), 1)
+  const data = getDataHora(hora)
+  return (data.total / maxVentas) * 100
+}
+
+const getCantidadEstado = (estado: string) => {
+  if (!dashboardData.value) return 0
+  const data = dashboardData.value.estado_actual.find(d => d.estado === estado)
+  return data ? data.cantidad : 0
+}
+
 const generalConfig = ref({
   horario_apertura: '08:00',
   horario_cierre: '22:00',
@@ -814,12 +935,27 @@ const filteredPlatillos = computed(() => {
 interface DashboardData {
   fecha: string
   total_pedidos: number
+  promedio_ticket: number
+  cancelaciones: number
   ingresos: {
     efectivo: number
     tarjeta: number
     transferencia: number
     total: number
   }
+  ventas_por_hora: Array<{
+    hora: number
+    cantidad: number
+    total: number
+  }>
+  tipos_orden: Array<{
+    tipo: string
+    cantidad: number
+  }>
+  estado_actual: Array<{
+    estado: string
+    cantidad: number
+  }>
   productos_mas_vendidos: Array<{
     nombre: string
     cantidad: number

@@ -126,6 +126,48 @@ def update_platillo(
     return platillo
 
 
+@router.patch("/{platillo_id}/disponibilidad", response_model=PlatilloResponse)
+def toggle_disponibilidad_platillo(
+    platillo_id: int,
+    data: dict,  # {"estado": "disponible" | "no_disponible"}
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    """
+    Cambiar disponibilidad de un platillo.
+    Permitido para cocina y administradores.
+    """
+    # Validar permisos - cocina y admin pueden cambiar disponibilidad
+    if current_user.rol not in ["cocina", "administrador"]:
+        raise HTTPException(
+            status_code=403, 
+            detail="Solo cocina y administradores pueden cambiar disponibilidad"
+        )
+
+    platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
+    if not platillo:
+        raise HTTPException(status_code=404, detail="Platillo no encontrado")
+
+    # Validar estado
+    nuevo_estado = data.get("estado")
+    if nuevo_estado not in ["disponible", "no_disponible"]:
+        raise HTTPException(
+            status_code=400, 
+            detail="Estado inválido. Use 'disponible' o 'no_disponible'"
+        )
+
+    # Actualizar solo el estado
+    estado_anterior = platillo.estado
+    platillo.estado = nuevo_estado
+    
+    db.commit()
+    db.refresh(platillo)
+    
+    print(f"✅ Platillo '{platillo.nombre}' cambiado de '{estado_anterior}' a '{nuevo_estado}' por {current_user.nombre}")
+    
+    return platillo
+
+
 @router.delete("/{platillo_id}")
 def delete_platillo(
     platillo_id: int,
