@@ -2,8 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 import { websocketService } from '@/services/websocket'
-import { useAuthStore } from './auth'
 import type { PedidoResponse } from '@/types'
+
+type WsClientType = 'kds' | 'caja' | 'mesero'
 
 export const usePedidosStore = defineStore('pedidos', () => {
   // Estado
@@ -12,6 +13,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const error = ref<string | null>(null)
   const lastUpdate = ref<Date | null>(null)
   const wsConnected = ref(false)
+  const isOutSoundThrottled = ref(false)
+  const wsClientType = ref<WsClientType | null>(null)
 
   // Getters computados
   const pedidosPorEstado = computed(() => {
@@ -112,13 +115,9 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
 
-  async function initWebSocket(clientType: 'kds' | 'caja' | 'mesero'): Promise<boolean> {
-    const authStore = useAuthStore()
-    
-    if (!authStore.isAuthenticated) {
-      console.error('❌ No hay autenticación para WebSocket')
-      return false
-    }
+  async function initWebSocket(clientType: WsClientType): Promise<boolean> {
+    wsClientType.value = clientType // Guardar el tipo de cliente
+    console.log(`🔌 Store configurado para cliente tipo: ${wsClientType.value}`)
 
     try {
       console.log(`🌐 Inicializando WebSocket para ${clientType}...`)
@@ -173,6 +172,31 @@ export const usePedidosStore = defineStore('pedidos', () => {
     })
   }
 
+  function playKitchenSound(soundFile: string, throttle = false): void {
+    // El sonido solo debe sonar en las vistas de cocina
+    if (wsClientType.value !== 'kds') {
+      return
+    }
+
+    if (throttle) {
+      if (isOutSoundThrottled.value) {
+        return // Sonido frenado, no hacer nada
+      }
+      isOutSoundThrottled.value = true
+      setTimeout(() => {
+        isOutSoundThrottled.value = false
+      }, 500) // 500ms de "freno"
+    }
+
+    try {
+      // Asume que los archivos de sonido están en /public/
+      const audio = new Audio(soundFile)
+      audio.play().catch(e => console.error(`Error al reproducir ${soundFile}:`, e))
+    } catch (e) {
+      console.error(`No se pudo reproducir el sonido ${soundFile}.`, e)
+    }
+  }
+
   function handlePedidoCreated(nuevoPedido: PedidoResponse): void {
     // Verificar si el pedido ya existe (evitar duplicados)
     const existePedido = pedidos.value.find(p => p.id === nuevoPedido.id)
@@ -182,6 +206,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       pedidos.value.unshift(nuevoPedido)
       console.log(`✅ Pedido #${nuevoPedido.numero_display} agregado a la lista`)
       
+      playKitchenSound('/notification_in.mp3') // Sonido de entrada
+
       // Mostrar notificación visual si el navegador lo soporta
       showNotification(`Nuevo pedido #${nuevoPedido.numero_display}`, {
         body: `Mesa: ${nuevoPedido.mesa || 'N/A'} - Cliente: ${nuevoPedido.nombre_cliente || 'N/A'}`,
@@ -197,11 +223,22 @@ export const usePedidosStore = defineStore('pedidos', () => {
     const index = pedidos.value.findIndex(p => p.id === pedidoId)
     
     if (index !== -1) {
+      const estadoAnterior = pedidos.value[index].estado;
       // Actualizar pedido existente con todos los datos nuevos
       pedidos.value[index] = { ...pedidos.value[index], ...pedidoActualizado }
       console.log(`🔄 Pedido #${pedidos.value[index].numero_display} actualizado a estado: ${nuevoEstado}`)
       
-      // Notificación para estados importantes
+      // Sonido de ENTRADA: si un pedido vuelve a pendiente (se agregaron items)
+      if (nuevoEstado === 'pendiente' && estadoAnterior !== 'pendiente') {
+        playKitchenSound('/notification_in.mp3');
+      }
+
+      // Sonido de SALIDA: si un pedido se marca como listo (con freno)
+      if (nuevoEstado === 'listo' && estadoAnterior !== 'listo') {
+        playKitchenSound('/notification_out.mp3', true);
+      }
+
+      // Notificación visual para estados importantes
       if (['listo', 'cuenta_solicitada', 'pagado'].includes(nuevoEstado)) {
         showNotification(`Pedido #${pedidos.value[index].numero_display}`, {
           body: `Cambió a: ${getEstadoLabel(nuevoEstado)}`,
@@ -212,6 +249,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
       // Si el pedido no existe, agregarlo (puede pasar si se conectó después)
       console.log(`ℹ️ Pedido #${pedidoActualizado.numero_display} no encontrado, agregando...`)
       pedidos.value.push(pedidoActualizado)
+      playKitchenSound('/notification_in.mp3'); // Sonido de entrada para un pedido nuevo en la sesión
     }
   }
 
@@ -219,6 +257,10 @@ export const usePedidosStore = defineStore('pedidos', () => {
     const index = pedidos.value.findIndex(p => p.id === pedidoId)
     
     if (index !== -1) {
+      // Sonido de SALIDA: si un artículo se marca como listo (con freno)
+      if (nuevoEstado === 'listo') {
+        playKitchenSound('/notification_out.mp3', true);
+      }
       // Actualizar pedido completo (incluye los artículos actualizados)
       pedidos.value[index] = { ...pedidos.value[index], ...pedidoActualizado }
       console.log(`🍽️ Artículo ${articuloId} del pedido #${pedidos.value[index].numero_display} → ${nuevoEstado}`)
@@ -254,6 +296,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   function disconnectWebSocket(): void {
     websocketService.disconnect()
     wsConnected.value = false
+    wsClientType.value = null
     console.log('👋 WebSocket desconectado desde store')
   }
 
@@ -351,6 +394,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     error.value = null
     lastUpdate.value = null
     wsConnected.value = false
+    wsClientType.value = null
     disconnectWebSocket()
   }
 
