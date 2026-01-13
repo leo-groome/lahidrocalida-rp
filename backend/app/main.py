@@ -18,7 +18,11 @@ app = FastAPI(title="La Hidrocálida POS API")
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios exactos
+    allow_origins=[
+        "http://localhost:5173",       # Para servidor de desarrollo Vite local
+        "http://192.168.1.76:5173",    # URL del frontend actual
+        # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
