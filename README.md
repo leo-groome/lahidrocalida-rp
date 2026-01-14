@@ -1,7 +1,7 @@
 # **La Hidrocálida - Sistema de Gestión para Pozolería**
 
-**Estado: SISTEMA COMPLETAMENTE FUNCIONAL + KDS OPTIMIZADO + SISTEMA BEBIDAS INTELIGENTE + PANEL ADMIN + PEDIDOS ACTUALES**  
-Fecha: Enero 2025
+**Estado: SISTEMA COMPLETAMENTE FUNCIONAL + KDS OPTIMIZADO + SISTEMA BEBIDAS INTELIGENTE + PANEL ADMIN + PEDIDOS ACTUALES + PROPINAS MEJORADO**  
+Fecha: Enero 2026
 
 ## 📋 Resumen del Proyecto
 
@@ -128,6 +128,11 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
   - 💵 Efectivo (con calculadora de cambio)
   - 💳 Tarjeta
   - 📱 Transferencia
+
+- **✅ Sistema de propinas mejorado**: 
+  - **Tarjeta/Transferencia**: Modal separado de propina con opciones rápidas (10%/15%/20%) + monto específico
+  - **Efectivo**: Jerarquía corregida (efectivo recibido primero, propina opcional después)
+  - **Flujo intuitivo**: Propina solo visible después de seleccionar método de pago
 - **Auto-limpieza de filtros** después de cada acción completada
 - **Notificaciones optimizadas** (1s éxitos, 3s errores)
 - **WebSockets tiempo real** sin polling innecesario

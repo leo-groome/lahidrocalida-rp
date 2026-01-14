@@ -324,7 +324,13 @@ export const usePedidosStore = defineStore('pedidos', () => {
     }
   }
 
-  async function updatePedidoEstado(pedidoId: number, nuevoEstado: string, metodoPago?: string): Promise<boolean> {
+  async function updatePedidoEstado(
+    pedidoId: number, 
+    nuevoEstado: string, 
+    metodoPago?: string, 
+    propinaEfectivo?: number, 
+    propinaTarjeta?: number
+  ): Promise<boolean> {
     // NO poner loading = true para updates individuales
     error.value = null
 
@@ -332,6 +338,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
       const updateData: any = { estado: nuevoEstado }
       if (metodoPago) {
         updateData.metodo_pago = metodoPago
+      }
+      if (propinaEfectivo !== undefined) {
+        updateData.propina_efectivo = propinaEfectivo
+      }
+      if (propinaTarjeta !== undefined) {
+        updateData.propina_tarjeta = propinaTarjeta
       }
 
       const { data } = await api.put<PedidoResponse>(`/pedidos/${pedidoId}`, updateData)

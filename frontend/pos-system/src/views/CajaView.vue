@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
@@ -13,7 +13,7 @@ const auth = useAuthStore()
 const pedidosStore = usePedidosStore()
 
 // Referencias reactivas
-const activeTab = ref<'overview' | 'pendientes'>('overview')
+const activeTab = ref<'overview' | 'pendientes' | 'propinas'>('overview')
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
 const successMessage = ref<string | null>(null)
@@ -24,6 +24,19 @@ const error = ref<string | null>(null)
 const showEfectivoCalculator = ref(false)
 const efectivoRecibido = ref<string>('')
 const cambioCalculado = ref<number>(0)
+
+// Estados para propinas
+const propinaEfectivo = ref<string>('')
+const propinaTarjeta = ref<string>('')
+
+// Estados para modal de propina tarjeta/transferencia
+const showPropinaTarjetaModal = ref(false)
+const metodoPagoSeleccionado = ref<'tarjeta' | 'transferencia' | null>(null)
+
+// Estados para reporte de propinas
+const reportePropinas = ref<any>(null)
+const detallePropinas = ref<any[]>([])
+const loadingPropinas = ref(false)
 
 // Estados para búsqueda y mapa de mesas
 const searchQuery = ref<string>('')
@@ -70,6 +83,32 @@ onUnmounted(() => {
 })
 
 
+// Funciones para reporte de propinas
+const cargarReportePropinas = async (fecha?: string) => {
+  loadingPropinas.value = true
+  try {
+    const params = fecha ? { fecha } : {}
+    const [reporteRes, detalleRes] = await Promise.all([
+      api.get('/propinas/reporte', { params }),
+      api.get('/propinas/detalle', { params })
+    ])
+    reportePropinas.value = reporteRes.data
+    detallePropinas.value = detalleRes.data
+  } catch (error) {
+    console.error('Error cargando reporte de propinas:', error)
+    showErrorNotification('Error al cargar reporte de propinas')
+  } finally {
+    loadingPropinas.value = false
+  }
+}
+
+// Watch para cargar reporte cuando se activa la pestaña
+watch(activeTab, (newTab) => {
+  if (newTab === 'propinas') {
+    cargarReportePropinas()
+  }
+})
+
 // Computadas para estadísticas
 const totalPendientesPago = computed(() => {
   return pedidosStore.pedidosPendientesPago.reduce((sum, pedido) => sum + Number(pedido.total), 0)
@@ -77,6 +116,15 @@ const totalPendientesPago = computed(() => {
 
 const estadisticasOverview = computed(() => {
   return pedidosStore.estadisticasPedidos
+})
+
+// Computadas para propinas
+const propinaEfectivoNum = computed(() => parseFloat(propinaEfectivo.value) || 0)
+const propinaTarjetaNum = computed(() => parseFloat(propinaTarjeta.value) || 0)
+const propinaTotal = computed(() => propinaEfectivoNum.value + propinaTarjetaNum.value)
+const totalConPropina = computed(() => {
+  if (!selectedPedido.value) return 0
+  return Number(selectedPedido.value.total) + propinaTotal.value
 })
 
 const pedidosActivos = computed(() => {
@@ -291,25 +339,45 @@ const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'ta
     showEfectivoCalculator.value = true
     efectivoRecibido.value = ''
     cambioCalculado.value = 0
+    // Resetear propina tarjeta ya que no aplica para efectivo
+    propinaTarjeta.value = ''
     return
   }
   
-  // Para tarjeta y transferencia, procesar directamente
-  await finalizarPago(pedido, metodoPago)
+  // Para tarjeta y transferencia, mostrar modal de propina primero
+  metodoPagoSeleccionado.value = metodoPago
+  propinaTarjeta.value = '' // Resetear propina anterior
+  showPropinaTarjetaModal.value = true
 }
 
 // Finalizar pago (usado por todos los métodos)
-const finalizarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'tarjeta' | 'transferencia') => {
+const finalizarPago = async (
+  pedido: PedidoResponse, 
+  metodoPago: 'efectivo' | 'tarjeta' | 'transferencia',
+  propinaEfectivoVal: number = 0,
+  propinaTarjetaVal: number = 0
+) => {
   processingPayment.value = true
   try {
     // Usar el store para actualizar el pedido
-    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'pagado', metodoPago)
+    const success = await pedidosStore.updatePedidoEstado(
+      pedido.id, 
+      'pagado', 
+      metodoPago, 
+      propinaEfectivoVal, 
+      propinaTarjetaVal
+    )
     
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-      let mensaje = `Pago procesado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)} (${metodoPago})`
+      const totalConPropina = Number(pedido.total) + propinaEfectivoVal + propinaTarjetaVal
+      let mensaje = `Pago procesado: ${tipoTexto} - $${totalConPropina.toFixed(2)} (${metodoPago})`
       
-      if (metodoPago === 'efectivo' && parseFloat(efectivoRecibido.value) > Number(pedido.total)) {
+      if (propinaEfectivoVal > 0 || propinaTarjetaVal > 0) {
+        mensaje += ` (Propina: $${(propinaEfectivoVal + propinaTarjetaVal).toFixed(2)})`
+      }
+      
+      if (metodoPago === 'efectivo' && parseFloat(efectivoRecibido.value) > totalConPropina) {
         mensaje += ` - Cambio: $${cambioCalculado.value.toFixed(2)}`
       }
       
@@ -320,6 +388,8 @@ const finalizarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 't
       showEfectivoCalculator.value = false
       efectivoRecibido.value = ''
       cambioCalculado.value = 0
+      propinaEfectivo.value = ''
+      propinaTarjeta.value = ''
       
       // Limpiar filtro después de acción completada
       searchQuery.value = ''
@@ -370,8 +440,12 @@ const selectPedido = async (pedido: PedidoResponse) => {
 const closeModal = () => {
   selectedPedido.value = null
   showEfectivoCalculator.value = false
+  showPropinaTarjetaModal.value = false
+  metodoPagoSeleccionado.value = null
   efectivoRecibido.value = ''
   cambioCalculado.value = 0
+  propinaEfectivo.value = ''
+  propinaTarjeta.value = ''
 }
 
 // Funciones para calculadora de efectivo
@@ -379,7 +453,7 @@ const calcularCambio = () => {
   if (!selectedPedido.value) return
   
   const recibido = parseFloat(efectivoRecibido.value) || 0
-  const total = Number(selectedPedido.value.total)
+  const total = Number(selectedPedido.value.total) + propinaEfectivoNum.value
   
   cambioCalculado.value = recibido - total
 }
@@ -388,20 +462,21 @@ const confirmarPagoEfectivo = async () => {
   if (!selectedPedido.value) return
   
   const recibido = parseFloat(efectivoRecibido.value) || 0
-  const total = Number(selectedPedido.value.total)
+  const total = Number(selectedPedido.value.total) + propinaEfectivoNum.value
   
   if (recibido < total) {
     showErrorNotification(`Efectivo insuficiente. Falta: $${(total - recibido).toFixed(2)}`)
     return
   }
   
-  await finalizarPago(selectedPedido.value, 'efectivo')
+  await finalizarPago(selectedPedido.value, 'efectivo', propinaEfectivoNum.value, 0)
 }
 
 const cerrarCalculadoraEfectivo = () => {
   showEfectivoCalculator.value = false
   efectivoRecibido.value = ''
   cambioCalculado.value = 0
+  propinaEfectivo.value = ''
 }
 
 // Función para imprimir ticket (impresora térmica + fallbacks)
@@ -520,6 +595,50 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
     showErrorNotification('Error inesperado al solicitar cuenta')
   }
 }
+
+// Funciones para modal de propina tarjeta/transferencia
+const aplicarPropinaPorcentaje = (porcentaje: number) => {
+  if (!selectedPedido.value) return
+  const subtotal = Number(selectedPedido.value.total)
+  const propina = (subtotal * porcentaje) / 100
+  propinaTarjeta.value = propina.toFixed(2)
+}
+
+const actualizarTotalConPropina = () => {
+  // Esta función se llama automáticamente cuando el input de propina cambia
+  // No necesita lógica adicional porque propinaTarjetaNum ya se actualiza
+}
+
+const cerrarModalPropina = () => {
+  showPropinaTarjetaModal.value = false
+  metodoPagoSeleccionado.value = null
+  propinaTarjeta.value = ''
+}
+
+const confirmarPagoConPropina = async () => {
+  if (!selectedPedido.value || !metodoPagoSeleccionado.value) return
+  
+  const tipAmount = propinaTarjetaNum.value
+  await finalizarPago(
+    selectedPedido.value,
+    metodoPagoSeleccionado.value,
+    0, // propina efectivo
+    tipAmount // propina tarjeta
+  )
+  cerrarModalPropina()
+}
+
+const confirmarPagoSinPropina = async () => {
+  if (!selectedPedido.value || !metodoPagoSeleccionado.value) return
+  
+  await finalizarPago(
+    selectedPedido.value,
+    metodoPagoSeleccionado.value,
+    0, // propina efectivo
+    0  // propina tarjeta
+  )
+  cerrarModalPropina()
+}
 </script>
 
 <template>
@@ -559,6 +678,17 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             ]">
               {{ pedidosPendientes.length }}
             </span>
+          </button>
+          <button
+            @click="activeTab = 'propinas'"
+            :class="[
+              'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm',
+              activeTab === 'propinas' 
+                ? 'bg-[#00126D] text-white shadow-md' 
+                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+            ]"
+          >
+            💰 Reporte de Propinas
           </button>
         </div>
 
@@ -814,6 +944,63 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
           </div>
         </div>
       </div>
+
+      <!-- Tab Reporte de Propinas -->
+      <div v-else-if="activeTab === 'propinas'" class="space-y-6">
+        <div v-if="loadingPropinas" class="text-center py-8 text-gray-600 font-medium">
+          <div class="text-4xl mb-4">⏳</div>
+          <p class="text-lg">Cargando reporte de propinas...</p>
+        </div>
+        
+        <div v-else>
+          <!-- Resumen diario -->
+          <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <h3 class="text-lg font-bold text-gray-700 mb-4">📊 Resumen de Propinas del Día</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <div class="text-2xl font-bold text-green-700">${{ reportePropinas?.total_efectivo?.toFixed(2) || '0.00' }}</div>
+                <div class="text-sm text-green-600 font-medium">Propina Efectivo</div>
+              </div>
+              <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <div class="text-2xl font-bold text-blue-700">${{ reportePropinas?.total_tarjeta?.toFixed(2) || '0.00' }}</div>
+                <div class="text-sm text-blue-600 font-medium">Propina Tarjeta</div>
+              </div>
+              <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                <div class="text-2xl font-bold text-purple-700">${{ reportePropinas?.total_general?.toFixed(2) || '0.00' }}</div>
+                <div class="text-sm text-purple-600 font-medium">Propina Total</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detalle por mesero -->
+          <div class="bg-white rounded-lg border border-gray-200 p-6">
+            <h3 class="text-lg font-bold text-gray-700 mb-4">👥 Propinas por Mesero</h3>
+            <div v-if="reportePropinas?.por_mesero?.length === 0" class="text-center py-4 text-gray-500">
+              No hay propinas registradas hoy
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr class="bg-gray-50">
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mesero</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Propina Efectivo</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Propina Tarjeta</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                  <tr v-for="item in reportePropinas?.por_mesero || []" :key="item.mesero_id" class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.nombre || `Mesero ${item.mesero_id}` }}</td>
+                    <td class="px-4 py-3 text-sm text-green-600 font-bold">${{ item.propina_efectivo?.toFixed(2) || '0.00' }}</td>
+                    <td class="px-4 py-3 text-sm text-blue-600 font-bold">${{ item.propina_tarjeta?.toFixed(2) || '0.00' }}</td>
+                    <td class="px-4 py-3 text-sm text-purple-600 font-bold">${{ item.propina_total?.toFixed(2) || '0.00' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
         </div>
 
         <!-- Panel lateral de mesas -->
@@ -912,10 +1099,12 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
           </div>
             
           <!-- Total -->
-          <div class="text-center bg-orange-100 text-orange-800 px-4 py-3 rounded-lg mb-6">
+          <div class="text-center bg-orange-100 text-orange-800 px-4 py-3 rounded-lg mb-4">
             <div class="text-sm">Total a cobrar</div>
             <div class="text-2xl font-bold">$ {{ Number(selectedPedido.total).toFixed(2) }}</div>
           </div>
+
+
 
           <!-- Botones de pago simples -->
           <div class="space-y-2">
@@ -987,7 +1176,12 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             <div class="text-3xl font-black text-[#FDB700] mb-2">
               ${{ Number(selectedPedido.total).toFixed(2) }}
             </div>
-            <div class="text-sm text-gray-500">Total a cobrar</div>
+            <div class="text-sm text-gray-500">Subtotal</div>
+            <div class="mt-2 pt-2 border-t border-gray-200">
+              <div class="text-lg font-bold text-green-600">
+                Total con propina: ${{ totalConPropina.toFixed(2) }}
+              </div>
+            </div>
           </div>
 
           <!-- Campo de efectivo recibido -->
@@ -1007,6 +1201,28 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
                 placeholder="0.00"
                 autofocus
               />
+            </div>
+          </div>
+
+          <!-- Propina en efectivo -->
+          <div class="mb-4">
+            <label class="block text-sm font-bold text-gray-700 mb-2">
+              💰 Propina en efectivo (opcional)
+            </label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg font-bold">$</span>
+              <input
+                v-model="propinaEfectivo"
+                @input="calcularCambio"
+                type="number"
+                step="0.01"
+                min="0"
+                class="w-full pl-8 pr-4 py-3 text-lg font-medium border-2 border-gray-300 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 text-center"
+                placeholder="0.00"
+              />
+            </div>
+            <div class="text-xs text-gray-500 mt-1 text-center">
+              Total con propina: <span class="font-bold">${{ totalConPropina.toFixed(2) }}</span>
             </div>
           </div>
 
@@ -1043,19 +1259,19 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
             
             <div class="grid grid-cols-3 gap-2">
               <button
-                @click="efectivoRecibido = selectedPedido.total.toString(); calcularCambio()"
+                @click="efectivoRecibido = (Number(selectedPedido.total) + propinaEfectivoNum.value).toString(); calcularCambio()"
                 class="py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium text-sm rounded transition-all"
               >
                 Exacto
               </button>
               <button
-                @click="efectivoRecibido = (Math.ceil(Number(selectedPedido.total) / 50) * 50).toString(); calcularCambio()"
+                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum.value) / 50) * 50).toString(); calcularCambio()"
                 class="py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium text-sm rounded transition-all"
               >
                 + $50
               </button>
               <button
-                @click="efectivoRecibido = (Math.ceil(Number(selectedPedido.total) / 100) * 100).toString(); calcularCambio()"
+                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum.value) / 100) * 100).toString(); calcularCambio()"
                 class="py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 font-medium text-sm rounded transition-all"
               >
                 + $100
@@ -1066,6 +1282,129 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
               @click="cerrarCalculadoraEfectivo"
               :disabled="processingPayment"
               class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Propina para Tarjeta/Transferencia -->
+    <div 
+      v-if="showPropinaTarjetaModal && selectedPedido && metodoPagoSeleccionado" 
+      class="fixed inset-0 flex items-center justify-center z-[65] p-4"
+      @click.self="cerrarModalPropina"
+    >
+      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-blue-300">
+        <!-- Header profesional -->
+        <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 rounded-t-2xl">
+          <div class="flex items-center justify-between text-white">
+            <h2 class="text-xl font-bold flex items-center gap-2">
+              💳 Propina - Pago con {{ metodoPagoSeleccionado === 'tarjeta' ? 'Tarjeta' : 'Transferencia' }}
+            </h2>
+            <button 
+              @click="cerrarModalPropina" 
+              class="text-white hover:text-gray-200 text-2xl font-bold"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <!-- Contenido del modal -->
+        <div class="p-6">
+          <!-- Info del pedido -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6 text-center">
+            <div class="text-sm text-gray-600 mb-1">Pedido #{{ selectedPedido.numero_display }}</div>
+            <div v-if="selectedPedido.mesa" class="text-blue-600 font-medium mb-2">
+              🪑 Mesa {{ selectedPedido.mesa }}
+            </div>
+            <div class="text-3xl font-black text-[#FDB700] mb-2">
+              ${{ Number(selectedPedido.total).toFixed(2) }}
+            </div>
+            <div class="text-sm text-gray-500">Subtotal</div>
+          </div>
+
+          <!-- Opciones de porcentaje -->
+          <div class="mb-6">
+            <label class="block text-sm font-bold text-gray-700 mb-3">
+              🎯 Selecciona porcentaje de propina
+            </label>
+            <div class="grid grid-cols-3 gap-3">
+              <button
+                @click="aplicarPropinaPorcentaje(10)"
+                class="py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-lg transition-all hover:scale-105"
+              >
+                10%
+              </button>
+              <button
+                @click="aplicarPropinaPorcentaje(15)"
+                class="py-3 bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold rounded-lg transition-all hover:scale-105"
+              >
+                15%
+              </button>
+              <button
+                @click="aplicarPropinaPorcentaje(20)"
+                class="py-3 bg-blue-300 hover:bg-blue-400 text-blue-900 font-bold rounded-lg transition-all hover:scale-105"
+              >
+                20%
+              </button>
+            </div>
+          </div>
+
+          <!-- Monto específico -->
+          <div class="mb-6">
+            <label class="block text-sm font-bold text-gray-700 mb-2">
+              💰 O especifica monto de propina
+            </label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg font-bold">$</span>
+              <input
+                v-model="propinaTarjeta"
+                type="number"
+                step="0.01"
+                min="0"
+                class="w-full pl-8 pr-4 py-3 text-lg font-medium border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-center"
+                placeholder="0.00"
+                @input="actualizarTotalConPropina"
+              />
+            </div>
+          </div>
+
+          <!-- Total con propina -->
+          <div class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-6 text-center">
+            <div class="text-sm font-medium text-blue-700 mb-1">Total a pagar</div>
+            <div class="text-3xl font-black text-blue-600">
+              ${{ (Number(selectedPedido.total) + propinaTarjetaNum).toFixed(2) }}
+            </div>
+            <div class="text-xs text-blue-600 mt-1">
+              Subtotal: ${{ Number(selectedPedido.total).toFixed(2) }} + Propina: ${{ propinaTarjetaNum.toFixed(2) }}
+            </div>
+          </div>
+
+          <!-- Botones de acción -->
+          <div class="space-y-3">
+            <button
+              @click="confirmarPagoConPropina"
+              :disabled="processingPayment"
+              class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar con Propina' }}
+            </button>
+            
+            <button
+              @click="confirmarPagoSinPropina"
+              :disabled="processingPayment"
+              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+            >
+              💳 Pagar sin propina
+            </button>
+            
+            <button
+              @click="cerrarModalPropina"
+              :disabled="processingPayment"
+              class="w-full py-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-all disabled:opacity-50"
             >
               Cancelar
             </button>

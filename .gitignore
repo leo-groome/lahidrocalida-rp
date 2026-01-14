@@ -366,3 +366,4 @@ target/
 # Deployment files
 .vercel
 .netlify
+opencode.json

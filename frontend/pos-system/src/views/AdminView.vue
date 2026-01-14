@@ -217,9 +217,66 @@
                           Sin datos aún
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
+             </div>
+         </div>
+
+         <!-- Lista de Pedidos del Día -->
+         <div v-if="dashboardData && dashboardData.pedidos_del_dia.length > 0" class="bg-white shadow rounded-lg overflow-hidden">
+             <div class="px-6 py-4 border-b border-gray-200">
+                 <h3 class="text-lg font-medium text-gray-900">📋 Pedidos del Día</h3>
+                 <p class="text-sm text-gray-500 mt-1">{{ dashboardData.pedidos_del_dia.length }} pedidos realizados hoy</p>
+             </div>
+             <div class="overflow-x-auto">
+                 <table class="min-w-full divide-y divide-gray-200">
+                     <thead class="bg-gray-50">
+                         <tr>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pedido</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mesa</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pago</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
+                             <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                         </tr>
+                     </thead>
+                     <tbody class="bg-white divide-y divide-gray-200">
+                         <tr v-for="pedido in dashboardData.pedidos_del_dia" :key="pedido.id" class="hover:bg-gray-50">
+                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                 #{{ pedido.numero_display }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                 {{ pedido.mesa || '-' }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                 {{ pedido.nombre_cliente || 'Sin nombre' }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
+                                 {{ pedido.tipo_orden.replace('_', ' ') }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                 ${{ pedido.total.toFixed(2) }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
+                                 {{ pedido.metodo_pago || '-' }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                 {{ new Date(pedido.fecha_creacion).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                             </td>
+                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                 <button
+                                     @click="openOrderModal(pedido)"
+                                     class="text-blue-600 hover:text-blue-900 text-sm font-medium"
+                                 >
+                                     Ver Detalles
+                                 </button>
+                             </td>
+                         </tr>
+                     </tbody>
+                 </table>
+             </div>
+         </div>
+       </div>
       </div>
 
       <!-- Tab: Reportes -->
@@ -803,9 +860,81 @@
       @close-usuario-modal="closeUsuarioModal"
       @save-platillo="savePlatillo"
       @save-usuario="saveUsuario"
-    />
+     />
 
-    <!-- Loading overlay -->
+     <!-- Modal para detalles del pedido -->
+     <div v-if="showOrderModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+       <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
+         <div class="mt-3">
+           <div class="flex items-center justify-between mb-4">
+             <h3 class="text-lg font-bold text-gray-900">
+               Pedido #{{ selectedOrder?.numero_display }}
+             </h3>
+             <button
+               @click="showOrderModal = false"
+               class="text-gray-400 hover:text-gray-600"
+             >
+               <span class="sr-only">Cerrar</span>
+               ✕
+             </button>
+           </div>
+
+           <div class="space-y-4">
+             <!-- Información del pedido -->
+             <div class="grid grid-cols-2 gap-4 text-sm">
+               <div>
+                 <span class="font-medium text-gray-700">Cliente:</span>
+                 <span class="ml-2">{{ selectedOrder?.nombre_cliente || 'Sin nombre' }}</span>
+               </div>
+               <div>
+                 <span class="font-medium text-gray-700">Mesa:</span>
+                 <span class="ml-2">{{ selectedOrder?.mesa || 'N/A' }}</span>
+               </div>
+               <div>
+                 <span class="font-medium text-gray-700">Tipo:</span>
+                 <span class="ml-2 capitalize">{{ selectedOrder?.tipo_orden.replace('_', ' ') }}</span>
+               </div>
+               <div>
+                 <span class="font-medium text-gray-700">Método de pago:</span>
+                 <span class="ml-2 capitalize">{{ selectedOrder?.metodo_pago || 'N/A' }}</span>
+               </div>
+               <div>
+                 <span class="font-medium text-gray-700">Fecha/Hora:</span>
+                 <span class="ml-2">
+                   {{ new Date(selectedOrder?.fecha_creacion).toLocaleString('es-ES') }}
+                 </span>
+               </div>
+               <div>
+                 <span class="font-medium text-gray-700">Total:</span>
+                 <span class="ml-2 font-semibold text-green-600">${{ selectedOrder?.total.toFixed(2) }}</span>
+               </div>
+             </div>
+
+             <!-- Artículos del pedido -->
+             <div>
+               <h4 class="font-medium text-gray-900 mb-3">Artículos del Pedido</h4>
+               <div class="space-y-2">
+                 <div v-for="articulo in selectedOrder?.articulos_pedido" :key="articulo.platillo"
+                      class="flex justify-between items-center py-2 border-b border-gray-100">
+                   <div class="flex-1">
+                     <span class="font-medium">{{ articulo.platillo }}</span>
+                     <span v-if="articulo.modificaciones" class="text-sm text-gray-500 ml-2">
+                       ({{ articulo.modificaciones }})
+                     </span>
+                   </div>
+                   <div class="text-right">
+                     <span class="text-sm text-gray-600">{{ articulo.cantidad }}x</span>
+                     <span class="ml-2 font-medium">${{ articulo.precio_cobrado.toFixed(2) }}</span>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Loading overlay -->
     <div v-if="loading" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-white p-6 rounded-lg shadow-lg">
         <div class="flex items-center space-x-3">
@@ -857,6 +986,8 @@ const activeTab = ref('dashboard')
 // Estado para dashboard
 const dashboardData = ref<DashboardData | null>(null)
 const loadingDashboard = ref(false)
+const showOrderModal = ref(false)
+const selectedOrder = ref<any>(null)
 
 // Estado para reportes
 const weeklyData = ref<WeeklyData | null>(null)
@@ -960,6 +1091,22 @@ interface DashboardData {
     nombre: string
     cantidad: number
   }>
+  pedidos_del_dia: Array<{
+    id: number
+    numero_display: string
+    mesa: string | null
+    nombre_cliente: string | null
+    tipo_orden: string
+    total: number
+    metodo_pago: string | null
+    fecha_creacion: string
+    articulos_pedido: Array<{
+      platillo: string
+      cantidad: number
+      precio_cobrado: number
+      modificaciones: string | null
+    }>
+  }>
 }
 
 interface WeeklyData {
@@ -1028,10 +1175,15 @@ const refreshDashboard = async () => {
   } catch (err: any) {
     error.value = 'Error al cargar dashboard'
     console.error('Dashboard error:', err)
-  } finally {
-    loadingDashboard.value = false
-  }
-}
+   } finally {
+     loadingDashboard.value = false
+   }
+ }
+
+ const openOrderModal = (order: any) => {
+   selectedOrder.value = order
+   showOrderModal.value = true
+ }
 
 // Funciones Reportes
 const loadWeeklyReport = async () => {

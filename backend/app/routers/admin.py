@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, extract
 from typing import List, Dict, Any
 from datetime import datetime, date, timedelta
@@ -85,7 +85,7 @@ def get_dashboard_metrics(
             Pedido.sucursal_id == current_user.sucursal_id
         )
     ).scalar() or Decimal('0.00')
-    
+
     # Productos más vendidos (top 5)
     productos_vendidos = db.query(
         Platillo.nombre,
@@ -105,8 +105,19 @@ def get_dashboard_metrics(
     ).order_by(
         func.sum(ArticuloPedido.cantidad).desc()
     ).limit(5).all()
-    
-    # Ticket promedio
+
+    # Pedidos del día (para la lista en dashboard)
+    pedidos_del_dia = db.query(Pedido).options(
+        joinedload(Pedido.articulos_pedido).joinedload(ArticuloPedido.platillo)
+    ).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).order_by(Pedido.fecha_creacion.desc()).all()
+
+     # Ticket promedio
     total_ingresos = efectivo_total + tarjeta_total + transferencia_total
     promedio_ticket = float(total_ingresos) / total_pedidos if total_pedidos > 0 else 0
 
@@ -182,6 +193,28 @@ def get_dashboard_metrics(
         "productos_mas_vendidos": [
             {"nombre": nombre, "cantidad": int(cantidad)}
             for nombre, cantidad in productos_vendidos
+        ],
+        "pedidos_del_dia": [
+            {
+                "id": pedido.id,
+                "numero_display": pedido.numero_display,
+                "mesa": pedido.mesa,
+                "nombre_cliente": pedido.nombre_cliente,
+                "tipo_orden": pedido.tipo_orden,
+                "total": float(pedido.total),
+                "metodo_pago": pedido.metodo_pago,
+                "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                "articulos_pedido": [
+                    {
+                        "platillo": articulo.platillo.nombre,
+                        "cantidad": articulo.cantidad,
+                        "precio_cobrado": float(articulo.precio_cobrado),
+                        "modificaciones": articulo.modificaciones
+                    }
+                    for articulo in pedido.articulos_pedido
+                ]
+            }
+            for pedido in pedidos_del_dia
         ]
     }
 

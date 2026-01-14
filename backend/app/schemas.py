@@ -88,6 +88,8 @@ class PedidoBase(BaseModel):
     total: Decimal
     estado: str = 'pendiente'
     metodo_pago: Optional[str] = None
+    propina_efectivo: Decimal = Decimal('0')
+    propina_tarjeta: Decimal = Decimal('0')
     tipo_orden: str = 'aqui'
     sucursal_id: int
     usuario_id: int
@@ -102,6 +104,8 @@ class PedidoCreate(BaseModel):
 class PedidoUpdate(BaseModel):
     estado: str
     metodo_pago: Optional[str] = None
+    propina_efectivo: Optional[Decimal] = None
+    propina_tarjeta: Optional[Decimal] = None
 
 class AgregarArticulosRequest(BaseModel):
     articulos: List[ArticuloPedidoCreate]

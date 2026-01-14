@@ -7,6 +7,7 @@ from app.routers import auth
 from app.routers import users, products, pedidos
 from app.routers import gastos
 from app.routers import admin
+from app.routers import propinas
 from app import websocket_routes
 from sqlalchemy.orm import Session
 
@@ -20,7 +21,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",       # Para servidor de desarrollo Vite local
-        "http://192.168.1.76:5173",    # URL del frontend actual
+        "http://192.168.1.113:5173",    # URL del frontend actual
         # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
     ],
     allow_credentials=True,
@@ -35,6 +36,7 @@ app.include_router(products.router)
 app.include_router(pedidos.router)
 app.include_router(gastos.router)
 app.include_router(admin.router)
+app.include_router(propinas.router)
 app.include_router(websocket_routes.router)
 
 @app.get("/")

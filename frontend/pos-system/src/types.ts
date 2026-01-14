@@ -57,6 +57,9 @@ export interface PedidoResponse {
   total: string | number
   estado: 'pendiente' | 'preparando' | 'listo' | 'entregado' | 'cuenta_solicitada' | 'pagado' | 'cancelado'
   metodo_pago: 'efectivo' | 'tarjeta' | 'transferencia' | null
+  propina_efectivo: number
+  propina_tarjeta: number
+  propina_total: number
   tipo_orden: 'aqui' | 'llevar' | 'uber_eats'
   sucursal_id: number
   usuario_id: number

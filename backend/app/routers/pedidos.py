@@ -164,16 +164,20 @@ async def create_pedido(
             # Notificar creación del pedido via WebSocket
             try:
                 pedido_data = {
-                    "id": pedido.id,
-                    "numero_display": pedido.numero_display,
-                    "nombre_cliente": pedido.nombre_cliente,
-                    "mesa": pedido.mesa,
-                    "total": float(pedido.total),
-                    "estado": pedido.estado,
-                    "tipo_orden": pedido.tipo_orden,
-                    "sucursal_id": pedido.sucursal_id,
-                    "fecha_creacion": pedido.fecha_creacion.isoformat(),
-                    "articulos_pedido": [
+            "id": pedido.id,
+            "numero_display": pedido.numero_display,
+            "nombre_cliente": pedido.nombre_cliente,
+            "mesa": pedido.mesa,
+            "total": float(pedido.total),
+            "estado": pedido.estado,
+            "tipo_orden": pedido.tipo_orden,
+            "sucursal_id": pedido.sucursal_id,
+            "fecha_creacion": pedido.fecha_creacion.isoformat(),
+            "metodo_pago": pedido.metodo_pago,
+            "propina_efectivo": float(pedido.propina_efectivo),
+            "propina_tarjeta": float(pedido.propina_tarjeta),
+            "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
+            "articulos_pedido": [
                         {
                             "id": a.id,
                             "cantidad": a.cantidad,
@@ -356,6 +360,18 @@ async def update_pedido(
             detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado"
         )
     
+    # Validar propinas (no negativas)
+    if data.propina_efectivo is not None and data.propina_efectivo < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La propina en efectivo no puede ser negativa"
+        )
+    if data.propina_tarjeta is not None and data.propina_tarjeta < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="La propina en tarjeta no puede ser negativa"
+        )
+    
     # Actualizar estado
     old_estado = pedido.estado
     pedido.estado = data.estado
@@ -377,6 +393,12 @@ async def update_pedido(
     if data.metodo_pago is not None:
         pedido.metodo_pago = data.metodo_pago
     
+    # Actualizar propinas si se proporcionan
+    if data.propina_efectivo is not None:
+        pedido.propina_efectivo = data.propina_efectivo
+    if data.propina_tarjeta is not None:
+        pedido.propina_tarjeta = data.propina_tarjeta
+    
     db.commit()
     db.refresh(pedido)
     
@@ -394,6 +416,9 @@ async def update_pedido(
                 "sucursal_id": pedido.sucursal_id,
                 "fecha_creacion": pedido.fecha_creacion.isoformat(),
                 "metodo_pago": pedido.metodo_pago,
+                "propina_efectivo": float(pedido.propina_efectivo),
+                "propina_tarjeta": float(pedido.propina_tarjeta),
+                "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
                 "articulos_pedido": [
                     {
                         "id": a.id,
@@ -488,6 +513,10 @@ async def update_articulo_estado(
                 "tipo_orden": pedido.tipo_orden,
                 "sucursal_id": pedido.sucursal_id,
                 "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                "metodo_pago": pedido.metodo_pago,
+                "propina_efectivo": float(pedido.propina_efectivo),
+                "propina_tarjeta": float(pedido.propina_tarjeta),
+                "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
                 "articulos_pedido": [
                     {
                         "id": a.id,
