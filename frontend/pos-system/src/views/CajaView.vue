@@ -3,8 +3,9 @@ import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
-import type { PedidoResponse } from '../types'
+import type { PedidoResponse, Turno } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
+import TurnoModal from '@/components/TurnoModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
 
@@ -19,6 +20,12 @@ const processingPayment = ref(false)
 const successMessage = ref<string | null>(null)
 const showNotification = ref(false)
 const error = ref<string | null>(null)
+
+// Estados para gestion de turnos
+const turnoActivo = ref<Turno | null>(null)
+const showTurnoModal = ref(false)
+const modalTipo = ref<'inicio' | 'cierre'>('inicio')
+const loadingTurno = ref(false)
 
 // Estados para calculadora de efectivo
 const showEfectivoCalculator = ref(false)
@@ -43,6 +50,7 @@ const searchQuery = ref<string>('')
 const showMesaMap = ref(false)
 
 let timer: number | undefined
+let timerTurno: number | undefined
 
 // Validar que el usuario tenga permisos
 onMounted(async () => {
@@ -56,10 +64,13 @@ onMounted(async () => {
   try {
     // Cargar datos iniciales
     await pedidosStore.loadInitialData()
-    
+
+    // Cargar turno activo
+    await cargarTurnoActivo()
+
     // Inicializar WebSocket para caja
     const wsConnected = await pedidosStore.initWebSocket('caja')
-    
+
     if (wsConnected) {
       console.log('✅ Caja View: WebSocket conectado, datos en tiempo real activos')
     } else {
@@ -69,6 +80,11 @@ onMounted(async () => {
         pedidosStore.refreshPedidos()
       }, 5000)
     }
+
+    // Polling para turno activo cada 10 segundos
+    timerTurno = window.setInterval(() => {
+      cargarTurnoActivo()
+    }, 10000)
   } catch (error) {
     console.error('❌ Caja View: Error en inicialización:', error)
   }
@@ -78,6 +94,9 @@ onUnmounted(() => {
   console.log('👋 Caja View: Cleanup...')
   if (timer) {
     clearInterval(timer)
+  }
+  if (timerTurno) {
+    clearInterval(timerTurno)
   }
   // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
 })
@@ -129,36 +148,42 @@ const totalConPropina = computed(() => {
 
 const pedidosActivos = computed(() => {
   let pedidos = [...pedidosStore.pedidosCaja]
-  
+
   // Filtrar por búsqueda (mesa o cliente)
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
-    pedidos = pedidos.filter(pedido => 
+    pedidos = pedidos.filter(pedido =>
       (pedido.mesa && pedido.mesa.includes(query)) ||
       (pedido.nombre_cliente && pedido.nombre_cliente.toLowerCase().includes(query)) ||
       pedido.numero_display.includes(query)
     )
   }
-  
+
   return pedidos
 })
+
+// Computed para gestión de turnos
+const tieneTurnoActivo = computed(() => turnoActivo.value !== null)
+const botonTurnoTexto = computed(() =>
+  tieneTurnoActivo.value ? 'Cerrar Turno' : 'Iniciar Turno'
+)
 
 // Computed para pedidos pendientes de pago con filtro y ordenamiento
 const pedidosPendientes = computed(() => {
   let pedidos = [...pedidosStore.pedidosPendientesPago]
-  
+
   // Filtrar por búsqueda (mesa o cliente)
   if (searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
-    pedidos = pedidos.filter(pedido => 
+    pedidos = pedidos.filter(pedido =>
       (pedido.mesa && pedido.mesa.includes(query)) ||
       (pedido.nombre_cliente && pedido.nombre_cliente.toLowerCase().includes(query)) ||
       pedido.numero_display.includes(query)
     )
   }
-  
+
   // Ordenar por fecha de creación (más viejos primero)
-  return pedidos.sort((a, b) => 
+  return pedidos.sort((a, b) =>
     new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime()
   )
 })
@@ -175,46 +200,46 @@ const mesasLayout = [
 // Computed para estado de mesas
 const mesasOcupadas = computed(() => {
   const ocupadas = new Set<string>()
-  
+
   // Mesas con pedidos activos (no pagados ni cancelados)
   pedidosStore.pedidos.forEach(pedido => {
     if (pedido.mesa && !['pagado', 'cancelado'].includes(pedido.estado)) {
       ocupadas.add(pedido.mesa)
     }
   })
-  
+
   return ocupadas
 })
 
 // Obtener estado de una mesa específica
 const getMesaEstado = (numeroMesa: string) => {
   if (!mesasOcupadas.value.has(numeroMesa)) return 'libre'
-  
+
   // Buscar el pedido más reciente de esta mesa
   const pedidosMesa = pedidosStore.pedidos.filter(p => p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado))
   if (pedidosMesa.length === 0) return 'libre'
-  
+
   // Obtener el estado más avanzado
-  const ultimoPedido = pedidosMesa.sort((a, b) => 
+  const ultimoPedido = pedidosMesa.sort((a, b) =>
     new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
   )[0]
-  
+
   return ultimoPedido.estado
 }
 
 // Obtener clase CSS para el estado de la mesa (colores iguales a las estadísticas)
 const getMesaClase = (numeroMesa: string) => {
   const estado = getMesaEstado(numeroMesa)
-  
+
   const clases = {
     'libre': 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200',
     'pendiente': 'bg-yellow-100 border-yellow-200 text-yellow-700',
-    'preparando': 'bg-orange-100 border-orange-200 text-orange-700', 
+    'preparando': 'bg-orange-100 border-orange-200 text-orange-700',
     'listo': 'bg-green-100 border-green-200 text-green-700',
     'entregado': 'bg-blue-100 border-blue-200 text-blue-700',
     'cuenta_solicitada': 'bg-purple-100 border-purple-200 text-purple-700 animate-pulse'
   }
-  
+
   return clases[estado as keyof typeof clases] || clases.libre
 }
 
@@ -230,23 +255,23 @@ const buscarMesa = (numeroMesa: string) => {
 // Manejar click en mesa según su estado
 const handleMesaClick = (numeroMesa: string) => {
   const estadoMesa = getMesaEstado(numeroMesa)
-  
+
   // Mesa libre - no hacer nada
   if (estadoMesa === 'libre') {
     return
   }
-  
+
   // Buscar el pedido más reciente de esta mesa
-  const pedidosMesa = pedidosStore.pedidos.filter(p => 
+  const pedidosMesa = pedidosStore.pedidos.filter(p =>
     p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado)
   )
-  
+
   if (pedidosMesa.length === 0) return
-  
-  const ultimoPedido = pedidosMesa.sort((a, b) => 
+
+  const ultimoPedido = pedidosMesa.sort((a, b) =>
     new Date(b.fecha_creacion).getTime() - new Date(a.fecha_creacion).getTime()
   )[0]
-  
+
   // Si es cuenta solicitada - ir directo a cobrar
   if (ultimoPedido.estado === 'cuenta_solicitada') {
     activeTab.value = 'pendientes'
@@ -257,7 +282,7 @@ const handleMesaClick = (numeroMesa: string) => {
     })
     return
   }
-  
+
   // Para cualquier otro estado - mostrar detalles del pedido
   showPedidoDetails(ultimoPedido)
 }
@@ -286,7 +311,7 @@ const closeDetailsModal = () => {
 const getTipoOrdenEmoji = (tipo: string) => {
   const emojis: Record<string, string> = {
     'aqui': '🍽️',
-    'llevar': '📦', 
+    'llevar': '📦',
     'uber_eats': '🚗'
   }
   return emojis[tipo] || '📋'
@@ -296,7 +321,7 @@ const getTipoOrdenEmoji = (tipo: string) => {
 const getEstadoColor = (estado: string) => {
   const colors: Record<string, string> = {
     'pendiente': 'bg-yellow-500',
-    'preparando': 'bg-orange-500', 
+    'preparando': 'bg-orange-500',
     'listo': 'bg-green-500',
     'entregado': 'bg-blue-500',
     'cuenta_solicitada': 'bg-purple-500',
@@ -310,7 +335,7 @@ const getEstadoColor = (estado: string) => {
 const getEstadoTexto = (estado: string) => {
   const textos: Record<string, string> = {
     'pendiente': 'PENDIENTE',
-    'preparando': 'PREPARANDO', 
+    'preparando': 'PREPARANDO',
     'listo': 'LISTO',
     'entregado': 'ENTREGADO',
     'cuenta_solicitada': 'CUENTA SOLICITADA',
@@ -343,7 +368,7 @@ const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'ta
     propinaTarjeta.value = ''
     return
   }
-  
+
   // Para tarjeta y transferencia, mostrar modal de propina primero
   metodoPagoSeleccionado.value = metodoPago
   propinaTarjeta.value = '' // Resetear propina anterior
@@ -352,7 +377,7 @@ const procesarPago = async (pedido: PedidoResponse, metodoPago: 'efectivo' | 'ta
 
 // Finalizar pago (usado por todos los métodos)
 const finalizarPago = async (
-  pedido: PedidoResponse, 
+  pedido: PedidoResponse,
   metodoPago: 'efectivo' | 'tarjeta' | 'transferencia',
   propinaEfectivoVal: number = 0,
   propinaTarjetaVal: number = 0
@@ -361,28 +386,28 @@ const finalizarPago = async (
   try {
     // Usar el store para actualizar el pedido
     const success = await pedidosStore.updatePedidoEstado(
-      pedido.id, 
-      'pagado', 
-      metodoPago, 
-      propinaEfectivoVal, 
+      pedido.id,
+      'pagado',
+      metodoPago,
+      propinaEfectivoVal,
       propinaTarjetaVal
     )
-    
+
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
       const totalConPropina = Number(pedido.total) + propinaEfectivoVal + propinaTarjetaVal
       let mensaje = `Pago procesado: ${tipoTexto} - $${totalConPropina.toFixed(2)} (${metodoPago})`
-      
+
       if (propinaEfectivoVal > 0 || propinaTarjetaVal > 0) {
         mensaje += ` (Propina: $${(propinaEfectivoVal + propinaTarjetaVal).toFixed(2)})`
       }
-      
+
       if (metodoPago === 'efectivo' && parseFloat(efectivoRecibido.value) > totalConPropina) {
         mensaje += ` - Cambio: $${cambioCalculado.value.toFixed(2)}`
       }
-      
+
       showSuccessNotification(mensaje)
-      
+
       // Resetear estados
       selectedPedido.value = null
       showEfectivoCalculator.value = false
@@ -390,7 +415,7 @@ const finalizarPago = async (
       cambioCalculado.value = 0
       propinaEfectivo.value = ''
       propinaTarjeta.value = ''
-      
+
       // Limpiar filtro después de acción completada
       searchQuery.value = ''
     } else {
@@ -428,7 +453,7 @@ const selectPedido = async (pedido: PedidoResponse) => {
     selectedPedido.value = null
     return
   }
-  
+
   // Cargar detalles completos del pedido
   const pedidoCompleto = await getPedidoCompleto(pedido.id)
   if (pedidoCompleto) {
@@ -451,24 +476,24 @@ const closeModal = () => {
 // Funciones para calculadora de efectivo
 const calcularCambio = () => {
   if (!selectedPedido.value) return
-  
+
   const recibido = parseFloat(efectivoRecibido.value) || 0
   const total = Number(selectedPedido.value.total) + propinaEfectivoNum.value
-  
+
   cambioCalculado.value = recibido - total
 }
 
 const confirmarPagoEfectivo = async () => {
   if (!selectedPedido.value) return
-  
+
   const recibido = parseFloat(efectivoRecibido.value) || 0
   const total = Number(selectedPedido.value.total) + propinaEfectivoNum.value
-  
+
   if (recibido < total) {
     showErrorNotification(`Efectivo insuficiente. Falta: $${(total - recibido).toFixed(2)}`)
     return
   }
-  
+
   await finalizarPago(selectedPedido.value, 'efectivo', propinaEfectivoNum.value, 0)
 }
 
@@ -483,17 +508,17 @@ const cerrarCalculadoraEfectivo = () => {
 const imprimirTicket = async (pedido: PedidoResponse) => {
   try {
     console.log('🖨️ Iniciando proceso de impresión de ticket...')
-    
+
     // Asegurar que tenemos los artículos del pedido
     const pedidoCompleto = await getPedidoCompleto(pedido.id)
     if (!pedidoCompleto) throw new Error('Pedido no encontrado para impresión')
 
     // Usar el servicio de impresión con fallbacks automáticos
     const result = await printService.printTicket(pedidoCompleto)
-    
+
     if (result.success) {
       console.log(`✅ Ticket impreso exitosamente usando: ${result.method}`)
-      
+
       // Mostrar notificación al usuario sobre el método usado
       if (result.method === 'Impresora térmica ESC/POS') {
         // No mostrar notificación para impresora térmica, es el flujo esperado
@@ -504,13 +529,13 @@ const imprimirTicket = async (pedido: PedidoResponse) => {
     } else {
       throw new Error(result.error || 'Error desconocido en impresión')
     }
-    
+
   } catch (e: any) {
     console.error('❌ Error en proceso de impresión:', e.message)
-    
+
     // En caso de error total, mostrar mensaje pero no fallar el flujo
     showErrorNotification('Error en impresión, verifique la impresora')
-    
+
     // No lanzar error para no interrumpir el flujo de solicitar cuenta
   }
 }
@@ -519,13 +544,13 @@ const imprimirTicket = async (pedido: PedidoResponse) => {
 const imprimirTicketSeparado = async (pedido: PedidoResponse) => {
   try {
     console.log('🖨️ Imprimiendo ticket separado para pedido:', pedido.id)
-    
+
     // Solo imprimir ticket sin cambiar estado
     await imprimirTicket(pedido)
-    
+
     const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
     showSuccessNotification(`Ticket reimpreso: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
-    
+
   } catch (e: any) {
     showErrorNotification('Error al reimprimir ticket')
   }
@@ -546,20 +571,20 @@ const cerrarConfirmacionCancelacion = () => {
 // Cancelar pedido (segunda confirmación - ejecutar cancelación)
 const confirmarCancelacion = async () => {
   if (!pedidoACancelar.value) return
-  
+
   const pedido = pedidoACancelar.value
-  
+
   try {
     // Cambiar estado a cancelado
     const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cancelado')
-    
+
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
       showSuccessNotification(`Pedido cancelado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
-      
+
       // Limpiar filtro después de acción completada
       searchQuery.value = ''
-      
+
       // Cerrar todos los modales
       cerrarConfirmacionCancelacion()
       if (showDetailsModal.value) {
@@ -578,14 +603,14 @@ const solicitarCuenta = async (pedido: PedidoResponse) => {
   try {
     // Primero imprimimos el ticket
     await imprimirTicket(pedido)
-    
+
     // Luego cambiamos el estado
     const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
-    
+
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
       showSuccessNotification(`Ticket impreso y cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
-      
+
       // Limpiar filtro después de acción completada
       searchQuery.value = ''
     } else {
@@ -617,7 +642,7 @@ const cerrarModalPropina = () => {
 
 const confirmarPagoConPropina = async () => {
   if (!selectedPedido.value || !metodoPagoSeleccionado.value) return
-  
+
   const tipAmount = propinaTarjetaNum.value
   await finalizarPago(
     selectedPedido.value,
@@ -630,7 +655,7 @@ const confirmarPagoConPropina = async () => {
 
 const confirmarPagoSinPropina = async () => {
   if (!selectedPedido.value || !metodoPagoSeleccionado.value) return
-  
+
   await finalizarPago(
     selectedPedido.value,
     metodoPagoSeleccionado.value,
@@ -638,6 +663,84 @@ const confirmarPagoSinPropina = async () => {
     0  // propina tarjeta
   )
   cerrarModalPropina()
+}
+
+// ===== FUNCIONES PARA GESTIÓN DE TURNOS =====
+
+const cargarTurnoActivo = async () => {
+  loadingTurno.value = true
+  try {
+    const response = await api.get('/turnos/activo')
+    turnoActivo.value = response.data
+  } catch (error: any) {
+    // 404 significa que no hay turno activo, lo cual es normal
+    if (error.response?.status === 404) {
+      turnoActivo.value = null
+    } else {
+      console.error('Error cargando turno activo:', error)
+      showErrorNotification('Error al cargar turno activo')
+    }
+  } finally {
+    loadingTurno.value = false
+  }
+}
+
+const manejarClickTurno = () => {
+  if (tieneTurnoActivo.value) {
+    modalTipo.value = 'cierre'
+  } else {
+    modalTipo.value = 'inicio'
+  }
+  showTurnoModal.value = true
+}
+
+const iniciarTurno = async (conteoInicial: any) => {
+  loadingTurno.value = true
+  try {
+    const response = await api.post('/turnos/iniciar', {
+      conteo_inicial: {
+        denominaciones: conteoInicial.denominaciones
+      },
+      observaciones: conteoInicial.observaciones
+    })
+
+    showSuccessNotification(`Turno #${response.data.id} iniciado con $${conteoInicial.total.toFixed(2)}`)
+    await cargarTurnoActivo()
+    showTurnoModal.value = false
+  } catch (error: any) {
+    console.error('Error iniciando turno:', error)
+    showErrorNotification(error.response?.data?.detail || 'Error al iniciar turno')
+  } finally {
+    loadingTurno.value = false
+  }
+}
+
+const cerrarTurno = async (conteoFinal: any) => {
+  loadingTurno.value = true
+  try {
+    if (!turnoActivo.value) {
+      throw new Error('No hay turno activo para cerrar')
+    }
+
+    const response = await api.post(`/turnos/${turnoActivo.value.id}/cerrar`, {
+      conteo_final: {
+        denominaciones: conteoFinal.denominaciones
+      },
+      observaciones: conteoFinal.observaciones
+    })
+
+    const diferencia = response.data.diferencia
+    const mensajeDiferencia = diferencia !== undefined ? ` (Diferencia: $${diferencia >= 0 ? '+' : ''}${diferencia.toFixed(2)})` : ''
+    showSuccessNotification(`Turno #${response.data.id} cerrado${mensajeDiferencia}`)
+
+    await cargarTurnoActivo()
+    showTurnoModal.value = false
+  } catch (error: any) {
+    console.error('Error cerrando turno:', error)
+    showErrorNotification(error.response?.data?.detail || 'Error al cerrar turno')
+  } finally {
+    loadingTurno.value = false
+  }
 }
 </script>
 
@@ -655,8 +758,8 @@ const confirmarPagoSinPropina = async () => {
             @click="activeTab = 'overview'"
             :class="[
               'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm',
-              activeTab === 'overview' 
-                ? 'bg-[#00126D] text-white shadow-md' 
+              activeTab === 'overview'
+                ? 'bg-[#00126D] text-white shadow-md'
                 : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
             ]"
           >
@@ -666,8 +769,8 @@ const confirmarPagoSinPropina = async () => {
             @click="activeTab = 'pendientes'"
             :class="[
               'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm flex items-center justify-center gap-2',
-              activeTab === 'pendientes' 
-                ? 'bg-[#00126D] text-white shadow-md' 
+              activeTab === 'pendientes'
+                ? 'bg-[#00126D] text-white shadow-md'
                 : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
             ]"
           >
@@ -683,8 +786,8 @@ const confirmarPagoSinPropina = async () => {
             @click="activeTab = 'propinas'"
             :class="[
               'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm',
-              activeTab === 'propinas' 
-                ? 'bg-[#00126D] text-white shadow-md' 
+              activeTab === 'propinas'
+                ? 'bg-[#00126D] text-white shadow-md'
                 : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
             ]"
           >
@@ -692,8 +795,8 @@ const confirmarPagoSinPropina = async () => {
           </button>
         </div>
 
-        <!-- Búsqueda -->
-        <div class="flex items-center">
+        <!-- Búsqueda y Botón de Turno -->
+        <div class="flex items-center gap-4">
           <div class="flex-1">
             <div class="relative">
               <input
@@ -702,7 +805,7 @@ const confirmarPagoSinPropina = async () => {
                 placeholder="🔍 Buscar por mesa, cliente o pedido..."
                 class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00126D] focus:border-transparent text-sm"
               />
-              <button 
+              <button
                 v-if="searchQuery"
                 @click="searchQuery = ''"
                 class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
@@ -711,6 +814,28 @@ const confirmarPagoSinPropina = async () => {
               </button>
             </div>
           </div>
+
+          <!-- Botón de Turno -->
+          <button
+            @click="manejarClickTurno"
+            :disabled="loadingTurno"
+            :class="[
+              'px-6 py-2.5 rounded-lg font-medium transition-all border whitespace-nowrap',
+              loadingTurno
+                ? 'bg-gray-300 text-gray-500 border-gray-400 cursor-not-allowed'
+                : tieneTurnoActivo
+                  ? 'bg-red-100 hover:bg-red-200 text-red-700 border-red-300 hover:border-red-400'
+                  : 'bg-green-100 hover:bg-green-200 text-green-700 border-green-300 hover:border-green-400'
+            ]"
+          >
+            <span v-if="loadingTurno">⏳</span>
+            <span v-else-if="tieneTurnoActivo">📊</span>
+            <span v-else>💰</span>
+            <span class="ml-2 font-semibold">{{ botonTurnoTexto }}</span>
+            <span v-if="turnoActivo" class="ml-2 text-sm font-normal">
+              (${{ turnoActivo.total_inicial.toFixed(2) }})
+            </span>
+          </button>
         </div>
       </div>
     </div>
@@ -789,13 +914,13 @@ const confirmarPagoSinPropina = async () => {
               {{ pedidosActivos.length }} de {{ pedidosStore.pedidosCaja.length }} pedidos
             </div>
           </div>
-          
+
           <div v-if="pedidosActivos.length === 0" class="text-center py-8">
             <div class="text-4xl mb-2">🎉</div>
             <p class="text-gray-600">
               {{ searchQuery ? 'No se encontraron resultados' : 'No hay pedidos activos' }}
             </p>
-            <button 
+            <button
               v-if="searchQuery"
               @click="searchQuery = ''"
               class="mt-4 px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all"
@@ -804,8 +929,8 @@ const confirmarPagoSinPropina = async () => {
             </button>
           </div>
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            <div 
-              v-for="pedido in pedidosActivos" 
+            <div
+              v-for="pedido in pedidosActivos"
               :key="pedido.id"
               @click="showPedidoDetails(pedido)"
               class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-[#FDB700] hover:scale-105"
@@ -819,7 +944,7 @@ const confirmarPagoSinPropina = async () => {
                   {{ getEstadoTexto(pedido.estado) }}
                 </div>
               </div>
-              
+
               <div class="text-sm">
                 <div v-if="pedido.mesa" class="text-blue-600 font-medium">🪑 Mesa {{ pedido.mesa }}</div>
                 <div v-if="pedido.nombre_cliente" class="text-green-600 font-medium">👤 {{ pedido.nombre_cliente }}</div>
@@ -836,7 +961,7 @@ const confirmarPagoSinPropina = async () => {
                 >
                   💳 Solicitar Cuenta
                 </button>
-                
+
                 <!-- Indicador de acción -->
                 <div class="text-center text-xs text-gray-500 font-medium">
                   👆 Clic para ver detalles del pedido
@@ -853,7 +978,7 @@ const confirmarPagoSinPropina = async () => {
         <div class="mb-4 flex items-center justify-between">
           <div class="flex items-center gap-4">
             <h3 class="text-lg font-bold text-gray-700">
-              Cuentas Pendientes 
+              Cuentas Pendientes
               <span v-if="searchQuery" class="text-sm font-normal text-gray-500">
                 (filtrado por: "{{ searchQuery }}")
               </span>
@@ -872,7 +997,7 @@ const confirmarPagoSinPropina = async () => {
           <p class="text-gray-500">
             {{ searchQuery ? 'Intenta con otro término de búsqueda' : 'Todos los pedidos están pagados' }}
           </p>
-          <button 
+          <button
             v-if="searchQuery"
             @click="searchQuery = ''"
             class="mt-4 px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all"
@@ -882,8 +1007,8 @@ const confirmarPagoSinPropina = async () => {
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-          <div 
-            v-for="pedido in pedidosPendientes" 
+          <div
+            v-for="pedido in pedidosPendientes"
             :key="pedido.id"
             @click="selectPedido(pedido)"
             class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-[#FDB700] cursor-pointer transition-all hover:scale-105 group"
@@ -922,7 +1047,7 @@ const confirmarPagoSinPropina = async () => {
               >
                 🖨️ Imprimir Ticket
               </button>
-              
+
               <button
                 @click.stop="selectPedido(pedido)"
                 class="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
@@ -951,7 +1076,7 @@ const confirmarPagoSinPropina = async () => {
           <div class="text-4xl mb-4">⏳</div>
           <p class="text-lg">Cargando reporte de propinas...</p>
         </div>
-        
+
         <div v-else>
           <!-- Resumen diario -->
           <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
@@ -1011,7 +1136,7 @@ const confirmarPagoSinPropina = async () => {
             </h3>
             <p class="text-xs text-gray-500 mt-1">Clic en mesa para buscar</p>
           </div>
-          
+
           <!-- Layout de mesas -->
           <div class="space-y-3">
             <div class="grid grid-cols-3 gap-2">
@@ -1023,8 +1148,8 @@ const confirmarPagoSinPropina = async () => {
                   :disabled="getMesaEstado(numeroMesa) === 'libre'"
                   :class="[
                     'w-12 h-10 rounded border text-sm font-bold transition-all',
-                    getMesaEstado(numeroMesa) === 'libre' 
-                      ? 'cursor-not-allowed opacity-60' 
+                    getMesaEstado(numeroMesa) === 'libre'
+                      ? 'cursor-not-allowed opacity-60'
                       : 'hover:scale-105 cursor-pointer',
                     getMesaClase(numeroMesa)
                   ]"
@@ -1040,8 +1165,8 @@ const confirmarPagoSinPropina = async () => {
     </main>
 
     <!-- Modal de procesamiento de pago - Minimalista -->
-    <div 
-      v-if="selectedPedido" 
+    <div
+      v-if="selectedPedido"
       class="fixed inset-0 flex items-center justify-center z-50 p-4"
       @click.self="closeModal"
     >
@@ -1052,8 +1177,8 @@ const confirmarPagoSinPropina = async () => {
             <h2 class="text-lg font-semibold text-gray-800">
               Procesar Pago - Pedido #{{ selectedPedido.numero_display }}
             </h2>
-            <button 
-              @click="closeModal" 
+            <button
+              @click="closeModal"
               class="text-gray-400 hover:text-gray-600 text-xl"
             >
               ×
@@ -1072,13 +1197,13 @@ const confirmarPagoSinPropina = async () => {
               📦 {{ selectedPedido.nombre_cliente }}
             </div>
           </div>
-            
+
           <!-- Lista de artículos simple -->
           <div v-if="selectedPedido.articulos_pedido && selectedPedido.articulos_pedido.length > 0" class="mb-4">
             <h4 class="text-sm font-medium text-gray-700 mb-2">Artículos:</h4>
             <div class="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
-              <div 
-                v-for="articulo in selectedPedido.articulos_pedido" 
+              <div
+                v-for="articulo in selectedPedido.articulos_pedido"
                 :key="articulo.id"
                 class="flex justify-between items-start py-1 text-sm"
               >
@@ -1097,7 +1222,7 @@ const confirmarPagoSinPropina = async () => {
               </div>
             </div>
           </div>
-            
+
           <!-- Total -->
           <div class="text-center bg-orange-100 text-orange-800 px-4 py-3 rounded-lg mb-4">
             <div class="text-sm">Total a cobrar</div>
@@ -1144,8 +1269,8 @@ const confirmarPagoSinPropina = async () => {
     </div>
 
     <!-- Modal Calculadora de Efectivo Profesional -->
-    <div 
-      v-if="showEfectivoCalculator && selectedPedido" 
+    <div
+      v-if="showEfectivoCalculator && selectedPedido"
       class="fixed inset-0 flex items-center justify-center z-[60] p-4"
       @click.self="cerrarCalculadoraEfectivo"
     >
@@ -1156,8 +1281,8 @@ const confirmarPagoSinPropina = async () => {
             <h2 class="text-xl font-bold flex items-center gap-2">
               💵 Pago en Efectivo
             </h2>
-            <button 
-              @click="cerrarCalculadoraEfectivo" 
+            <button
+              @click="cerrarCalculadoraEfectivo"
               class="text-white hover:text-gray-200 text-2xl font-bold"
             >
               ×
@@ -1256,7 +1381,7 @@ const confirmarPagoSinPropina = async () => {
             >
               {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar Pago' }}
             </button>
-            
+
             <div class="grid grid-cols-3 gap-2">
               <button
                 @click="efectivoRecibido = (Number(selectedPedido.total) + propinaEfectivoNum.value).toString(); calcularCambio()"
@@ -1277,7 +1402,7 @@ const confirmarPagoSinPropina = async () => {
                 + $100
               </button>
             </div>
-            
+
             <button
               @click="cerrarCalculadoraEfectivo"
               :disabled="processingPayment"
@@ -1291,8 +1416,8 @@ const confirmarPagoSinPropina = async () => {
     </div>
 
     <!-- Modal de Propina para Tarjeta/Transferencia -->
-    <div 
-      v-if="showPropinaTarjetaModal && selectedPedido && metodoPagoSeleccionado" 
+    <div
+      v-if="showPropinaTarjetaModal && selectedPedido && metodoPagoSeleccionado"
       class="fixed inset-0 flex items-center justify-center z-[65] p-4"
       @click.self="cerrarModalPropina"
     >
@@ -1303,8 +1428,8 @@ const confirmarPagoSinPropina = async () => {
             <h2 class="text-xl font-bold flex items-center gap-2">
               💳 Propina - Pago con {{ metodoPagoSeleccionado === 'tarjeta' ? 'Tarjeta' : 'Transferencia' }}
             </h2>
-            <button 
-              @click="cerrarModalPropina" 
+            <button
+              @click="cerrarModalPropina"
               class="text-white hover:text-gray-200 text-2xl font-bold"
             >
               ×
@@ -1392,7 +1517,7 @@ const confirmarPagoSinPropina = async () => {
             >
               {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar con Propina' }}
             </button>
-            
+
             <button
               @click="confirmarPagoSinPropina"
               :disabled="processingPayment"
@@ -1400,7 +1525,7 @@ const confirmarPagoSinPropina = async () => {
             >
               💳 Pagar sin propina
             </button>
-            
+
             <button
               @click="cerrarModalPropina"
               :disabled="processingPayment"
@@ -1414,8 +1539,8 @@ const confirmarPagoSinPropina = async () => {
     </div>
 
     <!-- Modal de detalles del pedido -->
-    <div 
-      v-if="showDetailsModal && selectedPedidoDetails" 
+    <div
+      v-if="showDetailsModal && selectedPedidoDetails"
       class="fixed inset-0 flex items-center justify-center z-50 p-4"
       @click.self="closeDetailsModal"
     >
@@ -1426,8 +1551,8 @@ const confirmarPagoSinPropina = async () => {
             <h2 class="text-lg font-semibold flex items-center gap-2">
               🍽️ Mesa {{ selectedPedidoDetails.mesa }} - Pedido #{{ selectedPedidoDetails.numero_display }}
             </h2>
-            <button 
-              @click="closeDetailsModal" 
+            <button
+              @click="closeDetailsModal"
               class="text-white hover:text-gray-200 text-xl"
             >
               ×
@@ -1447,18 +1572,18 @@ const confirmarPagoSinPropina = async () => {
                 {{ new Date(selectedPedidoDetails.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
               </div>
             </div>
-            
+
             <div v-if="selectedPedidoDetails.nombre_cliente" class="bg-green-100 text-green-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
               👤 {{ selectedPedidoDetails.nombre_cliente }}
             </div>
           </div>
-            
+
           <!-- Lista de artículos -->
           <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-4">
             <h4 class="text-sm font-bold text-gray-700 mb-3">📋 Artículos del pedido:</h4>
             <div class="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
-              <div 
-                v-for="articulo in selectedPedidoDetails.articulos_pedido" 
+              <div
+                v-for="articulo in selectedPedidoDetails.articulos_pedido"
                 :key="articulo.id"
                 class="flex justify-between items-start py-2 border-b border-gray-200 last:border-b-0"
               >
@@ -1482,7 +1607,7 @@ const confirmarPagoSinPropina = async () => {
               </div>
             </div>
           </div>
-            
+
           <!-- Total -->
           <div class="text-center bg-[#FDB700] text-white px-4 py-3 rounded-lg mb-6">
             <div class="text-sm">Total del pedido</div>
@@ -1499,7 +1624,7 @@ const confirmarPagoSinPropina = async () => {
             >
               💳 Solicitar Cuenta
             </button>
-            
+
             <!-- Si es cuenta solicitada -->
             <button
               v-if="selectedPedidoDetails.estado === 'cuenta_solicitada'"
@@ -1508,7 +1633,7 @@ const confirmarPagoSinPropina = async () => {
             >
               💰 Cobrar Ahora
             </button>
-            
+
             <!-- Botón cancelar discreto (más pequeño) -->
             <button
               v-if="!['pagado', 'cancelado'].includes(selectedPedidoDetails.estado)"
@@ -1517,7 +1642,7 @@ const confirmarPagoSinPropina = async () => {
             >
               🗑️ Cancelar Pedido
             </button>
-            
+
             <!-- Botón cerrar -->
             <button
               @click="closeDetailsModal"
@@ -1530,9 +1655,18 @@ const confirmarPagoSinPropina = async () => {
       </div>
     </div>
 
+    <!-- Modal de Turno -->
+    <TurnoModal
+      v-if="showTurnoModal"
+      :tipo="modalTipo"
+      :denominaciones-iniciales="modalTipo === 'cierre' && turnoActivo ? turnoActivo.denominaciones_iniciales : undefined"
+      @cancelar="showTurnoModal = false"
+      @confirmar="modalTipo === 'inicio' ? iniciarTurno($event) : cerrarTurno($event)"
+    />
+
     <!-- Modal de Confirmación de Cancelación -->
-    <div 
-      v-if="showCancelConfirmModal && pedidoACancelar" 
+    <div
+      v-if="showCancelConfirmModal && pedidoACancelar"
       class="fixed inset-0 flex items-center justify-center z-[70] p-4"
       @click.self="cerrarConfirmacionCancelacion"
     >
@@ -1543,8 +1677,8 @@ const confirmarPagoSinPropina = async () => {
             <h2 class="text-lg font-bold flex items-center gap-2">
               ⚠️ Confirmar Cancelación
             </h2>
-            <button 
-              @click="cerrarConfirmacionCancelacion" 
+            <button
+              @click="cerrarConfirmacionCancelacion"
               class="text-white hover:text-gray-200 text-xl font-bold"
             >
               ×
@@ -1557,22 +1691,22 @@ const confirmarPagoSinPropina = async () => {
           <!-- Información del pedido a cancelar -->
           <div class="bg-gray-50 rounded-lg p-4 mb-6 text-center">
             <div class="text-sm text-gray-600 mb-2">Se cancelará este pedido:</div>
-            
+
             <div v-if="pedidoACancelar.mesa" class="text-blue-600 font-bold text-lg mb-1">
               🪑 Mesa {{ pedidoACancelar.mesa }}
             </div>
             <div v-else-if="pedidoACancelar.nombre_cliente" class="text-green-600 font-bold text-lg mb-1">
               👤 {{ pedidoACancelar.nombre_cliente }}
             </div>
-            
+
             <div class="text-lg font-medium text-gray-700 mb-2">
               Pedido #{{ pedidoACancelar.numero_display }}
             </div>
-            
+
             <div class="text-2xl font-black text-[#FDB700] mb-2">
               ${{ Number(pedidoACancelar.total).toFixed(2) }}
             </div>
-            
+
             <div class="text-xs text-gray-500">
               {{ new Date(pedidoACancelar.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
             </div>
@@ -1596,7 +1730,7 @@ const confirmarPagoSinPropina = async () => {
             >
               🗑️ SÍ, Cancelar Pedido
             </button>
-            
+
             <button
               @click="cerrarConfirmacionCancelacion"
               class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all"

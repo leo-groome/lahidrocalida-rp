@@ -1,7 +1,7 @@
 from app import websocket_routes
 from app.db.session import engine, get_db
 from app.models import Base
-from app.routers import admin, auth, gastos, pedidos, products, propinas, users
+from app.routers import admin, auth, gastos, pedidos, products, propinas, turnos, users
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -33,6 +33,7 @@ app.include_router(pedidos.router)
 app.include_router(gastos.router)
 app.include_router(admin.router)
 app.include_router(propinas.router)
+app.include_router(turnos.router)
 app.include_router(websocket_routes.router)
 
 

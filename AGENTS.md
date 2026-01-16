@@ -155,19 +155,92 @@ VITE_API_URL=http://localhost:8000
 8. **Document API changes** in the FastAPI automatic documentation.
 9. **Implement tip modal flow correctly**: Show tip modal only after selecting card/transfer payment method with quick percentage buttons (10%/15%/20%) and specific amount field. For cash payments, display cash received field before optional tip.
 
+## 🏦 Gestión de Turnos y Cierre de Caja
+
+**Nueva funcionalidad para control de efectivo y turnos de cajero:**
+
+### Backend - Endpoints Principales (`/turnos`)
+- `POST /turnos/iniciar` - Iniciar turno con conteo inicial
+- `POST /turnos/{id}/cerrar` - Cerrar turno con conteo final y resumen automático
+- `GET /turnos/activo` - Obtener turno activo actual
+- `GET /turnos` - Listar turnos (filtros: fecha, estado, cajero)
+- `GET /turnos/{id}` - Detalle completo de turno
+- `PUT /turnos/{id}` - Editar turno (solo si está abierto)
+- `GET /turnos/{id}/resumen` - Resumen detallado para modal de cierre
+
+**Modelos de Base de Datos:**
+- `Turno`: sucursal, cajero, fechas, totales, estado (abierto/cerrado)
+- `TurnoDenominacion`: tipo (inicial/final), denominación (1000-1), cantidad, subtotal
+
+**Frontend - Componentes:**
+- `TurnoModal.vue`: Modal reutilizable para inicio/cierre con 10 denominaciones
+- `CajaView.vue`: Botón dinámico "Iniciar/Cerrar Turno" en barra superior
+
+**Flujo de Usuario:**
+1. Cajero hace clic en botón "Iniciar Turno" (verde)
+2. Ingresa cantidades de billetes/monedas (1000, 500, 200, 100, 50, 20, 10, 5, 2, 1)
+3. Sistema calcula total en tiempo real
+4. Al cerrar turno, sistema calcula automáticamente:
+   - Ventas en efectivo durante el turno
+   - Propinas en efectivo
+   - Diferencia entre conteo final y esperado
+5. Botón cambia a "Cerrar Turno" (rojo) durante el turno activo
+
+**Ejemplo Request Iniciar Turno:**
+```json
+{
+  "conteo_inicial": {
+    "denominaciones": [
+      {"denominacion": 1000, "cantidad": 5},
+      {"denominacion": 500, "cantidad": 10},
+      {"denominacion": 100, "cantidad": 20}
+    ]
+  },
+  "observaciones": "Fondo inicial del día"
+}
+```
+
+**Validaciones:**
+- Solo un turno activo por sucursal
+- Solo cajeros/administradores pueden gestionar turnos
+- Cajeros solo pueden editar sus propios turnos
+- Denominaciones válidas: 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1
+- Cálculos automáticos de ventas y diferencias
+
+
+**🛠️ Correcciones y Mejoras Implementadas:**
+
+**Bug Fix Backend:**
+- Corregido `NameError: name 'Opt' is not defined` en `app/routers/turnos.py`
+- Reemplazado alias `Opt` por `Optional` en parámetros de función `listar_turnos`
+- Servidor ahora inicia sin errores de importación
+
+**Mejoras UI - Modal Compacto:**
+- Modal redimensionado: `max-w-4xl` → `max-w-2xl` (más estrecho)
+- Altura máxima reducida: `max-h-[90vh]` → `max-h-[85vh]`
+- Header más compacto con menos padding
+- Tabla de denominaciones con fuentes y elementos más pequeños
+- Botones +/- reducidos (`w-8 h-8` → `w-6 h-6`)
+- Inputs numéricos más estrechos (`w-20` → `w-14`)
+- Scroll vertical solo en contenido, no en todo el modal
+- Espacios entre secciones optimizados
+
+---
+
 ## 📚 Key Files Reference
 
 **Backend:**
 - `app/main.py` – FastAPI app setup and CORS
-- `app/models.py` – SQLAlchemy database models
-- `app/schemas.py` – Pydantic request/response models
-- `app/routers/` – API endpoint definitions
+- `app/models.py` – SQLAlchemy database models (incluye `Turno`, `TurnoDenominacion`)
+- `app/schemas.py` – Pydantic request/response models (incluye schemas para turnos)
+- `app/routers/` – API endpoint definitions (incluye `turnos.py` para gestión de turnos)
 
 **Frontend:**
-- `src/types.ts` – TypeScript type definitions
+- `src/types.ts` – TypeScript type definitions (incluye `Turno`, `Denominacion`)
 - `src/api/client.ts` – Axios HTTP client configuration
 - `src/stores/` – Pinia state management stores
 - `src/views/` – Main application views/pages
+- `src/components/TurnoModal.vue` – Modal para inicio/cierre de turno con conteo rápido
 
 ---
 
