@@ -86,6 +86,27 @@ def get_dashboard_metrics(
         )
     ).scalar() or Decimal('0.00')
 
+    # Propinas por método de pago
+    propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "pagado",
+            Pedido.metodo_pago == "efectivo",
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).scalar() or Decimal('0.00')
+    
+    propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(
+        and_(
+            func.date(Pedido.fecha_creacion) == today,
+            Pedido.estado == "pagado",
+            Pedido.metodo_pago.in_(['tarjeta', 'transferencia']),
+            Pedido.sucursal_id == current_user.sucursal_id
+        )
+    ).scalar() or Decimal('0.00')
+    
+    propina_total = propina_efectivo_total + propina_tarjeta_total
+
     # Productos más vendidos (top 5)
     productos_vendidos = db.query(
         Platillo.nombre,
@@ -178,6 +199,11 @@ def get_dashboard_metrics(
             "transferencia": float(transferencia_total),
             "total": float(total_ingresos)
         },
+        "propinas": {
+            "efectivo": float(propina_efectivo_total),
+            "tarjeta": float(propina_tarjeta_total),
+            "total": float(propina_total)
+        },
         "ventas_por_hora": [
             {"hora": int(hora), "cantidad": int(cantidad), "total": float(total)}
             for hora, cantidad, total in ventas_por_hora
@@ -203,6 +229,9 @@ def get_dashboard_metrics(
                 "tipo_orden": pedido.tipo_orden,
                 "total": float(pedido.total),
                 "metodo_pago": pedido.metodo_pago,
+                "propina_efectivo": float(pedido.propina_efectivo),
+                "propina_tarjeta": float(pedido.propina_tarjeta),
+                "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
                 "fecha_creacion": pedido.fecha_creacion.isoformat(),
                 "articulos_pedido": [
                     {
