@@ -25,7 +25,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       entregado: [],
       cuenta_solicitada: [],
       pagado: [],
-      cancelado: []
+      cancelado: [],
+      dividido: []
     }
 
     pedidos.value.forEach(pedido => {
@@ -40,7 +41,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const pedidosKDS = computed(() => {
     // Para KDS: mostrar solo pedidos activos (no entregados ni pagados)
     return pedidos.value.filter(p => 
-      !['entregado', 'cuenta_solicitada', 'pagado', 'cancelado'].includes(p.estado)
+      !['entregado', 'cuenta_solicitada', 'pagado', 'cancelado', 'dividido'].includes(p.estado)
     ).slice(0, 60) // Limitar a 60 para performance
   })
 
@@ -50,7 +51,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     
     return pedidos.value.filter(p => {
       // Solo filtrar por estado, la fecha ya viene filtrada desde el backend
-      const noEstaPagadoNiCancelado = !['pagado', 'cancelado'].includes(p.estado)
+      const noEstaPagadoNiCancelado = !['pagado', 'cancelado', 'dividido'].includes(p.estado)
       
       return noEstaPagadoNiCancelado
     }).sort((a, b) => {
@@ -77,7 +78,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       entregado: 0,
       cuenta_solicitada: 0,
       pagado: 0,
-      cancelado: 0
+      cancelado: 0,
+      dividido: 0
     }
 
     pedidosHoy.forEach(pedido => {
@@ -89,6 +91,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
         case 'cuenta_solicitada': stats.cuenta_solicitada++; break
         case 'pagado': stats.pagado++; break
         case 'cancelado': stats.cancelado++; break
+        case 'dividido': stats.dividido++; break
       }
     })
 
@@ -288,7 +291,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       'entregado': 'Entregado',
       'cuenta_solicitada': 'Cuenta Solicitada',
       'pagado': 'Pagado',
-      'cancelado': 'Cancelado'
+      'cancelado': 'Cancelado',
+      'dividido': 'Dividido'
     }
     return labels[estado] || estado
   }

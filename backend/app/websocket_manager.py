@@ -181,6 +181,11 @@ class WebSocketManager:
             # Notificar a todos
             await self._broadcast_to_group("kds", message, sucursal_id)
             await self._broadcast_to_group("mesero", message, sucursal_id)
+
+        elif nuevo_estado == "dividido":
+            # Notificar a todos para que retiren el pedido original
+            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("mesero", message, sucursal_id)
         
         # Siempre notificar a administradores
         await self._broadcast_to_group("admin", message, sucursal_id)

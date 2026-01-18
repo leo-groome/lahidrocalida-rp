@@ -141,6 +141,25 @@ class PedidoResponse(PedidoBase):
         from_attributes = True
 
 
+class DividirCuentaItem(BaseModel):
+    articulo_id: int
+    cantidad: int
+
+
+class DividirCuentaCuenta(BaseModel):
+    items: List[DividirCuentaItem]
+
+
+class DividirCuentaRequest(BaseModel):
+    cuentas: List[DividirCuentaCuenta]
+
+
+class DividirCuentaResponse(BaseModel):
+    pedido_original_id: int
+    cuentas: List[PedidoResponse]
+
+
+
 # ===== SCHEMAS PARA GASTOS =====
 class GastoBase(BaseModel):
     descripcion: str

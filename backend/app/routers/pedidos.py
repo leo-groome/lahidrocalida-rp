@@ -10,7 +10,15 @@ import pytz
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
-from app.schemas import PedidoCreate, PedidoResponse, PedidoUpdate, ArticuloPedidoUpdate, AgregarArticulosRequest
+from app.schemas import (
+    PedidoCreate,
+    PedidoResponse,
+    PedidoUpdate,
+    ArticuloPedidoUpdate,
+    AgregarArticulosRequest,
+    DividirCuentaRequest,
+    DividirCuentaResponse,
+)
 from app.auth import get_current_active_user
 from app.websocket_manager import websocket_manager
 from app.core.config import settings
@@ -237,10 +245,10 @@ def list_pedidos(
     
     # Filtro por estado si se especifica
     if estado:
-        if estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]:
+        if estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
             raise HTTPException(
                 status_code=400,
-                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado"
+                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
             )
         query = query.filter(Pedido.estado == estado)
     
@@ -306,6 +314,208 @@ def get_pedido(
     return pedido
 
 
+@router.post("/{pedido_id}/dividir", response_model=DividirCuentaResponse)
+async def dividir_cuenta(
+    pedido_id: int,
+    data: DividirCuentaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Dividir una cuenta por articulos (solo administrador)."""
+
+    if current_user.rol != "administrador":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden dividir cuentas")
+
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if pedido.estado not in ["entregado", "cuenta_solicitada"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
+        )
+
+    if not data.cuentas or len(data.cuentas) < 2:
+        raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
+
+    if len(data.cuentas) > 5:
+        raise HTTPException(status_code=400, detail="Maximo 5 cuentas")
+
+    articulos_originales = db.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
+    if not articulos_originales:
+        raise HTTPException(status_code=400, detail="El pedido no tiene articulos")
+
+    articulos_por_id = {a.id: a for a in articulos_originales}
+
+    # Validar reparto exacto por articulo
+    asignado_por_articulo: dict[int, int] = {a.id: 0 for a in articulos_originales}
+
+    for cuenta in data.cuentas:
+        if not cuenta.items:
+            raise HTTPException(status_code=400, detail="Cada cuenta debe tener items")
+        for item in cuenta.items:
+            if item.articulo_id not in articulos_por_id:
+                raise HTTPException(status_code=400, detail=f"Articulo {item.articulo_id} no pertenece a este pedido")
+            if item.cantidad <= 0:
+                raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
+            asignado_por_articulo[item.articulo_id] += item.cantidad
+
+    for articulo_id, articulo in articulos_por_id.items():
+        if asignado_por_articulo.get(articulo_id, 0) != int(articulo.cantidad):
+            raise HTTPException(
+                status_code=400,
+                detail=f"El articulo {articulo_id} no fue repartido correctamente",
+            )
+
+    # Marcar pedido original como dividido
+    old_estado = pedido.estado
+    pedido.estado = "dividido"
+    db.commit()
+    db.refresh(pedido)
+
+    cuentas_creadas: List[Pedido] = []
+
+    # Helper para construir nombre_cliente con Cuenta i/n
+    def build_nombre_cliente(nombre_base: Optional[str], i: int, total: int) -> str:
+        base = (nombre_base or "").strip()
+        label = f"Cuenta {i}/{total}"
+        if base:
+            return f"{base} {label}"
+        return label
+
+    total_cuentas = len(data.cuentas)
+
+    for i, cuenta in enumerate(data.cuentas, start=1):
+        numero_display = generate_numero_display(db, pedido.sucursal_id)
+
+        nombre_cliente_nuevo = build_nombre_cliente(pedido.nombre_cliente, i, total_cuentas)
+
+        nuevo_pedido = Pedido(
+            numero_display=numero_display,
+            nombre_cliente=nombre_cliente_nuevo,
+            mesa=pedido.mesa,
+            total=Decimal("0"),
+            estado="cuenta_solicitada",
+            metodo_pago=None,
+            tipo_orden=pedido.tipo_orden,
+            sucursal_id=pedido.sucursal_id,
+            usuario_id=pedido.usuario_id,
+        )
+
+        db.add(nuevo_pedido)
+        db.flush()
+
+        total_cuenta = Decimal("0")
+
+        for item in cuenta.items:
+            articulo_original = articulos_por_id[item.articulo_id]
+
+            precio_unitario = Decimal(str(articulo_original.precio_cobrado)) / Decimal(str(articulo_original.cantidad))
+            precio_cobrado = precio_unitario * Decimal(str(item.cantidad))
+            total_cuenta += precio_cobrado
+
+            estado_item = articulo_original.estado_item
+
+            articulo_nuevo = ArticuloPedido(
+                pedido_id=nuevo_pedido.id,
+                platillo_id=articulo_original.platillo_id,
+                cantidad=item.cantidad,
+                precio_cobrado=float(precio_cobrado),
+                modificaciones=articulo_original.modificaciones,
+                estado_item=estado_item,
+            )
+            db.add(articulo_nuevo)
+
+        nuevo_pedido.total = total_cuenta
+        db.commit()
+        db.refresh(nuevo_pedido)
+        cuentas_creadas.append(nuevo_pedido)
+
+    # Notificar por WebSocket
+    try:
+        pedido_original_data = {
+            "id": pedido.id,
+            "numero_display": pedido.numero_display,
+            "nombre_cliente": pedido.nombre_cliente,
+            "mesa": pedido.mesa,
+            "total": float(pedido.total),
+            "estado": pedido.estado,
+            "tipo_orden": pedido.tipo_orden,
+            "sucursal_id": pedido.sucursal_id,
+            "fecha_creacion": pedido.fecha_creacion.isoformat(),
+            "metodo_pago": pedido.metodo_pago,
+            "propina_efectivo": float(pedido.propina_efectivo),
+            "propina_tarjeta": float(pedido.propina_tarjeta),
+            "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
+            "articulos_pedido": [
+                {
+                    "id": a.id,
+                    "cantidad": a.cantidad,
+                    "precio_cobrado": float(a.precio_cobrado),
+                    "modificaciones": a.modificaciones,
+                    "estado_item": a.estado_item,
+                    "platillo": {
+                        "nombre": a.platillo.nombre,
+                        "kds_name": a.platillo.kds_name,
+                    }
+                    if a.platillo
+                    else None,
+                }
+                for a in pedido.articulos_pedido
+            ],
+        }
+
+        if old_estado != pedido.estado:
+            await websocket_manager.notify_pedido_estado_changed(
+                pedido_id=pedido.id,
+                nuevo_estado=pedido.estado,
+                pedido_data=pedido_original_data,
+            )
+
+        for cuenta_pedido in cuentas_creadas:
+            cuenta_data = {
+                "id": cuenta_pedido.id,
+                "numero_display": cuenta_pedido.numero_display,
+                "nombre_cliente": cuenta_pedido.nombre_cliente,
+                "mesa": cuenta_pedido.mesa,
+                "total": float(cuenta_pedido.total),
+                "estado": cuenta_pedido.estado,
+                "tipo_orden": cuenta_pedido.tipo_orden,
+                "sucursal_id": cuenta_pedido.sucursal_id,
+                "fecha_creacion": cuenta_pedido.fecha_creacion.isoformat(),
+                "metodo_pago": cuenta_pedido.metodo_pago,
+                "propina_efectivo": float(cuenta_pedido.propina_efectivo),
+                "propina_tarjeta": float(cuenta_pedido.propina_tarjeta),
+                "propina_total": float(cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta),
+                "articulos_pedido": [
+                    {
+                        "id": a.id,
+                        "cantidad": a.cantidad,
+                        "precio_cobrado": float(a.precio_cobrado),
+                        "modificaciones": a.modificaciones,
+                        "estado_item": a.estado_item,
+                        "platillo": {
+                            "nombre": a.platillo.nombre,
+                            "kds_name": a.platillo.kds_name,
+                        }
+                        if a.platillo
+                        else None,
+                    }
+                    for a in cuenta_pedido.articulos_pedido
+                ],
+            }
+            await websocket_manager.notify_pedido_created(cuenta_data)
+
+    except Exception as e:
+        print(f"Error notifying dividir cuenta via WebSocket: {e}")
+
+    return {
+        "pedido_original_id": pedido.id,
+        "cuentas": cuentas_creadas,
+    }
+
+
 @router.put("/{pedido_id}", response_model=PedidoResponse)
 # Nota: la impresión automática puede activarse bajo condiciones, pero por ahora la impresión se invoca desde el frontend antes del cambio de estado.
 async def update_pedido(
@@ -338,7 +548,7 @@ async def update_pedido(
         "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
         "cajero": ["entregado", "cuenta_solicitada", "pagado", "cancelado"],  # Cajero puede cancelar pedidos
         "cocina": ["pendiente", "preparando", "listo"],
-        "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]
+        "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]
     }
     
     if current_user.rol not in allowed_transitions:
@@ -354,11 +564,11 @@ async def update_pedido(
         )
     
     # Validar estado
-    if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado"
-        )
+        if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
+            )
     
     # Validar propinas (no negativas)
     if data.propina_efectivo is not None and data.propina_efectivo < 0:

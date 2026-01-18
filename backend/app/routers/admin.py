@@ -183,7 +183,7 @@ def get_dashboard_metrics(
     ).filter(
         and_(
             func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado.in_(['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada']),
+            Pedido.estado.in_(['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada', 'dividido']),
             Pedido.sucursal_id == current_user.sucursal_id
         )
     ).group_by(Pedido.estado).all()

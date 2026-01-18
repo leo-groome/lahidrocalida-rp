@@ -8,6 +8,7 @@ import type { PedidoResponse } from '../types'
 export interface PrintTicketData {
   numero_display: string
   mesa?: string
+  cuenta_label?: string
   nombre_cliente?: string
   articulos: Array<{
     cantidad: number
@@ -42,10 +43,23 @@ class PrintService {
    * Convierte un pedido a formato de ticket para impresión
    */
   private formatTicketData(pedido: PedidoResponse): PrintTicketData {
+    const cuentaMatch = (pedido.nombre_cliente || '').match(/\sCuenta\s(\d+)\/(\d+)\s*$/)
+    const cuentaLabel = cuentaMatch ? `Cuenta ${cuentaMatch[1]}/${cuentaMatch[2]}` : undefined
+
+    const hasMesa = Boolean(pedido.mesa)
+
+    // Si hay mesa y el nombre trae "Cuenta i/n":
+    // - la cuenta se imprime en la linea de Mesa: "Mesa: 23 Cuenta 2/2"
+    // - el cliente se imprime sin el sufijo para no duplicar
+    const nombreClienteParaTicket = hasMesa && cuentaLabel
+      ? (pedido.nombre_cliente || '').replace(/\sCuenta\s\d+\/\d+\s*$/, '').trim() || undefined
+      : (pedido.nombre_cliente || undefined)
+
     return {
       numero_display: pedido.numero_display,
       mesa: pedido.mesa || undefined,
-      nombre_cliente: pedido.nombre_cliente || undefined,
+      cuenta_label: hasMesa ? cuentaLabel : undefined,
+      nombre_cliente: nombreClienteParaTicket,
       articulos: (pedido.articulos_pedido || []).map(articulo => ({
         cantidad: articulo.cantidad,
         nombre: articulo.platillo?.nombre || 'Producto',
@@ -283,7 +297,7 @@ class PrintService {
         
         <div class="bold" style="font-weight: bold; font-weight: 700;"><strong>ORDEN #${ticketData.numero_display}</strong></div>
         <div><strong>Fecha:</strong> ${fecha}</div>
-        ${ticketData.mesa ? `<div><strong>Mesa:</strong> ${ticketData.mesa}</div>` : ''}
+        ${ticketData.mesa ? `<div><strong>Mesa:</strong> ${ticketData.mesa}${ticketData.cuenta_label ? ` ${ticketData.cuenta_label}` : ''}</div>` : ''}
         ${ticketData.nombre_cliente ? `<div><strong>Cliente:</strong> ${ticketData.nombre_cliente}</div>` : ''}
         
         <div class="line" style="border-bottom: 1px dashed #000; margin: 8px 0; width: 100%;"></div>

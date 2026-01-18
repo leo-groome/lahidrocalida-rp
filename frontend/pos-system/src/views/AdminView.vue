@@ -277,8 +277,8 @@
              </div>
          </div>
 
-         <!-- Lista de Pedidos del Día -->
-          <div v-if="dashboardData" class="bg-white shadow rounded-lg overflow-hidden">
+          <!-- Lista de Pedidos del Día -->
+           <div v-if="dashboardData" class="bg-white shadow rounded-lg overflow-hidden lg:col-span-3 lg:col-start-1">
                <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                      <div class="flex-1">

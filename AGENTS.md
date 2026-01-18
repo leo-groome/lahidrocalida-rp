@@ -41,6 +41,10 @@ python print_service/test_ticket.py
 **Environment Setup:**
 ```bash
 cd frontend/pos-system
+# Preferred: pnpm (project standard)
+# If pnpm is not available on the machine:
+# corepack enable
+# corepack prepare pnpm@latest --activate
 pnpm install  # Always use pnpm, never npm
 cp .env.example .env
 # Edit .env with correct VITE_API_URL
@@ -154,6 +158,8 @@ VITE_API_URL=http://localhost:8000
 7. **Test WebSocket functionality** when modifying real‑time features.
 8. **Document API changes** in the FastAPI automatic documentation.
 9. **Implement tip modal flow correctly**: Show tip modal only after selecting card/transfer payment method with quick percentage buttons (10%/15%/20%) and specific amount field. For cash payments, display cash received field before optional tip.
+10. **Implement split-bill flow correctly** (admin-only): allow dividir cuenta (2-5) for `entregado` or `cuenta_solicitada`, mark original order as `dividido`, and create new orders in `cuenta_solicitada` with `Cuenta i/n` label; print one ticket per cuenta.
+
 
 ## 🏦 Gestión de Turnos y Cierre de Caja
 

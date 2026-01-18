@@ -80,7 +80,11 @@ def generate_escpos_commands(ticket_data):
     
     # Mesa y Cliente con mejor spacing
     if ticket_data.get('mesa'):
-        mesa_line = f"Mesa: {ticket_data['mesa']}"
+        mesa_label = str(ticket_data['mesa'])
+        cuenta_label = ticket_data.get('cuenta_label')
+        if cuenta_label:
+            mesa_label = mesa_label + " " + str(cuenta_label)
+        mesa_line = f"Mesa: {mesa_label}"
         commands.append(mesa_line + LINE_FEED)
     
     if ticket_data.get('nombre_cliente'):

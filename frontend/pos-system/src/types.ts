@@ -62,7 +62,8 @@ export interface PedidoResponse {
     | "entregado"
     | "cuenta_solicitada"
     | "pagado"
-    | "cancelado";
+    | "cancelado"
+    | "dividido";
   metodo_pago: "efectivo" | "tarjeta" | "transferencia" | null;
   propina_efectivo: number;
   propina_tarjeta: number;

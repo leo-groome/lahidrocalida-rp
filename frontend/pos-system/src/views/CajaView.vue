@@ -17,6 +17,31 @@ const pedidosStore = usePedidosStore()
 const activeTab = ref<'overview' | 'pendientes' | 'propinas'>('overview')
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
+
+// Estados para dividir cuenta
+const showSplitModal = ref(false)
+const splitPedido = ref<PedidoResponse | null>(null)
+const splitNumCuentas = ref<number>(2)
+const splitAsignaciones = ref<Record<number, number[]>>({})
+const splitProcessing = ref(false)
+const splitPrintPaused = ref(false)
+const splitPrintError = ref<string | null>(null)
+const splitPendingPrints = ref<PedidoResponse[]>([])
+const splitCurrentPrintIndex = ref<number>(0)
+
+const MAX_SPLIT_CUENTAS = 5
+
+const canSplitSelectedPedido = computed(() => {
+  if (auth.user?.rol !== 'administrador') return false
+  if (!selectedPedido.value) return false
+  return ['entregado', 'cuenta_solicitada'].includes(selectedPedido.value.estado)
+})
+
+const canSplitDetailsPedido = computed(() => {
+  if (auth.user?.rol !== 'administrador') return false
+  if (!selectedPedidoDetails.value) return false
+  return ['entregado', 'cuenta_solicitada'].includes(selectedPedidoDetails.value.estado)
+})
 const successMessage = ref<string | null>(null)
 const showNotification = ref(false)
 const error = ref<string | null>(null)
@@ -203,7 +228,7 @@ const mesasOcupadas = computed(() => {
 
   // Mesas con pedidos activos (no pagados ni cancelados)
   pedidosStore.pedidos.forEach(pedido => {
-    if (pedido.mesa && !['pagado', 'cancelado'].includes(pedido.estado)) {
+    if (pedido.mesa && !['pagado', 'cancelado', 'dividido'].includes(pedido.estado)) {
       ocupadas.add(pedido.mesa)
     }
   })
@@ -216,7 +241,7 @@ const getMesaEstado = (numeroMesa: string) => {
   if (!mesasOcupadas.value.has(numeroMesa)) return 'libre'
 
   // Buscar el pedido más reciente de esta mesa
-  const pedidosMesa = pedidosStore.pedidos.filter(p => p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado))
+  const pedidosMesa = pedidosStore.pedidos.filter(p => p.mesa === numeroMesa && !['pagado', 'cancelado', 'dividido'].includes(p.estado))
   if (pedidosMesa.length === 0) return 'libre'
 
   // Obtener el estado más avanzado
@@ -262,9 +287,9 @@ const handleMesaClick = (numeroMesa: string) => {
   }
 
   // Buscar el pedido más reciente de esta mesa
-  const pedidosMesa = pedidosStore.pedidos.filter(p =>
-    p.mesa === numeroMesa && !['pagado', 'cancelado'].includes(p.estado)
-  )
+   const pedidosMesa = pedidosStore.pedidos.filter(p =>
+     p.mesa === numeroMesa && !['pagado', 'cancelado', 'dividido'].includes(p.estado)
+   )
 
   if (pedidosMesa.length === 0) return
 
@@ -326,7 +351,8 @@ const getEstadoColor = (estado: string) => {
     'entregado': 'bg-blue-500',
     'cuenta_solicitada': 'bg-purple-500',
     'pagado': 'bg-gray-500',
-    'cancelado': 'bg-red-500'
+    'cancelado': 'bg-red-500',
+    'dividido': 'bg-slate-500'
   }
   return colors[estado] || 'bg-gray-400'
 }
@@ -340,7 +366,8 @@ const getEstadoTexto = (estado: string) => {
     'entregado': 'ENTREGADO',
     'cuenta_solicitada': 'CUENTA SOLICITADA',
     'pagado': 'PAGADO',
-    'cancelado': 'CANCELADO'
+    'cancelado': 'CANCELADO',
+    'dividido': 'DIVIDIDO'
   }
   return textos[estado] || estado.toUpperCase()
 }
@@ -473,6 +500,190 @@ const closeModal = () => {
   propinaTarjeta.value = ''
 }
 
+const openSplitModalForPedido = async (pedido: PedidoResponse) => {
+  const pedidoCompleto = await getPedidoCompleto(pedido.id)
+  if (!pedidoCompleto) return
+
+  splitPedido.value = pedidoCompleto
+  splitNumCuentas.value = 2
+  splitAsignaciones.value = {}
+
+  // Inicializar asignaciones por articulo: [c1, c2, ...]
+  for (const articulo of pedidoCompleto.articulos_pedido || []) {
+    const arr = new Array(MAX_SPLIT_CUENTAS).fill(0)
+    arr[0] = articulo.cantidad
+    splitAsignaciones.value[articulo.id] = arr
+  }
+
+  showSplitModal.value = true
+}
+
+const closeSplitModal = () => {
+  showSplitModal.value = false
+  splitPedido.value = null
+  splitAsignaciones.value = {}
+  splitProcessing.value = false
+  splitPrintPaused.value = false
+  splitPrintError.value = null
+  splitPendingPrints.value = []
+  splitCurrentPrintIndex.value = 0
+}
+
+const splitCuentasVisibles = computed(() => {
+  const n = Math.min(Math.max(splitNumCuentas.value, 2), MAX_SPLIT_CUENTAS)
+  return Array.from({ length: n }, (_, idx) => idx)
+})
+
+const splitTotalesPorCuenta = computed(() => {
+  const pedido = splitPedido.value
+  if (!pedido?.articulos_pedido) return []
+
+  const n = Math.min(Math.max(splitNumCuentas.value, 2), MAX_SPLIT_CUENTAS)
+  const totales = new Array(n).fill(0)
+
+  for (const articulo of pedido.articulos_pedido) {
+    const asign = splitAsignaciones.value[articulo.id] || []
+    const precioUnit = Number(articulo.precio_cobrado) / Math.max(articulo.cantidad, 1)
+
+    for (let i = 0; i < n; i++) {
+      const cant = Number(asign[i] || 0)
+      totales[i] += cant * precioUnit
+    }
+  }
+
+  return totales
+})
+
+const splitIsValid = computed(() => {
+  const pedido = splitPedido.value
+  if (!pedido?.articulos_pedido) return false
+
+  const n = Math.min(Math.max(splitNumCuentas.value, 2), MAX_SPLIT_CUENTAS)
+
+  for (const articulo of pedido.articulos_pedido) {
+    const asign = splitAsignaciones.value[articulo.id] || []
+    let sum = 0
+    for (let i = 0; i < n; i++) {
+      const cant = Number(asign[i] || 0)
+      if (cant < 0) return false
+      sum += cant
+    }
+    if (sum !== articulo.cantidad) return false
+  }
+
+  // Evitar cuentas en 0
+  const totales = splitTotalesPorCuenta.value
+  if (totales.some(t => t <= 0)) return false
+
+  return true
+})
+
+const setSplitCantidad = (articuloId: number, cuentaIndex: number, value: number) => {
+  const arr = splitAsignaciones.value[articuloId] || new Array(MAX_SPLIT_CUENTAS).fill(0)
+  const safe = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
+  arr[cuentaIndex] = safe
+  splitAsignaciones.value[articuloId] = arr
+}
+
+const buildCuentaText = (i: number, total: number) => `Cuenta ${i}/${total}`
+
+const dividirCuentaConfirmar = async () => {
+  if (!splitPedido.value) return
+  if (!splitIsValid.value) {
+    showErrorNotification('Revisa la division: cada articulo debe repartirse completo y ninguna cuenta debe quedar en $0')
+    return
+  }
+
+  splitProcessing.value = true
+  splitPrintPaused.value = false
+  splitPrintError.value = null
+
+  const pedido = splitPedido.value
+  const n = Math.min(Math.max(splitNumCuentas.value, 2), MAX_SPLIT_CUENTAS)
+
+  const payload = {
+    cuentas: Array.from({ length: n }, (_, idx) => ({
+      items: (pedido.articulos_pedido || [])
+        .map(a => ({ articulo_id: a.id, cantidad: Number((splitAsignaciones.value[a.id] || [])[idx] || 0) }))
+        .filter(x => x.cantidad > 0)
+    }))
+  }
+
+  try {
+    const res = await api.post(`/pedidos/${pedido.id}/dividir`, payload)
+    const cuentas: PedidoResponse[] = res.data?.cuentas || []
+
+    if (!cuentas.length) {
+      throw new Error('No se recibieron cuentas nuevas')
+    }
+
+    // Preparar cola de impresion
+    splitPendingPrints.value = cuentas
+    splitCurrentPrintIndex.value = 0
+
+    // Imprimir en orden; si falla se pausa
+    await processSplitPrintQueue()
+
+    if (!splitPrintPaused.value) {
+      showSuccessNotification(`Cuenta dividida en ${cuentas.length} partes e impresa`)
+      closeSplitModal()
+
+      // Refrescar pedidos por si WS tarda
+      await pedidosStore.refreshPedidos()
+    }
+
+  } catch (e: any) {
+    console.error('Error dividiendo cuenta:', e)
+    showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+  } finally {
+    splitProcessing.value = false
+  }
+}
+
+const processSplitPrintQueue = async () => {
+  while (splitCurrentPrintIndex.value < splitPendingPrints.value.length) {
+    const pedidoCuenta = splitPendingPrints.value[splitCurrentPrintIndex.value]
+
+    const ok = await imprimirTicket(pedidoCuenta)
+    if (!ok) {
+      const mesa = pedidoCuenta.mesa ? `Mesa ${pedidoCuenta.mesa}` : ''
+      const cliente = pedidoCuenta.nombre_cliente || ''
+      splitPrintError.value = `Fallo la impresion: ${mesa} ${cliente}`.trim()
+      splitPrintPaused.value = true
+      return
+    }
+
+    splitCurrentPrintIndex.value++
+  }
+
+  splitPrintPaused.value = false
+  splitPrintError.value = null
+}
+
+const reintentarImpresionSplit = async () => {
+  if (!splitPrintPaused.value) return
+
+  splitPrintPaused.value = false
+  splitProcessing.value = true
+
+  await processSplitPrintQueue()
+
+  if (!splitPrintPaused.value) {
+    showSuccessNotification(`Tickets impresos (${splitPendingPrints.value.length})`)
+    closeSplitModal()
+    await pedidosStore.refreshPedidos()
+  }
+
+  splitProcessing.value = false
+}
+
+const cancelarImpresionesRestantes = () => {
+  splitPrintPaused.value = false
+  splitPrintError.value = null
+  showErrorNotification('Impresion detenida. Puedes reimprimir desde Caja.')
+  closeSplitModal()
+}
+
 // Funciones para calculadora de efectivo
 const calcularCambio = () => {
   if (!selectedPedido.value) return
@@ -505,7 +716,7 @@ const cerrarCalculadoraEfectivo = () => {
 }
 
 // Función para imprimir ticket (impresora térmica + fallbacks)
-const imprimirTicket = async (pedido: PedidoResponse) => {
+const imprimirTicket = async (pedido: PedidoResponse): Promise<boolean> => {
   try {
     console.log('🖨️ Iniciando proceso de impresión de ticket...')
 
@@ -526,17 +737,17 @@ const imprimirTicket = async (pedido: PedidoResponse) => {
         // Para fallbacks, mostrar breve notificación informativa
         showSuccessNotification(`Ticket generado (${result.method})`)
       }
-    } else {
-      throw new Error(result.error || 'Error desconocido en impresión')
+
+      return true
     }
+
+    throw new Error(result.error || 'Error desconocido en impresión')
 
   } catch (e: any) {
     console.error('❌ Error en proceso de impresión:', e.message)
 
-    // En caso de error total, mostrar mensaje pero no fallar el flujo
     showErrorNotification('Error en impresión, verifique la impresora')
-
-    // No lanzar error para no interrumpir el flujo de solicitar cuenta
+    return false
   }
 }
 
@@ -546,7 +757,10 @@ const imprimirTicketSeparado = async (pedido: PedidoResponse) => {
     console.log('🖨️ Imprimiendo ticket separado para pedido:', pedido.id)
 
     // Solo imprimir ticket sin cambiar estado
-    await imprimirTicket(pedido)
+    const printed = await imprimirTicket(pedido)
+    if (!printed) {
+      return
+    }
 
     const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
     showSuccessNotification(`Ticket reimpreso: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
@@ -602,8 +816,11 @@ const confirmarCancelacion = async () => {
 const solicitarCuenta = async (pedido: PedidoResponse) => {
   try {
     // Primero imprimimos el ticket
-    await imprimirTicket(pedido)
-
+    const printed = await imprimirTicket(pedido)
+    if (!printed) {
+      return
+    }
+ 
     // Luego cambiamos el estado
     const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
 
@@ -1017,19 +1234,17 @@ const cerrarTurno = async (conteoFinal: any) => {
             <div class="flex items-center justify-center mb-4">
               <div class="flex items-center gap-3">
                 <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
-                <!-- Mesa o Cliente como prioridad principal -->
-                <div v-if="pedido.mesa" class="text-2xl font-black text-blue-600">MESA {{ pedido.mesa }}</div>
-                <div v-else-if="pedido.nombre_cliente" class="text-2xl font-black text-green-600">{{ pedido.nombre_cliente }}</div>
-                <div v-else class="text-2xl font-black text-[#00126D]">{{ pedido.numero_display }}</div>
+                 <!-- Pedido como prioridad principal -->
+                 <div class="text-2xl font-black text-[#00126D]">PEDIDO #{{ pedido.numero_display }}</div>
               </div>
             </div>
 
-            <!-- Número de pedido secundario -->
-            <div class="mb-4 text-center">
-              <div class="text-sm text-gray-500 font-medium">
-                Pedido #{{ pedido.numero_display }}
-              </div>
-            </div>
+             <!-- Mesa / Cliente secundarios -->
+             <div class="mb-4 text-center">
+               <div v-if="pedido.mesa" class="text-sm text-blue-700 font-semibold">🪑 Mesa {{ pedido.mesa }}</div>
+               <div v-else-if="pedido.nombre_cliente" class="text-sm text-green-700 font-semibold">👤 {{ pedido.nombre_cliente }}</div>
+               <div v-else class="text-sm text-gray-500 font-medium">&nbsp;</div>
+             </div>
 
             <!-- Total -->
             <div class="border-t pt-4">
@@ -1231,8 +1446,18 @@ const cerrarTurno = async (conteoFinal: any) => {
 
 
 
-          <!-- Botones de pago simples -->
-          <div class="space-y-2">
+           <!-- Boton dividir cuenta (solo admin) -->
+           <button
+             v-if="canSplitSelectedPedido"
+             @click="openSplitModalForPedido(selectedPedido)"
+             :disabled="processingPayment"
+             class="w-full mb-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded-lg transition-all disabled:opacity-50"
+           >
+             ✂️ Dividir cuenta
+           </button>
+
+           <!-- Botones de pago simples -->
+           <div class="space-y-2">
             <button
               @click="procesarPago(selectedPedido, 'efectivo')"
               :disabled="processingPayment"
@@ -1548,9 +1773,9 @@ const cerrarTurno = async (conteoFinal: any) => {
         <!-- Header -->
         <div class="px-6 py-4 border-b border-gray-200 bg-[#00126D] rounded-t-lg">
           <div class="flex items-center justify-between text-white">
-            <h2 class="text-lg font-semibold flex items-center gap-2">
-              🍽️ Mesa {{ selectedPedidoDetails.mesa }} - Pedido #{{ selectedPedidoDetails.numero_display }}
-            </h2>
+             <h2 class="text-lg font-semibold flex items-center gap-2">
+               Pedido #{{ selectedPedidoDetails.numero_display }}
+             </h2>
             <button
               @click="closeDetailsModal"
               class="text-white hover:text-gray-200 text-xl"
@@ -1571,6 +1796,10 @@ const cerrarTurno = async (conteoFinal: any) => {
               <div class="text-sm text-gray-500">
                 {{ new Date(selectedPedidoDetails.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
               </div>
+            </div>
+
+            <div v-if="selectedPedidoDetails.mesa" class="bg-blue-100 text-blue-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
+              🪑 Mesa {{ selectedPedidoDetails.mesa }}
             </div>
 
             <div v-if="selectedPedidoDetails.nombre_cliente" class="bg-green-100 text-green-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
@@ -1614,6 +1843,15 @@ const cerrarTurno = async (conteoFinal: any) => {
             <div class="text-2xl font-bold">$ {{ Number(selectedPedidoDetails.total).toFixed(2) }}</div>
           </div>
 
+            <!-- Boton dividir cuenta (solo admin) -->
+          <button
+            v-if="canSplitDetailsPedido"
+            @click="openSplitModalForPedido(selectedPedidoDetails); closeDetailsModal()"
+            class="w-full py-3 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded-lg transition-all"
+          >
+            ✂️ Dividir cuenta
+          </button>
+
           <!-- Botones de acción según el estado -->
           <div class="space-y-2">
             <!-- Si está listo para entregar -->
@@ -1635,9 +1873,9 @@ const cerrarTurno = async (conteoFinal: any) => {
             </button>
 
             <!-- Botón cancelar discreto (más pequeño) -->
-            <button
-              v-if="!['pagado', 'cancelado'].includes(selectedPedidoDetails.estado)"
-              @click="mostrarConfirmacionCancelacion(selectedPedidoDetails)"
+             <button
+               v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
+               @click="mostrarConfirmacionCancelacion(selectedPedidoDetails)"
               class="w-full py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-md transition-all opacity-80 hover:opacity-100"
             >
               🗑️ Cancelar Pedido
@@ -1650,6 +1888,165 @@ const cerrarTurno = async (conteoFinal: any) => {
             >
               Cerrar
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal dividir cuenta -->
+    <div
+      v-if="showSplitModal && splitPedido"
+      class="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      @click.self="closeSplitModal"
+    >
+      <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+
+      <div class="relative bg-white rounded-2xl max-w-4xl w-full mx-4 shadow-2xl border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+          <div>
+            <div class="text-sm opacity-90">Dividir cuenta</div>
+            <div class="text-lg font-bold">Pedido #{{ splitPedido.numero_display }}</div>
+          </div>
+          <button
+            @click="closeSplitModal"
+            class="text-white hover:text-gray-100 text-2xl font-bold"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="p-6">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+            <div class="text-sm text-gray-700">
+              <div v-if="splitPedido.mesa" class="font-semibold text-blue-700">🪑 Mesa {{ splitPedido.mesa }}</div>
+              <div v-else-if="splitPedido.nombre_cliente" class="font-semibold text-green-700">👤 {{ splitPedido.nombre_cliente }}</div>
+              <div class="text-xs text-gray-500 mt-1">Maximo {{ MAX_SPLIT_CUENTAS }} cuentas</div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <label class="text-sm font-semibold text-gray-700">Cuentas:</label>
+              <select
+                v-model.number="splitNumCuentas"
+                class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                :disabled="splitProcessing || splitPrintPaused"
+              >
+                <option :value="2">2</option>
+                <option :value="3">3</option>
+                <option :value="4">4</option>
+                <option :value="5">5</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="overflow-auto border border-gray-200 rounded-xl">
+            <table class="min-w-full">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left text-xs font-bold text-gray-600 px-3 py-3">Articulo</th>
+                  <th class="text-center text-xs font-bold text-gray-600 px-3 py-3">Total</th>
+                  <th
+                    v-for="idx in splitCuentasVisibles"
+                    :key="idx"
+                    class="text-center text-xs font-bold text-gray-600 px-3 py-3"
+                  >
+                    {{ buildCuentaText(idx + 1, splitCuentasVisibles.length) }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="articulo in (splitPedido.articulos_pedido || [])"
+                  :key="articulo.id"
+                  class="border-t"
+                >
+                  <td class="px-3 py-3">
+                    <div class="text-sm font-semibold text-gray-800">{{ articulo.platillo?.nombre || 'Producto' }}</div>
+                    <div v-if="articulo.modificaciones" class="text-xs text-gray-500">{{ articulo.modificaciones }}</div>
+                  </td>
+                  <td class="px-3 py-3 text-center text-sm font-bold text-gray-700">{{ articulo.cantidad }}</td>
+                  <td
+                    v-for="idx in splitCuentasVisibles"
+                    :key="idx"
+                    class="px-3 py-2 text-center"
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      class="w-20 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm"
+                      :disabled="splitProcessing || splitPrintPaused"
+                      :value="(splitAsignaciones[articulo.id] || [])[idx] || 0"
+                      @input="setSplitCantidad(articulo.id, idx, Number(($event.target as HTMLInputElement).value))"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+              <div class="text-sm font-bold text-gray-700 mb-3">Totales por cuenta</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div
+                  v-for="(total, idx) in splitTotalesPorCuenta"
+                  :key="idx"
+                  class="bg-white border border-gray-200 rounded-lg p-3"
+                >
+                  <div class="text-xs text-gray-500">{{ buildCuentaText(idx + 1, splitTotalesPorCuenta.length) }}</div>
+                  <div class="text-lg font-black text-amber-700">$ {{ total.toFixed(2) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white border border-gray-200 rounded-xl p-4">
+              <div v-if="splitPrintPaused" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                <div class="text-sm font-bold text-red-700">Impresion detenida</div>
+                <div class="text-xs text-red-700 mt-1">{{ splitPrintError }}</div>
+              </div>
+
+              <div class="text-xs text-gray-500 mb-2">
+                Se imprimiran {{ splitCuentasVisibles.length }} tickets (uno por cuenta) al confirmar.
+              </div>
+
+              <button
+                v-if="!splitPrintPaused"
+                @click="dividirCuentaConfirmar"
+                :disabled="splitProcessing || !splitIsValid"
+                class="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed"
+              >
+                {{ splitProcessing ? 'Procesando...' : '✅ Confirmar y imprimir' }}
+              </button>
+
+              <div v-else class="grid grid-cols-2 gap-3">
+                <button
+                  @click="reintentarImpresionSplit"
+                  :disabled="splitProcessing"
+                  class="py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg"
+                >
+                  Reintentar
+                </button>
+                <button
+                  @click="cancelarImpresionesRestantes"
+                  :disabled="splitProcessing"
+                  class="py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg"
+                >
+                  Cancelar
+                </button>
+              </div>
+
+              <button
+                @click="closeSplitModal"
+                :disabled="splitProcessing"
+                class="w-full mt-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg"
+              >
+                Cerrar
+              </button>
+
+              <div v-if="!splitIsValid" class="text-xs text-gray-500 mt-2">
+                Tip: cada articulo debe sumar exactamente su total entre cuentas.
+              </div>
+            </div>
           </div>
         </div>
       </div>
