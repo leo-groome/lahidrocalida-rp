@@ -18,6 +18,26 @@ const activeTab = ref<'overview' | 'pendientes' | 'propinas'>('overview')
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
 
+// Cambio manual de estado (admin-only) desde cards
+const showEstadoMenuPedidoId = ref<number | null>(null)
+const estadoMenuTarget = ref<HTMLElement | null>(null)
+const estadoMenuPos = ref<{ top: number; left: number } | null>(null)
+const estadoMenuLoading = ref(false)
+
+const estadoOptions: Array<{ value: PedidoResponse['estado']; label: string }> = [
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'preparando', label: 'Preparando' },
+  { value: 'listo', label: 'Listo' },
+  { value: 'entregado', label: 'Entregado' },
+  { value: 'cuenta_solicitada', label: 'Cuenta solicitada' },
+  { value: 'pagado', label: 'Pagado' },
+  { value: 'cancelado', label: 'Cancelado' },
+  { value: 'dividido', label: 'Dividido' }
+]
+
+const canManualChangeEstado = computed(() => auth.user?.rol === 'administrador')
+
+
 // Estados para dividir cuenta
 const showSplitModal = ref(false)
 const splitPedido = ref<PedidoResponse | null>(null)
@@ -115,15 +135,83 @@ onMounted(async () => {
   }
 })
 
+const closeEstadoMenu = () => {
+  showEstadoMenuPedidoId.value = null
+  estadoMenuTarget.value = null
+  estadoMenuPos.value = null
+  estadoMenuLoading.value = false
+}
+
+const toggleEstadoMenu = async (pedido: PedidoResponse, ev: MouseEvent) => {
+  if (!canManualChangeEstado.value) return
+
+  if (showEstadoMenuPedidoId.value === pedido.id) {
+    closeEstadoMenu()
+    return
+  }
+
+  showEstadoMenuPedidoId.value = pedido.id
+  estadoMenuTarget.value = ev.currentTarget as HTMLElement
+
+  await nextTick()
+  const rect = estadoMenuTarget.value?.getBoundingClientRect()
+  if (rect) {
+    // Posicionar el menu alineado a la derecha del badge
+    estadoMenuPos.value = {
+      top: rect.bottom + 8,
+      left: Math.max(8, rect.right - 240)
+    }
+  }
+}
+
+const applyManualEstado = async (pedido: PedidoResponse | null | undefined, nuevoEstado: PedidoResponse['estado']) => {
+  if (!canManualChangeEstado.value) return
+  if (estadoMenuLoading.value) return
+  if (!pedido) return
+  if (pedido.estado === nuevoEstado) {
+    closeEstadoMenu()
+    return
+  }
+
+  estadoMenuLoading.value = true
+  try {
+    const ok = await pedidosStore.updatePedidoEstado(pedido.id, nuevoEstado)
+    if (ok) {
+      showSuccessNotification(`Estado actualizado: #${pedido.numero_display} → ${getEstadoTexto(nuevoEstado)}`)
+      closeEstadoMenu()
+    }
+  } finally {
+    estadoMenuLoading.value = false
+  }
+}
+
+const onGlobalClick = (ev: MouseEvent) => {
+  if (!showEstadoMenuPedidoId.value) return
+
+  const target = ev.target as Node
+  if (estadoMenuTarget.value && estadoMenuTarget.value.contains(target)) return
+
+  // si el click ocurre dentro del menu, no cerrar
+  const menuEl = document.getElementById('estado-menu-popover')
+  if (menuEl && menuEl.contains(target)) return
+
+  closeEstadoMenu()
+}
+
+onMounted(() => {
+  document.addEventListener('click', onGlobalClick)
+})
+
 onUnmounted(() => {
   console.log('👋 Caja View: Cleanup...')
+  document.removeEventListener('click', onGlobalClick)
   if (timer) {
     clearInterval(timer)
   }
   if (timerTurno) {
     clearInterval(timerTurno)
   }
-  // No desconectamos el WebSocket aquí porque puede ser usado por otras vistas
+  pedidosStore.disconnectWebSocket()
 })
 
 
@@ -1155,16 +1243,37 @@ const cerrarTurno = async (conteoFinal: any) => {
               <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
                   <span class="text-xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
-                  <span class="text-lg font-bold text-[#00126D]">{{ pedido.numero_display }}</span>
+                  <span v-if="pedido.mesa" class="text-lg font-bold text-[#00126D]">Mesa {{ pedido.mesa }}</span>
+                  <span v-else-if="pedido.nombre_cliente" class="text-lg font-bold text-[#00126D] truncate max-w-[160px]" :title="pedido.nombre_cliente">
+                    {{ pedido.nombre_cliente }}
+                  </span>
+                  <span v-else class="text-lg font-bold text-[#00126D]">Pedido #{{ pedido.numero_display }}</span>
                 </div>
-                <div :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded text-xs font-bold']">
+
+                <button
+                  v-if="canManualChangeEstado"
+                  @click.stop="toggleEstadoMenu(pedido, $event)"
+                  :disabled="estadoMenuLoading && showEstadoMenuPedidoId === pedido.id"
+                  :class="[
+                    getEstadoColor(pedido.estado),
+                    'text-white px-2 py-1 rounded text-xs font-bold flex items-center gap-1 hover:opacity-90 transition-all disabled:opacity-60'
+                  ]"
+                >
+                  {{ getEstadoTexto(pedido.estado) }}
+                  <span class="text-[10px]">▾</span>
+                </button>
+                <div
+                  v-else
+                  :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded text-xs font-bold']"
+                >
                   {{ getEstadoTexto(pedido.estado) }}
                 </div>
               </div>
 
               <div class="text-sm">
-                <div v-if="pedido.mesa" class="text-blue-600 font-medium">🪑 Mesa {{ pedido.mesa }}</div>
-                <div v-if="pedido.nombre_cliente" class="text-green-600 font-medium">👤 {{ pedido.nombre_cliente }}</div>
+                <div class="text-blue-700 font-medium">📄 Pedido #{{ pedido.numero_display }}</div>
+                <div v-if="pedido.mesa" class="text-blue-600">&nbsp;</div>
+                <div v-else-if="pedido.nombre_cliente" class="text-green-600">&nbsp;</div>
                 <div class="text-[#FDB700] font-bold mt-1">$ {{ Number(pedido.total).toFixed(2) }}</div>
               </div>
 
@@ -1230,20 +1339,20 @@ const cerrarTurno = async (conteoFinal: any) => {
             @click="selectPedido(pedido)"
             class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-[#FDB700] cursor-pointer transition-all hover:scale-105 group"
           >
-            <!-- Header del pedido - PRIORIZADA MESA/CLIENTE -->
-            <div class="flex items-center justify-center mb-4">
-              <div class="flex items-center gap-3">
-                <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
-                 <!-- Pedido como prioridad principal -->
-                 <div class="text-2xl font-black text-[#00126D]">PEDIDO #{{ pedido.numero_display }}</div>
-              </div>
-            </div>
+             <!-- Header del pedido: Mesa/Cliente arriba, Pedido abajo -->
+             <div class="flex items-center justify-center mb-4">
+               <div class="flex items-center gap-3">
+                 <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
+                 <div class="text-2xl font-black text-[#00126D]">
+                   <span v-if="pedido.mesa">Mesa {{ pedido.mesa }}</span>
+                   <span v-else-if="pedido.nombre_cliente" class="truncate max-w-[220px]" :title="pedido.nombre_cliente">{{ pedido.nombre_cliente }}</span>
+                   <span v-else>Pedido #{{ pedido.numero_display }}</span>
+                 </div>
+               </div>
+             </div>
 
-             <!-- Mesa / Cliente secundarios -->
              <div class="mb-4 text-center">
-               <div v-if="pedido.mesa" class="text-sm text-blue-700 font-semibold">🪑 Mesa {{ pedido.mesa }}</div>
-               <div v-else-if="pedido.nombre_cliente" class="text-sm text-green-700 font-semibold">👤 {{ pedido.nombre_cliente }}</div>
-               <div v-else class="text-sm text-gray-500 font-medium">&nbsp;</div>
+               <div class="text-sm text-blue-700 font-semibold">📄 Pedido #{{ pedido.numero_display }}</div>
              </div>
 
             <!-- Total -->
@@ -2048,6 +2157,47 @@ const cerrarTurno = async (conteoFinal: any) => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Popover: cambio manual de estado (admin-only) -->
+    <div
+      v-if="showEstadoMenuPedidoId && estadoMenuPos"
+      id="estado-menu-popover"
+      class="fixed z-[90]"
+      :style="{ top: `${estadoMenuPos.top}px`, left: `${estadoMenuPos.left}px` }"
+    >
+      <div class="w-60 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden">
+        <div class="px-3 py-2 bg-gray-50 border-b border-gray-200">
+          <div class="text-xs font-bold text-gray-700">Cambiar estado</div>
+          <div class="text-[11px] text-gray-500">Solo administrador (casos especiales)</div>
+        </div>
+
+        <div class="p-2">
+          <button
+            v-for="opt in estadoOptions"
+            :key="opt.value"
+            @click.stop="applyManualEstado(pedidosActivos.find(p => p.id === showEstadoMenuPedidoId), opt.value)"
+            :disabled="estadoMenuLoading || pedidosActivos.find(p => p.id === showEstadoMenuPedidoId)?.estado === opt.value"
+            class="w-full text-left px-3 py-2 rounded-lg text-sm transition-all"
+            :class="[
+              pedidosActivos.find(p => p.id === showEstadoMenuPedidoId)?.estado === opt.value
+                ? 'bg-gray-100 text-gray-500'
+                : 'hover:bg-gray-50 text-gray-800'
+            ]"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+
+        <div class="px-3 py-2 bg-white border-t border-gray-200">
+          <button
+            @click.stop="closeEstadoMenu"
+            class="w-full px-3 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg"
+          >
+            Cerrar
+          </button>
         </div>
       </div>
     </div>
