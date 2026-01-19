@@ -445,6 +445,8 @@ async def dividir_cuenta(
             "tipo_orden": pedido.tipo_orden,
             "sucursal_id": pedido.sucursal_id,
             "fecha_creacion": pedido.fecha_creacion.isoformat(),
+            "fecha_pago": pedido.fecha_pago.isoformat() if pedido.fecha_pago else None,
+            "usuario_nombre": pedido.usuario.nombre if pedido.usuario else None,
             "metodo_pago": pedido.metodo_pago,
             "propina_efectivo": float(pedido.propina_efectivo),
             "propina_tarjeta": float(pedido.propina_tarjeta),

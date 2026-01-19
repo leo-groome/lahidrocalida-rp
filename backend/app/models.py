@@ -111,6 +111,11 @@ class Pedido(Base):
     usuario = relationship("Usuario", back_populates="pedidos")
     articulos_pedido = relationship("ArticuloPedido", back_populates="pedido")
 
+    @property
+    def usuario_nombre(self):
+        return self.usuario.nombre if self.usuario else None
+
+
 
 class ArticuloPedido(Base):
     __tablename__ = "articulos_pedido"
