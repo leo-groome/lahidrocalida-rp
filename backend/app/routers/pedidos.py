@@ -668,10 +668,10 @@ async def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
     # Validar permisos
-    if current_user.rol not in ["mesero", "cocina", "administrador"]:
+    if current_user.rol not in ["mesero", "cocina", "administrador", "cajero"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo meseros, cocina y administradores pueden actualizar items"
+            detail="Solo meseros, cocina, cajeros y administradores pueden actualizar items"
         )
     
     # Obtener el artículo
@@ -683,10 +683,10 @@ async def update_articulo_estado(
         )
     
     # Validar estado
-    if data.estado_item not in ["pendiente", "preparando", "listo"]:
+    if data.estado_item not in ["pendiente", "preparando", "listo", "entregado"]:
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo"
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado"
         )
     
     # Actualizar estado del artículo
