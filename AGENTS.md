@@ -160,6 +160,7 @@ VITE_API_URL=http://localhost:8000
 9. **Implement tip modal flow correctly**: Show tip modal only after selecting card/transfer payment method with quick percentage buttons (10%/15%/20%) and specific amount field. For cash payments, display cash received field before optional tip.
 10. **Implement split-bill flow correctly** (admin-only): allow dividir cuenta (2-5) for `entregado` or `cuenta_solicitada`, mark original order as `dividido`, and create new orders in `cuenta_solicitada` with `Cuenta i/n` label; print one ticket per cuenta.
 11. **Manual status override (admin-only)**: from Caja "Pedidos Activos" allow admin to change `estado` via a dropdown on the status badge (no payment/propina changes); use this only for exceptional cases.
+12. **Manual beverage delivery (mesero/admin)**: bebidas (Platillo.categoria == `Bebidas`) are NOT auto-delivered; mesero/admin can mark beverage items as `entregado` from Mesero "Ver pedido actual". Caja shows item status read-only.
 
 
 ## 🏦 Gestión de Turnos y Cierre de Caja
