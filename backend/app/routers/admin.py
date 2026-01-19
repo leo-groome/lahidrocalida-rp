@@ -1,12 +1,23 @@
+# type: ignore
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, extract
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 
 from app.db.session import get_db
-from app.models import Usuario, Pedido, ArticuloPedido, Platillo, Gasto
+from app.models import (
+    Usuario,
+    Pedido,
+    ArticuloPedido,
+    Platillo,
+    Gasto,
+    Proveedor,
+    CategoriaArticulo,
+    GastoDetalle,
+    Articulo,
+)
 from app.auth import get_current_active_user
 
 router = APIRouter(prefix="/admin", tags=["administracion"])
@@ -18,7 +29,7 @@ def _ensure_admin_access(user: Usuario) -> None:
         raise HTTPException(status_code=403, detail="Acceso solo para administradores")
 
 
-def _get_week_range(date_input: date = None) -> tuple[date, date]:
+def _get_week_range(date_input: Optional[date] = None) -> tuple[date, date]:
     """
     Obtener el rango de fechas de la semana (Martes a Domingo)
     Si no se proporciona fecha, usar la semana actual
@@ -250,7 +261,7 @@ def get_dashboard_metrics(
 
 @router.get("/reportes/semanal")
 def get_weekly_report(
-    fecha: str = None,  # Formato YYYY-MM-DD, cualquier día de la semana deseada
+    fecha: Optional[str] = None,  # Formato YYYY-MM-DD, cualquier día de la semana deseada
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -352,7 +363,7 @@ def get_weekly_report(
     ).all()
     
     # Total de gastos de la semana
-    gastos_total = db.query(func.sum(Gasto.monto)).filter(
+    gastos_total = db.query(func.sum(Gasto.total)).filter(
         and_(
             func.date(Gasto.fecha_gasto) >= tuesday,
             func.date(Gasto.fecha_gasto) <= sunday,
@@ -362,17 +373,47 @@ def get_weekly_report(
     
     # === NUEVAS MÉTRICAS DETALLADAS ===
     
-    # Gastos por categoría
-    gastos_por_categoria = db.query(
-        Gasto.categoria,
-        func.sum(Gasto.monto).label('total')
+    # Gastos por tipo
+    gastos_por_tipo = db.query(
+        Gasto.tipo_gasto,
+        func.sum(Gasto.total).label('total')
     ).filter(
         and_(
             func.date(Gasto.fecha_gasto) >= tuesday,
             func.date(Gasto.fecha_gasto) <= sunday,
             Gasto.sucursal_id == current_user.sucursal_id
         )
-    ).group_by(Gasto.categoria).all()
+    ).group_by(Gasto.tipo_gasto).all()
+    
+    gastos_por_proveedor = db.query(
+        Proveedor.nombre,
+        func.sum(Gasto.total).label('total')
+    ).join(Proveedor, Proveedor.id == Gasto.proveedor_id).filter(
+        and_(
+            func.date(Gasto.fecha_gasto) >= tuesday,
+            func.date(Gasto.fecha_gasto) <= sunday,
+            Gasto.sucursal_id == current_user.sucursal_id
+        )
+    ).group_by(Proveedor.nombre).all()
+    
+    gastos_por_categoria_articulo = (
+        db.query(
+            CategoriaArticulo.nombre,
+            func.sum(GastoDetalle.subtotal_linea).label('total')
+        )
+        .join(Articulo, Articulo.categoria_id == CategoriaArticulo.id)
+        .join(GastoDetalle, GastoDetalle.articulo_id == Articulo.id)
+        .join(Gasto, Gasto.id == GastoDetalle.gasto_id)
+        .filter(
+            and_(
+                func.date(Gasto.fecha_gasto) >= tuesday,
+                func.date(Gasto.fecha_gasto) <= sunday,
+                Gasto.sucursal_id == current_user.sucursal_id
+            )
+        )
+        .group_by(CategoriaArticulo.nombre)
+        .all()
+    )
     
     # Análisis por tipo de orden
     tipos_orden = db.query(
@@ -439,7 +480,21 @@ def get_weekly_report(
                     "total": float(total),
                     "porcentaje": round(float(total) / float(gastos_total) * 100, 2) if gastos_total > 0 else 0
                 }
-                for categoria, total in gastos_por_categoria
+                for categoria, total in gastos_por_tipo
+            ],
+            "por_proveedor": [
+                {
+                    "proveedor": proveedor,
+                    "total": float(total)
+                }
+                for proveedor, total in gastos_por_proveedor
+            ],
+            "por_categoria_articulo": [
+                {
+                    "categoria": categoria,
+                    "total": float(total)
+                }
+                for categoria, total in gastos_por_categoria_articulo
             ]
         },
         "analisis_tipos_orden": [
@@ -491,10 +546,10 @@ def get_gastos_summary(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
     
-    # Resumen por categoría
-    gastos_por_categoria = db.query(
-        Gasto.categoria,
-        func.sum(Gasto.monto).label('total'),
+    # Resumen por tipo de gasto
+    gastos_por_tipo = db.query(
+        Gasto.tipo_gasto,
+        func.sum(Gasto.total).label('total'),
         func.count(Gasto.id).label('cantidad')
     ).filter(
         and_(
@@ -503,10 +558,10 @@ def get_gastos_summary(
             Gasto.sucursal_id == current_user.sucursal_id
         )
     ).group_by(
-        Gasto.categoria
+        Gasto.tipo_gasto
     ).all()
     
-    total_gastos = sum(float(total) for _, total, _ in gastos_por_categoria)
+    total_gastos = sum(float(total) for _, total, _ in gastos_por_tipo)
     
     return {
         "periodo": {
@@ -521,6 +576,6 @@ def get_gastos_summary(
                 "cantidad": int(cantidad),
                 "porcentaje": round((float(total) / total_gastos * 100), 2) if total_gastos > 0 else 0
             }
-            for categoria, total, cantidad in gastos_por_categoria
+            for categoria, total, cantidad in gastos_por_tipo
         ]
     }

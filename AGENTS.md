@@ -162,6 +162,29 @@ VITE_API_URL=http://localhost:8000
 11. **Manual status override (admin-only)**: from Caja "Pedidos Activos" allow admin to change `estado` via a dropdown on the status badge (no payment/propina changes); use this only for exceptional cases.
 12. **Manual beverage delivery (mesero/admin)**: bebidas (Platillo.categoria == `Bebidas`) are NOT auto-delivered; mesero/admin can mark beverage items as `entregado` from Mesero "Ver pedido actual". Caja shows item status read-only.
 
+## 💸 Gestión de Gastos
+
+**Modelo y flujo:**
+- `Gasto` es cabecera de compra con proveedor, tipo de gasto, método de pago, subtotal/total y `total_manual` opcional.
+- `GastoDetalle` son líneas con artículo, cantidad y precio unitario.
+- `nomina` no lleva artículos; se captura con `total_manual` + `notas` (nombre/periodo).
+
+**Catálogos:**
+- `Proveedor`: nombre, teléfono, dirección, notas.
+- `CategoriaArticulo`: catálogo editable.
+- `Articulo`: nombre, unidad, categoría, costo estándar.
+
+**Enums y valores fijos:**
+- Tipos de gasto: `directo`, `indirecto`, `nomina`.
+- Métodos de pago: `efectivo`, `tarjeta`.
+- Unidades válidas: `kg`, `g`, `lt`, `ml`, `pza`, `caja`, `paq`.
+
+**API:**
+- `/gastos` (CRUD con filtros por fecha, proveedor, tipo, método, categoría).
+- `/gastos/proveedores`, `/gastos/categorias-articulo`, `/gastos/articulos`.
+
+**UI (Admin):**
+- Tab Gestión de Gastos con subtabs: Gastos, Proveedores, Artículos, Categorías.
 
 ## 🏦 Gestión de Turnos y Cierre de Caja
 

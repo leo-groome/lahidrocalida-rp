@@ -15,6 +15,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    Enum,
+    Numeric,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import DECIMAL
@@ -37,6 +39,7 @@ class Sucursal(Base):
     usuarios = relationship("Usuario", back_populates="sucursal")
     pedidos = relationship("Pedido", back_populates="sucursal")
     gastos = relationship("Gasto", back_populates="sucursal")
+    proveedores = relationship("Proveedor", back_populates="sucursal")
 
 
 class Usuario(Base):
@@ -126,18 +129,88 @@ class ArticuloPedido(Base):
     platillo = relationship("Platillo", back_populates="articulos_pedido")
 
 
+class Proveedor(Base):
+    __tablename__ = "proveedores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(150), nullable=False)
+    telefono = Column(String(50))
+    direccion = Column(Text)
+    notas = Column(Text)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
+
+    # Relaciones
+    sucursal = relationship("Sucursal", back_populates="proveedores")
+    gastos = relationship("Gasto", back_populates="proveedor")
+
+
+class CategoriaArticulo(Base):
+    __tablename__ = "categorias_articulo"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(80), nullable=False, unique=True)
+
+    # Relaciones
+    articulos = relationship("Articulo", back_populates="categoria")
+
+
+class Articulo(Base):
+    __tablename__ = "articulos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(150), nullable=False)
+    unidad = Column(String(20), nullable=False)
+    costo_estandar = Column(DECIMAL(10, 2), nullable=False)
+    categoria_id = Column(Integer, ForeignKey("categorias_articulo.id"), nullable=False)
+
+    # Relaciones
+    categoria = relationship("CategoriaArticulo", back_populates="articulos")
+    detalles_gasto = relationship("GastoDetalle", back_populates="articulo")
+
+
 class Gasto(Base):
     __tablename__ = "gastos"
 
     id = Column(Integer, primary_key=True, index=True)
-    descripcion = Column(String(255), nullable=False)
-    monto = Column(DECIMAL(8, 2), nullable=False)
-    categoria = Column(String(50), nullable=False)
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False)
+    tipo_gasto = Column(
+        Enum("directo", "indirecto", "nomina", name="tipo_gasto_enum"),
+        nullable=False,
+    )
+    metodo_pago = Column(
+        Enum("efectivo", "tarjeta", name="metodo_pago_gasto_enum"),
+        nullable=False,
+    )
+    descripcion = Column(String(255))
+    folio = Column(String(100))
+    subtotal = Column(DECIMAL(10, 2), nullable=False)
+    total = Column(DECIMAL(10, 2), nullable=False)
+    total_manual = Column(DECIMAL(10, 2))
     fecha_gasto = Column(DateTime, default=get_local_datetime)
+    notas = Column(Text)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="gastos")
+    proveedor = relationship("Proveedor", back_populates="gastos")
+    detalles = relationship(
+        "GastoDetalle", back_populates="gasto", cascade="all, delete-orphan"
+    )
+
+
+class GastoDetalle(Base):
+    __tablename__ = "gasto_detalles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="CASCADE"))
+    articulo_id = Column(Integer, ForeignKey("articulos.id"), nullable=False)
+    cantidad = Column(Numeric(10, 2), nullable=False)
+    precio_unitario = Column(DECIMAL(10, 2), nullable=False)
+    subtotal_linea = Column(DECIMAL(10, 2), nullable=False)
+
+    # Relaciones
+    gasto = relationship("Gasto", back_populates="detalles")
+    articulo = relationship("Articulo", back_populates="detalles_gasto")
 
 
 class Turno(Base):

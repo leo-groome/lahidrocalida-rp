@@ -640,18 +640,18 @@
               </div>
             </div>
 
-            <!-- Gastos por categoría -->
+            <!-- Gastos por tipo -->
             <div class="bg-white shadow rounded-lg p-6">
-              <h4 class="text-lg font-medium text-gray-900 mb-4">Gastos por Categoría</h4>
+              <h4 class="text-lg font-medium text-gray-900 mb-4">Gastos por Tipo</h4>
               <div class="space-y-3">
                 <div class="flex justify-between items-center text-sm font-medium text-gray-900 border-b border-gray-200 pb-2">
-                  <span>Total Gastos: ${{ weeklyData.gastos.total.toFixed(2) }}</span>
+                  <span>Total Gastos: ${{ formatCurrency(weeklyData.gastos.total) }}</span>
                 </div>
                 <div v-for="categoria in weeklyData.gastos.por_categoria" :key="categoria.categoria"
                      class="flex justify-between items-center py-2">
                   <span class="text-sm font-medium text-gray-900 capitalize">{{ categoria.categoria }}</span>
                   <div class="text-right">
-                    <span class="text-sm font-semibold text-red-600">${{ categoria.total.toFixed(2) }}</span>
+                    <span class="text-sm font-semibold text-red-600">${{ formatCurrency(categoria.total) }}</span>
                     <span class="text-xs text-gray-500 ml-2">({{ categoria.porcentaje }}%)</span>
                   </div>
                 </div>
@@ -664,76 +664,341 @@
       <!-- Tab: Gastos -->
       <div v-if="activeTab === 'gastos'">
         <div class="mb-6">
-          <div class="flex justify-between items-center">
-            <h2 class="text-xl font-semibold text-gray-900">Gestión de Gastos</h2>
-            <button
-              @click="showAddGastoModal = true"
-              class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-            >
-              + Nuevo Gasto
-            </button>
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 class="text-xl font-semibold text-gray-900">Gestión de Gastos</h2>
+              <p class="text-sm text-gray-600 mt-1">Registra compras, proveedores y artículos desde un solo lugar.</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                @click="showAddGastoModal = true"
+                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                + Nuevo Gasto
+              </button>
+              <button
+                @click="openNewProveedor"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                + Proveedor
+              </button>
+              <button
+                @click="openNewArticulo"
+                class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                + Artículo
+              </button>
+              <button
+                @click="openNewCategoria"
+                class="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900"
+              >
+                + Categoría
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- Lista de gastos -->
-        <div class="bg-white shadow overflow-hidden sm:rounded-md">
-          <ul class="divide-y divide-gray-200">
-            <li v-for="gasto in gastosList" :key="gasto.id" class="px-6 py-4">
-              <div class="flex items-center justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h4 class="text-lg font-medium text-gray-900">{{ gasto.descripcion }}</h4>
-                      <div class="mt-1 flex items-center space-x-4 text-sm text-gray-500">
-                        <span class="font-medium">${{ gasto.monto }}</span>
-                        <span class="capitalize">{{ gasto.categoria }}</span>
-                        <span>{{ new Date(gasto.fecha_gasto).toLocaleDateString() }}</span>
+        <div class="mb-6 flex flex-wrap gap-2">
+          <button
+            @click="gastosSubTab = 'gastos'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium',
+              gastosSubTab === 'gastos' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700'
+            ]"
+          >
+            Gastos
+          </button>
+          <button
+            @click="gastosSubTab = 'proveedores'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium',
+              gastosSubTab === 'proveedores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
+            ]"
+          >
+            Proveedores
+          </button>
+          <button
+            @click="gastosSubTab = 'articulos'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium',
+              gastosSubTab === 'articulos' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700'
+            ]"
+          >
+            Artículos
+          </button>
+          <button
+            @click="gastosSubTab = 'categorias'"
+            :class="[
+              'px-4 py-2 rounded-full text-sm font-medium',
+              gastosSubTab === 'categorias' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-700'
+            ]"
+          >
+            Categorías
+          </button>
+        </div>
+
+        <div v-if="gastosSubTab === 'gastos'">
+          <div class="bg-white shadow rounded-lg p-4 mb-6">
+            <h3 class="text-sm font-semibold text-gray-900 mb-3">Filtros</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Inicio</label>
+                <input v-model="gastoFilters.fecha_inicio" type="date" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Fin</label>
+                <input v-model="gastoFilters.fecha_fin" type="date" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Proveedor</label>
+                <select v-model="gastoFilters.proveedor_id" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm">
+                  <option :value="null">Todos</option>
+                  <option v-for="proveedor in proveedoresList" :key="proveedor.id" :value="proveedor.id">
+                    {{ proveedor.nombre }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Tipo</label>
+                <select v-model="gastoFilters.tipo_gasto" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm">
+                  <option value="">Todos</option>
+                  <option value="directo">Directo</option>
+                  <option value="indirecto">Indirecto</option>
+                  <option value="nomina">Nómina</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Método pago</label>
+                <select v-model="gastoFilters.metodo_pago" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm">
+                  <option value="">Todos</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600">Categoría artículo</label>
+                <select v-model="gastoFilters.categoria_id" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm">
+                  <option :value="null">Todas</option>
+                  <option v-for="categoria in categoriasArticuloList" :key="categoria.id" :value="categoria.id">
+                    {{ categoria.nombre }}
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div class="flex gap-2 mt-4">
+              <button @click="loadGastosList" class="px-3 py-1.5 bg-gray-900 text-white rounded-md text-sm">Aplicar</button>
+              <button
+                @click="() => { gastoFilters.fecha_inicio = ''; gastoFilters.fecha_fin = ''; gastoFilters.proveedor_id = null; gastoFilters.tipo_gasto = ''; gastoFilters.metodo_pago = ''; gastoFilters.categoria_id = null; loadGastosList() }"
+                class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm"
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white shadow overflow-hidden sm:rounded-md">
+            <ul class="divide-y divide-gray-200">
+              <li v-for="gasto in gastosList" :key="gasto.id" class="px-6 py-4">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h4 class="text-lg font-medium text-gray-900">{{ gasto.proveedor.nombre }}</h4>
+                    <div class="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-500">
+                      <span class="font-medium">${{ formatCurrency(gasto.total) }}</span>
+                      <span class="capitalize">{{ gasto.tipo_gasto }}</span>
+                      <span class="capitalize">{{ gasto.metodo_pago }}</span>
+                      <span v-if="gasto.folio">Folio {{ gasto.folio }}</span>
+                      <span>{{ new Date(gasto.fecha_gasto).toLocaleDateString() }}</span>
+                    </div>
+                  </div>
+                  <button
+                    @click="toggleGastoExpanded(gasto.id)"
+                    class="text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    {{ isGastoExpanded(gasto.id) ? 'Ocultar detalles' : 'Ver detalles' }}
+                  </button>
+                </div>
+                <div v-if="isGastoExpanded(gasto.id)" class="mt-4 bg-gray-50 rounded-lg p-4">
+                  <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <div class="text-sm text-gray-700">
+                      <span class="font-semibold">Subtotal:</span> ${{ formatCurrency(gasto.subtotal) }}
+                      <span v-if="gasto.total_manual" class="ml-3 text-gray-500">Total manual: ${{ formatCurrency(gasto.total_manual) }}</span>
+                    </div>
+                    <div class="text-sm text-gray-500">
+                      {{ gasto.descripcion || 'Sin descripción' }}
+                    </div>
+                  </div>
+                  <div v-if="gasto.tipo_gasto === 'nomina'" class="text-sm text-gray-700">
+                    <span class="font-semibold">Notas:</span> {{ gasto.notas || 'Sin notas' }}
+                  </div>
+                  <div v-else>
+                    <div class="grid grid-cols-1 gap-2">
+                      <div v-for="detalle in gasto.detalles" :key="detalle.id" class="flex flex-wrap items-center justify-between text-sm text-gray-600">
+                        <div>
+                          <span class="font-medium text-gray-900">{{ detalle.articulo.nombre }}</span>
+                          <span class="ml-2 text-xs text-gray-500">{{ detalle.articulo.categoria.nombre }}</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                          <span>{{ detalle.cantidad }} {{ detalle.articulo.unidad }}</span>
+                          <span>${{ formatCurrency(detalle.precio_unitario) }}</span>
+                          <span class="font-semibold text-gray-900">${{ formatCurrency(detalle.subtotal_linea) }}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div v-else-if="gastosSubTab === 'proveedores'">
+          <div class="bg-white shadow rounded-lg p-4">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-base font-semibold text-gray-900">Proveedores</h3>
+              <button @click="openNewProveedor" class="px-3 py-1.5 bg-blue-600 text-white rounded-md text-sm">Nuevo</button>
+            </div>
+            <div class="space-y-3">
+              <div v-for="proveedor in proveedoresList" :key="proveedor.id" class="flex flex-wrap items-center justify-between gap-3 border border-gray-100 rounded-lg px-4 py-3">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">{{ proveedor.nombre }}</div>
+                  <div class="text-xs text-gray-500">{{ proveedor.telefono || 'Sin teléfono' }}</div>
+                  <div class="text-xs text-gray-500">{{ proveedor.direccion || 'Sin dirección' }}</div>
+                </div>
+                <button @click="editProveedor(proveedor)" class="text-sm text-blue-600 hover:text-blue-700">Editar</button>
               </div>
-            </li>
-          </ul>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="gastosSubTab === 'articulos'">
+          <div class="bg-white shadow rounded-lg p-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h3 class="text-base font-semibold text-gray-900">Artículos</h3>
+              <div class="flex flex-wrap gap-2">
+                <select v-model="selectedArticuloCategoria" @change="loadArticulos" class="border border-gray-200 rounded-md px-2 py-1 text-sm">
+                  <option :value="null">Todas las categorías</option>
+                  <option v-for="categoria in categoriasArticuloList" :key="categoria.id" :value="categoria.id">
+                    {{ categoria.nombre }}
+                  </option>
+                </select>
+                <button @click="openNewArticulo" class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm">Nuevo</button>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div v-for="articulo in articulosList" :key="articulo.id" class="flex flex-wrap items-center justify-between gap-3 border border-gray-100 rounded-lg px-4 py-3">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900">{{ articulo.nombre }}</div>
+                  <div class="text-xs text-gray-500">{{ articulo.categoria.nombre }} · {{ articulo.unidad }}</div>
+                  <div class="text-xs text-gray-500">Costo estándar: ${{ articulo.costo_estandar }}</div>
+                </div>
+                <button @click="editArticulo(articulo)" class="text-sm text-indigo-600 hover:text-indigo-700">Editar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="gastosSubTab === 'categorias'">
+          <div class="bg-white shadow rounded-lg p-4">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-base font-semibold text-gray-900">Categorías de artículo</h3>
+              <button @click="openNewCategoria" class="px-3 py-1.5 bg-gray-900 text-white rounded-md text-sm">Nueva</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div v-for="categoria in categoriasArticuloList" :key="categoria.id" class="flex items-center justify-between border border-gray-100 rounded-lg px-4 py-3">
+                <div class="text-sm font-semibold text-gray-900">{{ categoria.nombre }}</div>
+                <button @click="editCategoria(categoria)" class="text-sm text-gray-700 hover:text-gray-900">Editar</button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Modal para nuevo gasto -->
         <div v-if="showAddGastoModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <h3 class="text-lg font-bold text-gray-900 mb-4">Nuevo Gasto</h3>
-            
-            <form @submit.prevent="addGasto" class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Descripción</label>
-                <input
-                  v-model="newGasto.descripcion"
-                  type="text"
-                  required
-                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
+          <div class="relative top-10 mx-auto p-6 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-bold text-gray-900">Nuevo Gasto</h3>
+              <button @click="showAddGastoModal = false" class="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+
+            <form @submit.prevent="addGasto" class="space-y-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Proveedor</label>
+                  <select v-model="newGasto.proveedor_id" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required>
+                    <option :value="null">Selecciona proveedor</option>
+                    <option v-for="proveedor in proveedoresList" :key="proveedor.id" :value="proveedor.id">
+                      {{ proveedor.nombre }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Tipo de gasto</label>
+                  <select v-model="newGasto.tipo_gasto" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    <option value="directo">Directo</option>
+                    <option value="indirecto">Indirecto</option>
+                    <option value="nomina">Nómina</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Método de pago</label>
+                  <select v-model="newGasto.metodo_pago" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                    <option value="efectivo">Efectivo</option>
+                    <option value="tarjeta">Tarjeta</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Folio</label>
+                  <input v-model="newGasto.folio" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Descripción</label>
+                  <input v-model="newGasto.descripcion" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700">Total manual (opcional)</label>
+                  <input v-model.number="newGasto.total_manual" type="number" step="0.01" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+                </div>
               </div>
-              
+
               <div>
-                <label class="block text-sm font-medium text-gray-700">Monto</label>
-                <input
-                  v-model.number="newGasto.monto"
-                  type="number"
-                  step="0.01"
-                  required
-                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
+                <label class="block text-sm font-medium text-gray-700">Notas</label>
+                <textarea v-model="newGasto.notas" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
               </div>
-              
-              <div>
-                <label class="block text-sm font-medium text-gray-700">Categoría</label>
-                <input
-                  v-model="newGasto.categoria"
-                  type="text"
-                  required
-                  class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-                />
+
+              <div v-if="newGasto.tipo_gasto !== 'nomina'">
+                <div class="flex items-center justify-between mb-2">
+                  <h4 class="text-sm font-semibold text-gray-900">Artículos</h4>
+                  <button type="button" @click="addDetalleLine" class="text-sm text-green-600 hover:text-green-700">+ Agregar línea</button>
+                </div>
+                <div class="space-y-3">
+                  <div v-for="(detalle, index) in newGasto.detalles" :key="index" class="grid grid-cols-1 md:grid-cols-4 gap-3 items-center">
+                    <select v-model="detalle.articulo_id" class="border border-gray-300 rounded-md px-2 py-2">
+                      <option :value="null">Artículo</option>
+                      <option v-for="articulo in articulosList" :key="articulo.id" :value="articulo.id">
+                        {{ articulo.nombre }} ({{ articulo.unidad }})
+                      </option>
+                    </select>
+                    <input v-model.number="detalle.cantidad" type="number" step="0.01" min="0" class="border border-gray-300 rounded-md px-2 py-2" />
+                    <input v-model.number="detalle.precio_unitario" type="number" step="0.01" min="0" class="border border-gray-300 rounded-md px-2 py-2" />
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm text-gray-600">${{ formatCurrency(detalle.cantidad * detalle.precio_unitario) }}</span>
+                      <button type="button" @click="removeDetalleLine(index)" class="text-sm text-red-600 hover:text-red-700">Quitar</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              
+
+              <div class="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-700">
+                <div>
+                  <span class="font-medium">Subtotal:</span>
+                  ${{ formatCurrency(calcularSubtotal(newGasto.detalles)) }}
+                </div>
+                <div>
+                  <span class="font-medium">Total:</span>
+                  ${{ formatCurrency(getGastoTotal(newGasto)) }}
+                </div>
+              </div>
+
               <div class="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
@@ -748,6 +1013,94 @@
                 >
                   Guardar
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal proveedor -->
+        <div v-if="showProveedorModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div class="relative top-20 mx-auto p-6 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">{{ editingProveedor ? 'Editar proveedor' : 'Nuevo proveedor' }}</h3>
+            <form @submit.prevent="saveProveedor" class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Nombre</label>
+                <input v-model="proveedorForm.nombre" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Teléfono</label>
+                <input v-model="proveedorForm.telefono" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Dirección</label>
+                <textarea v-model="proveedorForm.direccion" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Notas</label>
+                <textarea v-model="proveedorForm.notas" rows="2" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" />
+              </div>
+              <div class="flex justify-end space-x-3 pt-2">
+                <button type="button" @click="showProveedorModal = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">Cancelar</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal articulo -->
+        <div v-if="showArticuloModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div class="relative top-20 mx-auto p-6 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">{{ editingArticulo ? 'Editar artículo' : 'Nuevo artículo' }}</h3>
+            <form @submit.prevent="saveArticulo" class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Nombre</label>
+                <input v-model="articuloForm.nombre" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Categoría</label>
+                <select v-model="articuloForm.categoria_id" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required>
+                  <option :value="null">Selecciona categoría</option>
+                  <option v-for="categoria in categoriasArticuloList" :key="categoria.id" :value="categoria.id">
+                    {{ categoria.nombre }}
+                  </option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Unidad</label>
+                <select v-model="articuloForm.unidad" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
+                  <option value="kg">kg</option>
+                  <option value="g">g</option>
+                  <option value="lt">lt</option>
+                  <option value="ml">ml</option>
+                  <option value="pza">pza</option>
+                  <option value="caja">caja</option>
+                  <option value="paq">paq</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Costo estándar</label>
+                <input v-model.number="articuloForm.costo_estandar" type="number" step="0.01" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              </div>
+              <div class="flex justify-end space-x-3 pt-2">
+                <button type="button" @click="showArticuloModal = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">Cancelar</button>
+                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Guardar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Modal categoria -->
+        <div v-if="showCategoriaModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div class="relative top-20 mx-auto p-6 border w-full max-w-md shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">{{ editingCategoria ? 'Editar categoría' : 'Nueva categoría' }}</h3>
+            <form @submit.prevent="saveCategoria" class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Nombre</label>
+                <input v-model="categoriaForm.nombre" type="text" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required />
+              </div>
+              <div class="flex justify-end space-x-3 pt-2">
+                <button type="button" @click="showCategoriaModal = false" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">Cancelar</button>
+                <button type="submit" class="px-4 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-950">Guardar</button>
               </div>
             </form>
           </div>
@@ -1234,12 +1587,53 @@ const loadingWeekly = ref(false)
 // Estado para gastos
 const gastosList = ref<Gasto[]>([])
 const selectedWeekDate = ref(new Date().toISOString().split('T')[0])
+const gastosSubTab = ref<'gastos' | 'proveedores' | 'articulos' | 'categorias'>('gastos')
 const showAddGastoModal = ref(false)
-const newGasto = ref({
-  descripcion: '',
-  monto: 0,
-  categoria: ''
+const showProveedorModal = ref(false)
+const showArticuloModal = ref(false)
+const showCategoriaModal = ref(false)
+const proveedoresList = ref<Proveedor[]>([])
+const categoriasArticuloList = ref<CategoriaArticulo[]>([])
+const articulosList = ref<Articulo[]>([])
+const selectedArticuloCategoria = ref<number | null | string>(null)
+const expandedGastos = ref<number[]>([])
+const categoriasSeeded = ref(false)
+const gastoFilters = ref({
+  fecha_inicio: '',
+  fecha_fin: '',
+  proveedor_id: null as number | null | string,
+  tipo_gasto: '',
+  metodo_pago: '',
+  categoria_id: null as number | null | string
 })
+const newGasto = ref<GastoForm>({
+  proveedor_id: null,
+  tipo_gasto: 'directo',
+  metodo_pago: 'efectivo',
+  descripcion: '',
+  folio: '',
+  total_manual: null,
+  notas: '',
+  detalles: []
+})
+const proveedorForm = ref<ProveedorForm>({
+  nombre: '',
+  telefono: '',
+  direccion: '',
+  notas: ''
+})
+const editingProveedor = ref<Proveedor | null>(null)
+const articuloForm = ref<ArticuloForm>({
+  nombre: '',
+  unidad: 'kg',
+  costo_estandar: 0,
+  categoria_id: null
+})
+const editingArticulo = ref<Articulo | null>(null)
+const categoriaForm = ref<CategoriaForm>({
+  nombre: ''
+})
+const editingCategoria = ref<CategoriaArticulo | null>(null)
 
 // Estado para CRUD de platillos y usuarios
 const platillosList = ref<any[]>([])
@@ -1503,12 +1897,86 @@ interface WeeklyData {
   utilidad_bruta: number
 }
 
+interface Proveedor {
+  id: number
+  nombre: string
+  telefono?: string | null
+  direccion?: string | null
+  notas?: string | null
+}
+
+interface CategoriaArticulo {
+  id: number
+  nombre: string
+}
+
+interface Articulo {
+  id: number
+  nombre: string
+  unidad: string
+  costo_estandar: number
+  categoria_id: number
+  categoria: CategoriaArticulo
+}
+
+interface GastoDetalle {
+  id: number
+  articulo_id: number
+  cantidad: number
+  precio_unitario: number
+  subtotal_linea: number
+  articulo: Articulo
+}
+
 interface Gasto {
   id: number
-  descripcion: string
-  monto: number
-  categoria: string
+  proveedor_id: number
+  proveedor: Proveedor
+  tipo_gasto: 'directo' | 'indirecto' | 'nomina'
+  metodo_pago: 'efectivo' | 'tarjeta'
+  descripcion?: string | null
+  folio?: string | null
+  subtotal: number
+  total: number
+  total_manual?: number | null
+  notas?: string | null
   fecha_gasto: string
+  detalles: GastoDetalle[]
+}
+
+interface GastoDetalleForm {
+  articulo_id: number | null
+  cantidad: number
+  precio_unitario: number
+}
+
+interface GastoForm {
+  proveedor_id: number | null
+  tipo_gasto: 'directo' | 'indirecto' | 'nomina'
+  metodo_pago: 'efectivo' | 'tarjeta'
+  descripcion: string
+  folio: string
+  total_manual: number | null
+  notas: string
+  detalles: GastoDetalleForm[]
+}
+
+interface ProveedorForm {
+  nombre: string
+  telefono: string
+  direccion: string
+  notas: string
+}
+
+interface ArticuloForm {
+  nombre: string
+  unidad: string
+  costo_estandar: number
+  categoria_id: number | null
+}
+
+interface CategoriaForm {
+  nombre: string
 }
 
 // Funciones Dashboard
@@ -1551,7 +2019,19 @@ const loadWeeklyReport = async () => {
 // Funciones Gastos
 const loadGastosList = async () => {
   try {
-    const response = await api.get('/gastos/')
+    const params: Record<string, string> = {}
+    if (gastoFilters.value.fecha_inicio) params.fecha_inicio = gastoFilters.value.fecha_inicio
+    if (gastoFilters.value.fecha_fin) params.fecha_fin = gastoFilters.value.fecha_fin
+    if (gastoFilters.value.proveedor_id !== null && gastoFilters.value.proveedor_id !== '') {
+      params.proveedor_id = String(gastoFilters.value.proveedor_id)
+    }
+    if (gastoFilters.value.tipo_gasto) params.tipo_gasto = gastoFilters.value.tipo_gasto
+    if (gastoFilters.value.metodo_pago) params.metodo_pago = gastoFilters.value.metodo_pago
+    if (gastoFilters.value.categoria_id !== null && gastoFilters.value.categoria_id !== '') {
+      params.categoria_id = String(gastoFilters.value.categoria_id)
+    }
+
+    const response = await api.get('/gastos/', { params })
     gastosList.value = response.data
   } catch (err: any) {
     error.value = 'Error al cargar gastos'
@@ -1559,16 +2039,265 @@ const loadGastosList = async () => {
   }
 }
 
+const loadProveedores = async () => {
+  try {
+    const response = await api.get('/gastos/proveedores')
+    proveedoresList.value = response.data
+  } catch (err: any) {
+    error.value = 'Error al cargar proveedores'
+    console.error('Proveedores error:', err)
+  }
+}
+
+const loadCategoriasArticulo = async () => {
+  try {
+    const response = await api.get('/gastos/categorias-articulo')
+    categoriasArticuloList.value = response.data
+    if (!categoriasSeeded.value && categoriasArticuloList.value.length === 0) {
+      categoriasSeeded.value = true
+      await seedCategoriasArticulo()
+      const refreshed = await api.get('/gastos/categorias-articulo')
+      categoriasArticuloList.value = refreshed.data
+    }
+  } catch (err: any) {
+    error.value = 'Error al cargar categorías'
+    console.error('Categorias error:', err)
+  }
+}
+
+const seedCategoriasArticulo = async () => {
+  const seed = ['frutas', 'verduras', 'proteinas', 'lacteos', 'abarrotes', 'limpieza', 'plasticos']
+  for (const nombre of seed) {
+    try {
+      await api.post('/gastos/categorias-articulo', { nombre })
+    } catch (err) {
+      // Ignorar duplicados en seed
+    }
+  }
+}
+
+const loadArticulos = async () => {
+  try {
+    const params: Record<string, string> = {}
+    if (selectedArticuloCategoria.value) {
+      params.categoria_id = String(selectedArticuloCategoria.value)
+    }
+    const response = await api.get('/gastos/articulos', { params })
+    articulosList.value = response.data
+  } catch (err: any) {
+    error.value = 'Error al cargar artículos'
+    console.error('Articulos error:', err)
+  }
+}
+
+const resetGastoForm = () => {
+  newGasto.value = {
+    proveedor_id: null,
+    tipo_gasto: 'directo',
+    metodo_pago: 'efectivo',
+    descripcion: '',
+    folio: '',
+    total_manual: null,
+    notas: '',
+    detalles: []
+  }
+}
+
+const addDetalleLine = () => {
+  newGasto.value.detalles.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 })
+}
+
+const removeDetalleLine = (index: number) => {
+  newGasto.value.detalles.splice(index, 1)
+}
+
+const getArticuloById = (articuloId: number | null) => {
+  return articulosList.value.find(articulo => articulo.id === articuloId)
+}
+
+const calcularSubtotal = (detalles: GastoDetalleForm[]) => {
+  return detalles.reduce((acc, detalle) => acc + detalle.cantidad * detalle.precio_unitario, 0)
+}
+
+const getGastoTotal = (gasto: GastoForm) => {
+  const subtotal = calcularSubtotal(gasto.detalles)
+  return gasto.total_manual !== null && gasto.total_manual !== undefined ? gasto.total_manual : subtotal
+}
+
+const formatCurrency = (value: number | string | null | undefined) => {
+  const parsed = Number(value ?? 0)
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : '0.00'
+}
+
 const addGasto = async () => {
   try {
-    await api.post('/gastos/', newGasto.value)
+    if (!newGasto.value.proveedor_id) {
+      error.value = 'Selecciona un proveedor'
+      return
+    }
+
+    if (newGasto.value.tipo_gasto !== 'nomina') {
+      const hasInvalidLine = newGasto.value.detalles.some(detalle => !detalle.articulo_id)
+      if (hasInvalidLine) {
+        error.value = 'Selecciona artículos en todas las líneas'
+        return
+      }
+      if (newGasto.value.detalles.length === 0) {
+        error.value = 'Agrega al menos un artículo'
+        return
+      }
+    }
+
+    if (newGasto.value.tipo_gasto === 'nomina' && newGasto.value.total_manual === null) {
+      error.value = 'Captura el total de nómina'
+      return
+    }
+
+    const payload = {
+      proveedor_id: Number(newGasto.value.proveedor_id),
+      tipo_gasto: newGasto.value.tipo_gasto,
+      metodo_pago: newGasto.value.metodo_pago,
+      descripcion: newGasto.value.descripcion || null,
+      folio: newGasto.value.folio || null,
+      total_manual: newGasto.value.total_manual,
+      notas: newGasto.value.notas || null,
+      detalles: newGasto.value.tipo_gasto === 'nomina'
+        ? []
+        : newGasto.value.detalles.map(detalle => ({
+            articulo_id: Number(detalle.articulo_id),
+            cantidad: detalle.cantidad,
+            precio_unitario: detalle.precio_unitario
+          }))
+    }
+
+    await api.post('/gastos/', payload)
     showAddGastoModal.value = false
-    newGasto.value = { descripcion: '', monto: 0, categoria: '' }
+    resetGastoForm()
     await loadGastosList()
     error.value = ''
   } catch (err: any) {
-    error.value = 'Error al crear gasto'
+    error.value = err?.response?.data?.detail || 'Error al crear gasto'
     console.error('Add gasto error:', err)
+  }
+}
+
+const toggleGastoExpanded = (gastoId: number) => {
+  if (expandedGastos.value.includes(gastoId)) {
+    expandedGastos.value = expandedGastos.value.filter(id => id !== gastoId)
+  } else {
+    expandedGastos.value.push(gastoId)
+  }
+}
+
+const isGastoExpanded = (gastoId: number) => expandedGastos.value.includes(gastoId)
+
+const openNewProveedor = () => {
+  editingProveedor.value = null
+  proveedorForm.value = { nombre: '', telefono: '', direccion: '', notas: '' }
+  showProveedorModal.value = true
+}
+
+const editProveedor = (proveedor: Proveedor) => {
+  editingProveedor.value = proveedor
+  proveedorForm.value = {
+    nombre: proveedor.nombre,
+    telefono: proveedor.telefono || '',
+    direccion: proveedor.direccion || '',
+    notas: proveedor.notas || ''
+  }
+  showProveedorModal.value = true
+}
+
+const saveProveedor = async () => {
+  try {
+    if (!proveedorForm.value.nombre) {
+      error.value = 'Nombre de proveedor requerido'
+      return
+    }
+    if (editingProveedor.value) {
+      await api.put(`/gastos/proveedores/${editingProveedor.value.id}`, proveedorForm.value)
+    } else {
+      await api.post('/gastos/proveedores', proveedorForm.value)
+    }
+    showProveedorModal.value = false
+    await loadProveedores()
+    error.value = ''
+  } catch (err: any) {
+    error.value = err?.response?.data?.detail || 'Error al guardar proveedor'
+    console.error('Proveedor error:', err)
+  }
+}
+
+const openNewArticulo = () => {
+  editingArticulo.value = null
+  articuloForm.value = { nombre: '', unidad: 'kg', costo_estandar: 0, categoria_id: null }
+  showArticuloModal.value = true
+}
+
+const editArticulo = (articulo: Articulo) => {
+  editingArticulo.value = articulo
+  articuloForm.value = {
+    nombre: articulo.nombre,
+    unidad: articulo.unidad,
+    costo_estandar: articulo.costo_estandar,
+    categoria_id: articulo.categoria_id
+  }
+  showArticuloModal.value = true
+}
+
+const saveArticulo = async () => {
+  try {
+    if (!articuloForm.value.nombre || !articuloForm.value.categoria_id) {
+      error.value = 'Nombre y categoría del artículo son requeridos'
+      return
+    }
+    const payload = {
+      ...articuloForm.value,
+      categoria_id: Number(articuloForm.value.categoria_id)
+    }
+    if (editingArticulo.value) {
+      await api.put(`/gastos/articulos/${editingArticulo.value.id}`, payload)
+    } else {
+      await api.post('/gastos/articulos', payload)
+    }
+    showArticuloModal.value = false
+    await loadArticulos()
+    error.value = ''
+  } catch (err: any) {
+    error.value = err?.response?.data?.detail || 'Error al guardar artículo'
+    console.error('Articulo error:', err)
+  }
+}
+
+const openNewCategoria = () => {
+  editingCategoria.value = null
+  categoriaForm.value = { nombre: '' }
+  showCategoriaModal.value = true
+}
+
+const editCategoria = (categoria: CategoriaArticulo) => {
+  editingCategoria.value = categoria
+  categoriaForm.value = { nombre: categoria.nombre }
+  showCategoriaModal.value = true
+}
+
+const saveCategoria = async () => {
+  try {
+    if (!categoriaForm.value.nombre) {
+      error.value = 'Nombre de categoría requerido'
+      return
+    }
+    if (editingCategoria.value) {
+      await api.put(`/gastos/categorias-articulo/${editingCategoria.value.id}`, categoriaForm.value)
+    } else {
+      await api.post('/gastos/categorias-articulo', categoriaForm.value)
+    }
+    showCategoriaModal.value = false
+    await loadCategoriasArticulo()
+    error.value = ''
+  } catch (err: any) {
+    error.value = err?.response?.data?.detail || 'Error al guardar categoría'
+    console.error('Categoria error:', err)
   }
 }
 
@@ -1817,15 +2546,19 @@ const loadConfig = () => {
 }
 
 // Cargar datos iniciales
-onMounted(async () => {
-  await Promise.all([
-    refreshDashboard(),
-    loadGastosList(),
-    loadPlatillosList(),
-    loadUsuariosList()
-  ])
-  
-  // Cargar configuración después de las otras operaciones
-  loadConfig()
-})
+  onMounted(async () => {
+    await Promise.all([
+      refreshDashboard(),
+      loadGastosList(),
+      loadProveedores(),
+      loadCategoriasArticulo(),
+      loadArticulos(),
+      loadPlatillosList(),
+      loadUsuariosList()
+    ])
+    
+    // Cargar configuración después de las otras operaciones
+    loadConfig()
+  })
+
 </script>

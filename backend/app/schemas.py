@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 # ===== SCHEMAS PARA USUARIOS =====
@@ -161,20 +161,99 @@ class DividirCuentaResponse(BaseModel):
 
 
 # ===== SCHEMAS PARA GASTOS =====
+class ProveedorBase(BaseModel):
+    nombre: str
+    telefono: Optional[str] = None
+    direccion: Optional[str] = None
+    notas: Optional[str] = None
+    sucursal_id: Optional[int] = None
+
+
+class ProveedorCreate(ProveedorBase):
+    pass
+
+
+class ProveedorResponse(ProveedorBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class CategoriaArticuloBase(BaseModel):
+    nombre: str
+
+
+class CategoriaArticuloCreate(CategoriaArticuloBase):
+    pass
+
+
+class CategoriaArticuloResponse(CategoriaArticuloBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ArticuloBase(BaseModel):
+    nombre: str
+    unidad: str
+    costo_estandar: Decimal = Field(..., ge=0)
+    categoria_id: int
+
+
+class ArticuloCreate(ArticuloBase):
+    pass
+
+
+class ArticuloResponse(ArticuloBase):
+    id: int
+    categoria: CategoriaArticuloResponse
+
+    class Config:
+        from_attributes = True
+
+
+class GastoDetalleBase(BaseModel):
+    articulo_id: int
+    cantidad: Decimal = Field(..., ge=0)
+    precio_unitario: Decimal = Field(..., ge=0)
+    subtotal_linea: Optional[Decimal] = None
+
+
+class GastoDetalleCreate(GastoDetalleBase):
+    pass
+
+
+class GastoDetalleResponse(GastoDetalleBase):
+    id: int
+    articulo: ArticuloResponse
+
+    class Config:
+        from_attributes = True
+
+
 class GastoBase(BaseModel):
-    descripcion: str
-    monto: Decimal
-    categoria: str
-    sucursal_id: int
+    proveedor_id: int
+    tipo_gasto: str
+    metodo_pago: str
+    descripcion: Optional[str] = None
+    folio: Optional[str] = None
+    total_manual: Optional[Decimal] = Field(None, ge=0)
+    notas: Optional[str] = None
 
 
 class GastoCreate(GastoBase):
-    pass
+    detalles: List[GastoDetalleCreate] = []
 
 
 class GastoResponse(GastoBase):
     id: int
+    subtotal: Decimal
+    total: Decimal
     fecha_gasto: datetime
+    proveedor: ProveedorResponse
+    detalles: List[GastoDetalleResponse]
 
     class Config:
         from_attributes = True
