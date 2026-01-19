@@ -161,6 +161,9 @@ VITE_API_URL=http://localhost:8000
 10. **Implement split-bill flow correctly** (admin-only): allow dividir cuenta (2-5) for `entregado` or `cuenta_solicitada`, mark original order as `dividido`, and create new orders in `cuenta_solicitada` with `Cuenta i/n` label; print one ticket per cuenta.
 11. **Manual status override (admin-only)**: from Caja "Pedidos Activos" allow admin to change `estado` via a dropdown on the status badge (no payment/propina changes); use this only for exceptional cases.
 12. **Manual beverage delivery (mesero/admin)**: bebidas (Platillo.categoria == `Bebidas`) are NOT auto-delivered; mesero/admin can mark beverage items as `entregado` from Mesero "Ver pedido actual". Caja shows item status read-only.
+13. **Ticket math and metadata**: ticket line items must use unit price (precio_cobrado / cantidad) to avoid inflated totals; include `Mesero`, `Hora llegada` (fecha_creacion), and `Hora salida` (fecha_pago, set when order becomes `pagado`).
+14. **KDS beverage filter**: cocina/KDS must hide Bebidas; if a pedido has only Bebidas it should not appear in KDS.
+
 
 ## 💸 Gestión de Gastos
 
@@ -197,7 +200,8 @@ VITE_API_URL=http://localhost:8000
 - `GET /turnos` - Listar turnos (filtros: fecha, estado, cajero)
 - `GET /turnos/{id}` - Detalle completo de turno
 - `PUT /turnos/{id}` - Editar turno (solo si está abierto)
-- `GET /turnos/{id}/resumen` - Resumen detallado para modal de cierre
+- `GET /turnos/{id}/resumen` - Resumen detallado para modal de cierre (incluye comandas cobradas efectivo, gastos del turno y total esperado en caja)
+
 
 **Modelos de Base de Datos:**
 - `Turno`: sucursal, cajero, fechas, totales, estado (abierto/cerrado)
