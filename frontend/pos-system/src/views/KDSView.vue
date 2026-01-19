@@ -16,10 +16,10 @@ const todasLasComandas = computed(() => {
   return pedidosStore.pedidosKDS
     .filter(p => ['pendiente', 'preparando'].includes(p.estado))
     .map(p => {
-      // Filtrar artículos: mostrar pendiente, preparando, listo. Ocultar entregado
-      // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
+      // Filtrar artículos: ocultar entregado y ocultar Bebidas
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
-        ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
+        ['pendiente', 'preparando', 'listo'].includes(a.estado_item) &&
+        a.platillo?.categoria !== 'Bebidas'
       )
       
       return {
@@ -35,13 +35,13 @@ const todasLasComandas = computed(() => {
 
 const totalPedidosPendientes = computed(() => {
   // Contar pedidos pendientes y preparando que tienen artículos visibles
-  // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
+  // Ocultar bebidas y artículos entregados
   return pedidosStore.pedidosKDS
     .filter(p => ['pendiente', 'preparando'].includes(p.estado))
     .filter(p => {
-      // Solo contar pedidos que tienen artículos no entregados
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
-        ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
+        ['pendiente', 'preparando', 'listo'].includes(a.estado_item) &&
+        a.platillo?.categoria !== 'Bebidas'
       )
       return articulosVisibles.length > 0
     }).length

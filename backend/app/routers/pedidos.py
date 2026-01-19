@@ -194,7 +194,8 @@ async def create_pedido(
                             "estado_item": a.estado_item,
                             "platillo": {
                                 "nombre": a.platillo.nombre,
-                                "kds_name": a.platillo.kds_name
+                                "kds_name": a.platillo.kds_name,
+                                "categoria": a.platillo.categoria
                             } if a.platillo else None
                         } for a in pedido.articulos_pedido
                     ]
@@ -458,6 +459,7 @@ async def dividir_cuenta(
                     "platillo": {
                         "nombre": a.platillo.nombre,
                         "kds_name": a.platillo.kds_name,
+                        "categoria": a.platillo.categoria,
                     }
                     if a.platillo
                     else None,
@@ -564,11 +566,11 @@ async def update_pedido(
         )
     
     # Validar estado
-        if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
-            )
+    if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
+        )
     
     # Validar propinas (no negativas)
     if data.propina_efectivo is not None and data.propina_efectivo < 0:
@@ -585,6 +587,10 @@ async def update_pedido(
     # Actualizar estado
     old_estado = pedido.estado
     pedido.estado = data.estado
+
+    # Registrar fecha de pago cuando se marca como pagado
+    if data.estado == "pagado" and pedido.fecha_pago is None:
+        pedido.fecha_pago = datetime.now(pytz.timezone(settings.TIMEZONE)).replace(tzinfo=None)
     
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
     # EXCEPTO aquellos que ya están "entregado" (bebidas)
@@ -636,10 +642,11 @@ async def update_pedido(
                         "precio_cobrado": float(a.precio_cobrado),
                         "modificaciones": a.modificaciones,
                         "estado_item": a.estado_item,
-                        "platillo": {
-                            "nombre": a.platillo.nombre,
-                            "kds_name": a.platillo.kds_name
-                        } if a.platillo else None
+                    "platillo": {
+                        "nombre": a.platillo.nombre,
+                        "kds_name": a.platillo.kds_name,
+                        "categoria": a.platillo.categoria
+                    } if a.platillo else None
                     } for a in pedido.articulos_pedido
                 ]
             }
@@ -734,10 +741,11 @@ async def update_articulo_estado(
                         "precio_cobrado": float(a.precio_cobrado),
                         "modificaciones": a.modificaciones,
                         "estado_item": a.estado_item,
-                        "platillo": {
-                            "nombre": a.platillo.nombre,
-                            "kds_name": a.platillo.kds_name
-                        } if a.platillo else None
+                    "platillo": {
+                        "nombre": a.platillo.nombre,
+                        "kds_name": a.platillo.kds_name,
+                        "categoria": a.platillo.categoria
+                    } if a.platillo else None
                     } for a in pedido.articulos_pedido
                 ]
             }
@@ -949,10 +957,11 @@ async def agregar_articulos_pedido(
                         "precio_cobrado": float(a.precio_cobrado),
                         "modificaciones": a.modificaciones,
                         "estado_item": a.estado_item,
-                        "platillo": {
-                            "nombre": a.platillo.nombre,
-                            "kds_name": a.platillo.kds_name
-                        } if a.platillo else None
+                    "platillo": {
+                        "nombre": a.platillo.nombre,
+                        "kds_name": a.platillo.kds_name,
+                        "categoria": a.platillo.categoria
+                    } if a.platillo else None
                     } for a in nuevos_articulos
                 ]
             }

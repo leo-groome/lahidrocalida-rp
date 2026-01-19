@@ -91,6 +91,8 @@ const turnoActivo = ref<Turno | null>(null)
 const showTurnoModal = ref(false)
 const modalTipo = ref<'inicio' | 'cierre'>('inicio')
 const loadingTurno = ref(false)
+const reporteTurno = ref<any>(null)
+
 
 // Estados para calculadora de efectivo
 const showEfectivoCalculator = ref(false)
@@ -1010,11 +1012,13 @@ const cargarTurnoActivo = async () => {
   }
 }
 
-const manejarClickTurno = () => {
+const manejarClickTurno = async () => {
   if (tieneTurnoActivo.value) {
     modalTipo.value = 'cierre'
+    reporteTurno.value = await obtenerReporteTurno()
   } else {
     modalTipo.value = 'inicio'
+    reporteTurno.value = null
   }
   showTurnoModal.value = true
 }
@@ -1065,6 +1069,17 @@ const cerrarTurno = async (conteoFinal: any) => {
     showErrorNotification(error.response?.data?.detail || 'Error al cerrar turno')
   } finally {
     loadingTurno.value = false
+  }
+}
+
+const obtenerReporteTurno = async () => {
+  if (!turnoActivo.value) return null
+  try {
+    const res = await api.get(`/turnos/${turnoActivo.value.id}/resumen`)
+    return res.data
+  } catch (e: any) {
+    console.error('Error obteniendo reporte de turno:', e)
+    return null
   }
 }
 </script>
@@ -2227,6 +2242,7 @@ const cerrarTurno = async (conteoFinal: any) => {
     <TurnoModal
       v-if="showTurnoModal"
       :tipo="modalTipo"
+      :reporte-turno="modalTipo === 'cierre' ? reporteTurno : undefined"
       :denominaciones-iniciales="modalTipo === 'cierre' && turnoActivo ? turnoActivo.denominaciones_iniciales : undefined"
       @cancelar="showTurnoModal = false"
       @confirmar="modalTipo === 'inicio' ? iniciarTurno($event) : cerrarTurno($event)"

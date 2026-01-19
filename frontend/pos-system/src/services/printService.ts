@@ -10,6 +10,9 @@ export interface PrintTicketData {
   mesa?: string
   cuenta_label?: string
   nombre_cliente?: string
+  mesero_nombre?: string
+  fecha_llegada?: string
+  fecha_salida?: string
   articulos: Array<{
     cantidad: number
     nombre: string
@@ -55,17 +58,33 @@ class PrintService {
       ? (pedido.nombre_cliente || '').replace(/\sCuenta\s\d+\/\d+\s*$/, '').trim() || undefined
       : (pedido.nombre_cliente || undefined)
 
+    const fechaFmt = (iso?: string | null) => {
+      if (!iso) return undefined
+      const d = new Date(iso)
+      const pad = (n: number) => String(n).padStart(2, '0')
+      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+    }
+
     return {
       numero_display: pedido.numero_display,
       mesa: pedido.mesa || undefined,
       cuenta_label: hasMesa ? cuentaLabel : undefined,
       nombre_cliente: nombreClienteParaTicket,
-      articulos: (pedido.articulos_pedido || []).map(articulo => ({
-        cantidad: articulo.cantidad,
-        nombre: articulo.platillo?.nombre || 'Producto',
-        precio: Number(articulo.precio_cobrado),
-        modificaciones: articulo.modificaciones
-      })),
+      mesero_nombre: (pedido as any).usuario_nombre || undefined,
+      fecha_llegada: fechaFmt(pedido.fecha_creacion),
+      fecha_salida: fechaFmt((pedido as any).fecha_pago || null),
+      articulos: (pedido.articulos_pedido || []).map(articulo => {
+        const totalLinea = Number(articulo.precio_cobrado)
+        const qty = Math.max(Number(articulo.cantidad || 0), 1)
+        const unit = totalLinea / qty
+
+        return {
+          cantidad: articulo.cantidad,
+          nombre: articulo.platillo?.nombre || 'Producto',
+          precio: unit,
+          modificaciones: articulo.modificaciones
+        }
+      }),
       total: Number(pedido.total)
     }
   }
@@ -299,6 +318,9 @@ class PrintService {
         <div><strong>Fecha:</strong> ${fecha}</div>
         ${ticketData.mesa ? `<div><strong>Mesa:</strong> ${ticketData.mesa}${ticketData.cuenta_label ? ` ${ticketData.cuenta_label}` : ''}</div>` : ''}
         ${ticketData.nombre_cliente ? `<div><strong>Cliente:</strong> ${ticketData.nombre_cliente}</div>` : ''}
+        ${ticketData.mesero_nombre ? `<div><strong>Mesero:</strong> ${ticketData.mesero_nombre}</div>` : ''}
+        ${ticketData.fecha_llegada ? `<div><strong>Hora llegada:</strong> ${ticketData.fecha_llegada}</div>` : ''}
+        ${ticketData.fecha_salida ? `<div><strong>Hora salida:</strong> ${ticketData.fecha_salida}</div>` : ''}
         
         <div class="line" style="border-bottom: 1px dashed #000; margin: 8px 0; width: 100%;"></div>
         
@@ -347,6 +369,9 @@ class PrintService {
     console.log(`Fecha: ${new Date().toLocaleString('es-MX')}`)
     if (ticketData.mesa) console.log(`Mesa: ${ticketData.mesa}`)
     if (ticketData.nombre_cliente) console.log(`Cliente: ${ticketData.nombre_cliente}`)
+    if (ticketData.mesero_nombre) console.log(`Mesero: ${ticketData.mesero_nombre}`)
+    if (ticketData.fecha_llegada) console.log(`Hora llegada: ${ticketData.fecha_llegada}`)
+    if (ticketData.fecha_salida) console.log(`Hora salida: ${ticketData.fecha_salida}`)
     console.log('-'.repeat(50))
     
     ticketData.articulos.forEach((articulo, i) => {

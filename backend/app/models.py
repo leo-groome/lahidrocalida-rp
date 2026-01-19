@@ -102,6 +102,7 @@ class Pedido(Base):
     propina_tarjeta = Column(DECIMAL(8, 2), default=0)
     tipo_orden = Column(String(20), default="aqui")  # 'aqui', 'llevar', 'uber_eats'
     fecha_creacion = Column(DateTime, default=get_local_datetime)
+    fecha_pago = Column(DateTime, nullable=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
 

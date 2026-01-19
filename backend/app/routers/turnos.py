@@ -6,7 +6,7 @@ import pytz
 from app.auth import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models import Pedido, Sucursal, Turno, TurnoDenominacion, Usuario
+from app.models import Gasto, Pedido, Sucursal, Turno, TurnoDenominacion, Usuario
 from app.schemas import (
     ConteoRequest,
     DenominacionBase,
@@ -857,26 +857,81 @@ def obtener_resumen_turno(
         "observaciones": turno.observaciones,
     }
 
-    # Si el turno está abierto, calcular ventas hasta ahora
-    if turno.estado == "abierto":
-        fecha_actual = datetime.now(pytz.timezone(settings.TIMEZONE)).replace(
-            tzinfo=None
-        )
-        ventas_info = _calcular_ventas_efectivo(
-            db=db,
-            sucursal_id=turno.sucursal_id,
-            fecha_apertura=turno.fecha_apertura,
-            fecha_cierre=fecha_actual,
-        )
+    # Determinar rango para reporte
+    tz = pytz.timezone(settings.TIMEZONE)
+    fecha_inicio = turno.fecha_apertura
+    fecha_fin = (
+        datetime.now(tz).replace(tzinfo=None)
+        if turno.estado == "abierto"
+        else (turno.fecha_cierre or datetime.now(tz).replace(tzinfo=None))
+    )
 
-        resumen["ventas_hasta_ahora"] = {
-            "ventas_efectivo": float(ventas_info["ventas_efectivo"]),
-            "propinas_efectivo": float(ventas_info["propinas_efectivo"]),
-            "total_esperado": float(
-                turno.total_inicial
-                + ventas_info["ventas_efectivo"]
-                + ventas_info["propinas_efectivo"]
-            ),
+    # Ventas y propinas en efectivo en el rango
+    ventas_info = _calcular_ventas_efectivo(
+        db=db,
+        sucursal_id=turno.sucursal_id,
+        fecha_apertura=fecha_inicio,
+        fecha_cierre=fecha_fin,
+    )
+
+    # Gastos en el rango (se asume efectivo)
+    gastos_total = (
+        db.query(func.sum(Gasto.monto))
+        .filter(
+            Gasto.sucursal_id == turno.sucursal_id,
+            Gasto.fecha_gasto >= fecha_inicio,
+            Gasto.fecha_gasto <= fecha_fin,
+        )
+        .scalar()
+        or Decimal("0")
+    )
+
+    # Comandas cobradas en efectivo durante el turno (por fecha_pago)
+    comandas = (
+        db.query(Pedido)
+        .options(selectinload(Pedido.usuario))
+        .filter(
+            Pedido.sucursal_id == turno.sucursal_id,
+            Pedido.estado == "pagado",
+            Pedido.metodo_pago == "efectivo",
+            Pedido.fecha_pago.isnot(None),
+            Pedido.fecha_pago >= fecha_inicio,
+            Pedido.fecha_pago <= fecha_fin,
+        )
+        .order_by(Pedido.fecha_pago.asc())
+        .all()
+    )
+
+    resumen["comandas_cobradas"] = [
+        {
+            "id": p.id,
+            "numero_display": p.numero_display,
+            "mesa": p.mesa,
+            "nombre_cliente": p.nombre_cliente,
+            "total": float(p.total),
+            "propina_efectivo": float(p.propina_efectivo),
+            "fecha_pago": p.fecha_pago.isoformat() if p.fecha_pago else None,
+            "usuario_nombre": p.usuario.nombre if p.usuario else None,
         }
+        for p in comandas
+    ]
+
+    resumen["gastos_turno"] = float(gastos_total)
+
+    total_esperado = (
+        Decimal(str(turno.total_inicial))
+        + ventas_info["ventas_efectivo"]
+        + ventas_info["propinas_efectivo"]
+        - gastos_total
+    )
+
+    resumen["ventas_hasta_ahora"] = {
+        "ventas_efectivo": float(ventas_info["ventas_efectivo"]),
+        "propinas_efectivo": float(ventas_info["propinas_efectivo"]),
+        "gastos": float(gastos_total),
+        "total_esperado": float(total_esperado),
+    }
 
     return resumen
+
+

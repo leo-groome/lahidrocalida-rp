@@ -135,6 +135,8 @@ class AgregarArticulosRequest(BaseModel):
 class PedidoResponse(PedidoBase):
     id: int
     fecha_creacion: datetime
+    fecha_pago: Optional[datetime] = None
+    usuario_nombre: Optional[str] = None
     articulos_pedido: List[ArticuloPedidoResponse]
 
     class Config:

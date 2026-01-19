@@ -33,7 +33,56 @@
           </p>
         </div>
 
-        <!-- Tabla de denominaciones -->
+         <!-- Reporte (solo cierre) -->
+         <div v-if="tipo === 'cierre' && reporteTurno" class="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50">
+           <div class="flex items-center justify-between mb-2">
+             <div class="font-bold text-amber-900">📋 Reporte del turno (efectivo)</div>
+             <div class="text-xs text-amber-800">Previo al cierre</div>
+           </div>
+
+           <div class="grid grid-cols-2 gap-2 text-xs">
+             <div class="bg-white rounded-md p-2 border border-amber-100">
+               <div class="text-gray-600">Ventas efectivo</div>
+               <div class="font-black text-amber-900">$ {{ (reporteTurno.ventas_hasta_ahora?.ventas_efectivo ?? 0).toFixed(2) }}</div>
+             </div>
+             <div class="bg-white rounded-md p-2 border border-amber-100">
+               <div class="text-gray-600">Propinas efectivo</div>
+               <div class="font-black text-amber-900">$ {{ (reporteTurno.ventas_hasta_ahora?.propinas_efectivo ?? 0).toFixed(2) }}</div>
+             </div>
+             <div class="bg-white rounded-md p-2 border border-amber-100">
+               <div class="text-gray-600">Gastos (resta)</div>
+               <div class="font-black text-red-700">- $ {{ (reporteTurno.ventas_hasta_ahora?.gastos ?? reporteTurno.gastos_turno ?? 0).toFixed(2) }}</div>
+             </div>
+             <div class="bg-white rounded-md p-2 border border-amber-100">
+               <div class="text-gray-600">Total esperado</div>
+               <div class="font-black text-green-800">$ {{ (reporteTurno.ventas_hasta_ahora?.total_esperado ?? 0).toFixed(2) }}</div>
+             </div>
+           </div>
+
+           <div class="mt-3">
+             <div class="text-xs font-bold text-amber-900 mb-2">💳 Comandas cobradas (efectivo): {{ (reporteTurno.comandas_cobradas || []).length }}</div>
+             <div class="max-h-40 overflow-y-auto bg-white rounded-md border border-amber-100">
+               <table class="w-full text-[11px]">
+                 <thead class="sticky top-0 bg-amber-50">
+                   <tr>
+                     <th class="text-left px-2 py-1">Pedido</th>
+                     <th class="text-left px-2 py-1">Mesa/Cliente</th>
+                     <th class="text-right px-2 py-1">Total</th>
+                   </tr>
+                 </thead>
+                 <tbody>
+                   <tr v-for="p in (reporteTurno.comandas_cobradas || [])" :key="p.id" class="border-t">
+                     <td class="px-2 py-1">#{{ p.numero_display }}</td>
+                     <td class="px-2 py-1">{{ p.mesa ? `Mesa ${p.mesa}` : (p.nombre_cliente || '-') }}</td>
+                     <td class="px-2 py-1 text-right font-bold">$ {{ Number(p.total || 0).toFixed(2) }}</td>
+                   </tr>
+                 </tbody>
+               </table>
+             </div>
+           </div>
+         </div>
+
+         <!-- Tabla de denominaciones -->
         <div class="overflow-x-auto">
           <table class="w-full text-xs">
             <thead>
@@ -185,6 +234,7 @@ const props = defineProps<{
     denominacion: number
     cantidad: number
   }>
+  reporteTurno?: any
 }>()
 
 // Definir emits

@@ -23,7 +23,7 @@ export interface ArticuloPedidoResponse {
   cantidad: number;
   precio_cobrado: string | number;
   modificaciones?: string | null;
-  estado_item: "pendiente" | "listo";
+  estado_item: "pendiente" | "preparando" | "listo" | "entregado";
   platillo?: Platillo;
 }
 
@@ -55,6 +55,8 @@ export interface PedidoResponse {
   nombre_cliente: string | null;
   mesa: string | null;
   total: string | number;
+  usuario_nombre?: string | null;
+  fecha_pago?: string | null;
   estado:
     | "pendiente"
     | "preparando"

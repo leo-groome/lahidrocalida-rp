@@ -12,7 +12,7 @@ interface Articulo {
   precio_cobrado: string | number
   modificaciones?: string | null
   estado_item: string
-  platillo?: { nombre: string; kds_name?: string | null }
+  platillo?: { nombre: string; kds_name?: string | null; categoria?: string | null }
 }
 
 interface Pedido {
@@ -38,10 +38,10 @@ const pedidosActivos = computed(() => {
   return pedidosStore.pedidosKDS
     .filter(p => ['pendiente', 'preparando', 'listo', 'entregado'].includes(p.estado))
     .map(p => {
-      // Filtrar artículos: mostrar pendiente, preparando, listo. Ocultar entregado
-      // Las bebidas ya están marcadas como "entregado" automáticamente en el backend
+      // Filtrar artículos: ocultar entregado y ocultar Bebidas
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
-        ['pendiente', 'preparando', 'listo'].includes(a.estado_item)
+        ['pendiente', 'preparando', 'listo'].includes(a.estado_item) &&
+        a.platillo?.categoria !== 'Bebidas'
       )
       
       return {

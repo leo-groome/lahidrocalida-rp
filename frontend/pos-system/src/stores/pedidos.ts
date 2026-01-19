@@ -377,12 +377,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       })
       console.log(`✅ Artículo actualizado via REST: ${articuloId} → ${nuevoEstado}`)
       
-      // El WebSocket debería notificar automáticamente
-      if (!wsConnected.value) {
-        // Buscar el pedido y actualizarlo - pero sin loading general
-        console.log('⚠️ WebSocket desconectado, actualizando datos...')
-        await loadInitialData()
-      }
+      // Refrescar datos siempre para que todas las pantallas se actualicen
+      await loadInitialData()
       
       return true
     } catch (e: any) {

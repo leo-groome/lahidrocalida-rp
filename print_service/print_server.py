@@ -90,6 +90,18 @@ def generate_escpos_commands(ticket_data):
     if ticket_data.get('nombre_cliente'):
         cliente_line = f"Cliente: {ticket_data['nombre_cliente']}"
         commands.append(cliente_line + LINE_FEED)
+
+    if ticket_data.get('mesero_nombre'):
+        mesero_line = f"Mesero: {ticket_data['mesero_nombre']}"
+        commands.append(mesero_line + LINE_FEED)
+
+    if ticket_data.get('fecha_llegada'):
+        llegada_line = f"Hora llegada: {ticket_data['fecha_llegada']}"
+        commands.append(llegada_line + LINE_FEED)
+
+    if ticket_data.get('fecha_salida'):
+        salida_line = f"Hora salida: {ticket_data['fecha_salida']}"
+        commands.append(salida_line + LINE_FEED)
     
     commands.append(SINGLE_LINE + LINE_FEED)
     commands.append(LINE_FEED)
