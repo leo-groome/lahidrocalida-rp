@@ -37,11 +37,6 @@ const estadoOptions: Array<{ value: PedidoResponse['estado']; label: string }> =
 
 const canManualChangeEstado = computed(() => auth.user?.rol === 'administrador')
 
-const canManualChangeArticulo = computed(() => {
-  const rol = auth.user?.rol
-  return rol === 'administrador' || rol === 'cajero'
-})
-
 const getArticuloEstadoLabel = (estadoItem: string) => {
   const labels: Record<string, string> = {
     pendiente: '🕒 Pendiente',
@@ -60,14 +55,6 @@ const getArticuloEstadoClass = (estadoItem: string) => {
     entregado: 'text-blue-700'
   }
   return classes[estadoItem] || 'text-gray-600'
-}
-
-const marcarArticuloEntregado = async (articuloId: number) => {
-  if (!canManualChangeArticulo.value) return
-  const ok = await pedidosStore.updateArticuloEstado(articuloId, 'entregado')
-  if (ok) {
-    showSuccessNotification('Artículo marcado como entregado')
-  }
 }
 
 
@@ -1963,23 +1950,12 @@ const cerrarTurno = async (conteoFinal: any) => {
                   <div v-if="articulo.modificaciones" class="text-gray-500 text-xs mt-1">
                     💬 {{ articulo.modificaciones }}
                   </div>
-                  <div class="text-xs text-gray-400 mt-1 flex items-center justify-between gap-2">
-                    <div>
-                      Estado:
-                      <span :class="getArticuloEstadoClass(articulo.estado_item)">
-                        {{ getArticuloEstadoLabel(articulo.estado_item) }}
-                      </span>
-                    </div>
-
-                    <button
-                      v-if="canManualChangeArticulo && articulo.estado_item !== 'entregado'"
-                      @click.stop="marcarArticuloEntregado(articulo.id)"
-                      class="px-2 py-1 text-[11px] font-bold bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md transition-all"
-                      title="Marcar este artículo como entregado"
-                    >
-                      Marcar entregado
-                    </button>
-                  </div>
+                   <div class="text-xs text-gray-400 mt-1">
+                     Estado:
+                     <span :class="getArticuloEstadoClass(articulo.estado_item)">
+                       {{ getArticuloEstadoLabel(articulo.estado_item) }}
+                     </span>
+                   </div>
                 </div>
                 <div class="text-center px-3">
                   <span class="text-gray-600 font-medium">x{{ articulo.cantidad }}</span>

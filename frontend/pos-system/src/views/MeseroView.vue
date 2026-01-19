@@ -49,6 +49,42 @@ const showVerPedidoModal = ref(false)
 const pedidoActual = ref<any>(null)
 const articulosEditables = ref<any[]>([])
 
+const getArticuloEstadoLabel = (estadoItem: string) => {
+  const labels: Record<string, string> = {
+    pendiente: '🕒 Pendiente',
+    preparando: '⏳ Preparando',
+    listo: '✅ Listo',
+    entregado: '📦 Entregado'
+  }
+  return labels[estadoItem] || estadoItem
+}
+
+const getArticuloEstadoClass = (estadoItem: string) => {
+  const classes: Record<string, string> = {
+    pendiente: 'text-gray-600',
+    preparando: 'text-orange-600',
+    listo: 'text-green-700',
+    entregado: 'text-blue-700'
+  }
+  return classes[estadoItem] || 'text-gray-600'
+}
+
+const esBebida = (articulo: any) => {
+  return articulo?.platillo?.categoria === 'Bebidas'
+}
+
+const marcarBebidaEntregada = async (articuloId: number) => {
+  const rol = auth.user?.rol
+  if (rol !== 'mesero' && rol !== 'administrador') return
+
+  const ok = await pedidosStore.updateArticuloEstado(articuloId, 'entregado')
+  if (ok) {
+    showSuccessNotification('Bebida marcada como entregada')
+    actualizarModalPedido()
+  }
+}
+
+
 // Control del modal "pedidos actuales"
 const showPedidosActualesModal = ref(false)
 
@@ -1651,9 +1687,22 @@ const guardarCambiosPedido = async () => {
                   </button>
                 </div>
                 
-                <!-- Solo mostrar cantidad si no es editable -->
-                <div v-else class="text-lg font-bold text-gray-700">
-                  {{ articulo.cantidad }}x
+                <!-- Estado + acciones (cuando no es editable) -->
+                <div v-else class="text-right">
+                  <div class="text-xs font-bold" :class="getArticuloEstadoClass(articulo.estado_item)">
+                    {{ getArticuloEstadoLabel(articulo.estado_item) }}
+                  </div>
+                  <button
+                    v-if="esBebida(articulo) && articulo.estado_item !== 'entregado' && (auth.user?.rol === 'mesero' || auth.user?.rol === 'administrador')"
+                    @click="marcarBebidaEntregada(articulo.id)"
+                    class="mt-2 px-2 py-1 rounded-md bg-blue-100 hover:bg-blue-200 text-blue-800 text-[11px] font-bold border border-blue-200"
+                  >
+                    Marcar entregada
+                  </button>
+
+                  <div class="text-lg font-bold text-gray-700 mt-2">
+                    {{ articulo.cantidad }}x
+                  </div>
                 </div>
               </div>
               

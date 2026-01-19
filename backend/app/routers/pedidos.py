@@ -153,16 +153,16 @@ async def create_pedido(
                 # Obtener el platillo para verificar si es bebida
                 platillo = db.query(Platillo).filter(Platillo.id == articulo_data['platillo_id']).first()
                 
-                # Si es bebida, marcarla como "entregado" automáticamente
-                estado_inicial = "entregado" if platillo and platillo.categoria == "Bebidas" else "pendiente"
-                
+                # Todos los items inician en pendiente; bebidas se marcan manualmente por mesero si aplica
+                estado_inicial = "pendiente"
+
                 articulo = ArticuloPedido(
                     pedido_id=pedido.id,
                     platillo_id=articulo_data['platillo_id'],
                     cantidad=articulo_data['cantidad'],
                     precio_cobrado=articulo_data['precio_cobrado'],
                     modificaciones=articulo_data['modificaciones'],
-                    estado_item=estado_inicial  # Bebidas = "entregado", resto = "pendiente"
+                    estado_item=estado_inicial
                 )
                 db.add(articulo)
 
@@ -668,10 +668,10 @@ async def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
     # Validar permisos
-    if current_user.rol not in ["mesero", "cocina", "administrador", "cajero"]:
+    if current_user.rol not in ["mesero", "cocina", "administrador"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo meseros, cocina, cajeros y administradores pueden actualizar items"
+            detail="Solo meseros, cocina y administradores pueden actualizar items"
         )
     
     # Obtener el artículo
@@ -865,16 +865,16 @@ async def agregar_articulos_pedido(
         # Obtener el platillo para verificar si es bebida
         platillo = db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
         
-        # Si es bebida, marcarla como "entregado" automáticamente
-        estado_inicial = "entregado" if platillo and platillo.categoria == "Bebidas" else "pendiente"
-        
+        # Todos los items inician en pendiente; bebidas se marcan manualmente por mesero si aplica
+        estado_inicial = "pendiente"
+
         articulo = ArticuloPedido(
             pedido_id=pedido.id,
             platillo_id=articulo_data["platillo_id"],
             cantidad=articulo_data["cantidad"],
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
-            estado_item=estado_inicial  # Bebidas = "entregado", resto = "pendiente"
+            estado_item=estado_inicial
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)
