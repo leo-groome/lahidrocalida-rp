@@ -1,7 +1,17 @@
 from app import websocket_routes
 from app.db.session import engine, get_db
 from app.models import Base
-from app.routers import admin, auth, gastos, pedidos, products, propinas, reportes, turnos, users
+from app.routers import (
+    admin,
+    auth,
+    gastos,
+    pedidos,
+    products,
+    propinas,
+    reportes,
+    turnos,
+    users,
+)
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -18,7 +28,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Para servidor de desarrollo Vite local
         "http://192.168.2.86:5173",  # URL del frontend actual
-        "http://lahidrocalida.vercel.app",
+        "https://lahidrocalida.vercel.app",
         # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
     ],
     allow_credentials=True,
