@@ -367,3 +367,4 @@ target/
 .vercel
 .netlify
 opencode.json
+frontend/pos-system/package-lock.json

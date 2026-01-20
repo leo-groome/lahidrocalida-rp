@@ -194,9 +194,8 @@
         <!-- Botones de acción -->
         <div class="mt-3 space-y-2">
           <button
-            @click="confirmar"
-            :disabled="totalItems === 0"
-            class="w-full py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 disabled:from-gray-400 disabled:to-gray-500 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed flex items-center justify-center gap-2 text-sm"
+            @click="onConfirmClick"
+            class="w-full py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
           >
             <span v-if="tipo === 'inicio'">✅</span>
             <span v-else>📊</span>
@@ -218,6 +217,44 @@
           >
             Limpiar todo
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirmación: total $0.00 -->
+    <div
+      v-if="showConfirmCero"
+      class="fixed inset-0 flex items-center justify-center z-[80] p-4"
+      @click.self="showConfirmCero = false"
+    >
+      <div class="bg-white rounded-xl max-w-sm w-full shadow-2xl border-2 border-amber-200">
+        <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-4 rounded-t-xl">
+          <div class="text-white font-bold text-lg">Confirmar $0.00</div>
+          <div class="text-amber-100 text-sm mt-1">
+            {{ tipo === 'inicio' ? 'Iniciar' : 'Cerrar' }} turno con total en cero
+          </div>
+        </div>
+
+        <div class="p-5">
+          <div class="text-sm text-gray-700">
+            Estas a punto de <span class="font-bold">{{ tipo === 'inicio' ? 'iniciar' : 'cerrar' }}</span> el turno con <span class="font-bold">$0.00</span>.
+            Confirma si es correcto.
+          </div>
+
+          <div class="mt-5 flex gap-3 justify-end">
+            <button
+              @click="showConfirmCero = false"
+              class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg transition-all"
+            >
+              Cancelar
+            </button>
+            <button
+              @click="confirmarCero"
+              class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-all"
+            >
+              Si, {{ tipo === 'inicio' ? 'iniciar' : 'cerrar' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -322,6 +359,21 @@ const validarInput = (valor: number) => {
 
 const limpiarTodo = () => {
   inicializarConteos()
+}
+
+const showConfirmCero = ref(false)
+
+const onConfirmClick = () => {
+  if (totalItems.value === 0) {
+    showConfirmCero.value = true
+    return
+  }
+  confirmar()
+}
+
+const confirmarCero = () => {
+  showConfirmCero.value = false
+  confirmar()
 }
 
 const confirmar = () => {

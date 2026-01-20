@@ -102,3 +102,55 @@ export interface Turno {
   usuario_nombre: string | null;
   sucursal_nombre: string | null;
 }
+
+export interface ReporteDiaTicket {
+  id: number;
+  numero_display: string;
+  mesa: string | null;
+  nombre_cliente: string | null;
+  estado: "pagado" | "cancelado" | string;
+  metodo_pago: "efectivo" | "tarjeta" | "transferencia" | null;
+  total: number;
+  propina_efectivo: number;
+  propina_tarjeta: number;
+  propina_total: number;
+  fecha_pago: string | null;
+  fecha_creacion: string | null;
+  fecha_evento: string | null;
+  mesero_nombre: string | null;
+}
+
+export interface ReporteDiaAnalytics {
+  fecha: string;
+  total_pedidos: number;
+  promedio_ticket: number;
+  cancelaciones: number;
+  ingresos: {
+    efectivo: number;
+    tarjeta: number;
+    transferencia: number;
+    total: number;
+  };
+  propinas: {
+    efectivo: number;
+    tarjeta: number;
+    total: number;
+  };
+  ventas_por_hora: Array<{
+    hora: number;
+    cantidad: number;
+    total: number;
+  }>;
+  tipos_orden: Array<{
+    tipo: string;
+    cantidad: number;
+  }>;
+  estado_actual: Array<{
+    estado: string;
+    cantidad: number;
+  }>;
+  productos_mas_vendidos: Array<{
+    nombre: string;
+    cantidad: number;
+  }>;
+}

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, cast
 from sqlalchemy import Integer as SAInteger
 from typing import List, Optional
@@ -297,7 +297,12 @@ def get_pedido(
     Cajeros solo pueden ver pedidos de su sucursal.
     Administradores pueden ver cualquier pedido.
     """
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    pedido = (
+        db.query(Pedido)
+        .options(joinedload(Pedido.articulos_pedido).joinedload(ArticuloPedido.platillo))
+        .filter(Pedido.id == pedido_id)
+        .first()
+    )
     
     if not pedido:
         raise HTTPException(
