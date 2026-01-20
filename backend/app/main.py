@@ -18,6 +18,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Para servidor de desarrollo Vite local
         "http://192.168.2.86:5173",  # URL del frontend actual
+        "http://lahidrocalida.vercel.app",
         # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
     ],
     allow_credentials=True,
