@@ -260,6 +260,13 @@ VITE_API_URL=http://localhost:8000
 - Scroll vertical solo en contenido, no en todo el modal
 - Espacios entre secciones optimizados
 
+**Mejoras en Reporte del Día - CajaView:**
+- Eliminada la caja inicial con 3 recuadros (propina efectivo, tarjeta, total) en la sección "Reporte del dia".
+- Agregada tabla completa "Pedidos del Día" desde AdminView.vue a la sección de analíticas, incluyendo filtros por método de pago, ordenamiento por fecha, y resumen estadístico.
+- Conectadas las analíticas al WebSocket para actualizaciones en tiempo real, eliminando el polling automático de 60 segundos.
+- Actualizado endpoint backend `/reportes/dia/tickets` para incluir campo `tipo_orden` en la respuesta.
+- Actualizadas interfaces TypeScript para incluir `tipo_orden` opcional en `ReporteDiaTicket`.
+
 ---
 
 ## 📚 Key Files Reference

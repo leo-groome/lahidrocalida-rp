@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
+import { websocketService } from '@/services/websocket'
 import type { PedidoResponse, ReporteDiaAnalytics, ReporteDiaTicket, Turno } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
 import TurnoModal from '@/components/TurnoModal.vue'
@@ -140,6 +141,89 @@ const savingPropinaManual = ref(false)
 const searchQuery = ref<string>('')
 const showMesaMap = ref(false)
 
+// Estados para tabla de pedidos del día en analíticas
+const selectedPaymentMethod = ref<'todos' | 'efectivo' | 'tarjeta' | 'transferencia'>('todos')
+const sortDescending = ref(true)
+
+const filteredPedidosDelDia = computed(() => {
+  if (!ticketsDelDia.value) return []
+  
+  let result = [...ticketsDelDia.value]
+
+  // Filtrar por método de pago
+  if (selectedPaymentMethod.value !== 'todos') {
+    result = result.filter(p => p.metodo_pago === selectedPaymentMethod.value)
+  }
+
+  // Ordenar por hora (fecha_evento o fecha_creacion)
+  result.sort((a, b) => {
+    // Usar fecha_evento o fecha_creacion si no hay evento
+    const dateA = new Date(a.fecha_evento || a.fecha_creacion || 0).getTime()
+    const dateB = new Date(b.fecha_evento || b.fecha_creacion || 0).getTime()
+    return sortDescending.value ? dateB - dateA : dateA - dateB
+  })
+
+  return result
+})
+
+const filteredSummary = computed(() => {
+  const pedidos = filteredPedidosDelDia.value
+  const count = pedidos.length
+  if (count === 0) return null
+
+  const total = pedidos.reduce((sum, p) => sum + Number(p.total), 0)
+  const propina_total = pedidos.reduce((sum, p) => sum + Number(p.propina_total || 0), 0)
+  
+  return {
+    count,
+    total,
+    propina_total,
+    promedio_ticket: total / count
+  }
+})
+
+// Helpers para tabla
+const getMesaClienteDisplay = (pedido: ReporteDiaTicket) => {
+  if (pedido.mesa) return `Mesa ${pedido.mesa}`
+  if (pedido.nombre_cliente) return pedido.nombre_cliente
+  return 'Cliente'
+}
+
+const getPaymentMethodIcon = (metodo: string | null) => {
+  if (!metodo) return '❓'
+  const icons: Record<string, string> = {
+    efectivo: '💵',
+    tarjeta: '💳',
+    transferencia: '📱'
+  }
+  return icons[metodo] || '❓'
+}
+
+const getPaymentMethodColor = (metodo: string | null) => {
+  if (!metodo) return 'bg-gray-100 text-gray-800'
+  const colors: Record<string, string> = {
+    efectivo: 'bg-green-100 text-green-800',
+    tarjeta: 'bg-blue-100 text-blue-800',
+    transferencia: 'bg-purple-100 text-purple-800'
+  }
+  return colors[metodo] || 'bg-gray-100 text-gray-800'
+}
+
+const formatTipDisplay = (pedido: ReporteDiaTicket) => {
+  const total = Number(pedido.propina_total || 0)
+  if (total === 0) return 'Sin propina'
+  return `$${total.toFixed(2)}`
+}
+
+// WebSocket Event Handler
+const handlePedidoEvent = () => {
+    if (activeTab.value === 'propinas') {
+        cargarAnalyticsDia()
+        cargarTicketsDelDia()
+        cargarReportePropinas()
+    }
+}
+
 let timer: number | undefined
 let timerTurno: number | undefined
 
@@ -164,6 +248,12 @@ onMounted(async () => {
 
     if (wsConnected) {
       console.log('✅ Caja View: WebSocket conectado, datos en tiempo real activos')
+      
+      // Suscribirse a eventos para actualizar analíticas
+      websocketService.on('pedido_created', handlePedidoEvent)
+      websocketService.on('pedido_estado_changed', handlePedidoEvent)
+      websocketService.on('articulo_estado_changed', handlePedidoEvent)
+      websocketService.on('pedido_pagado', handlePedidoEvent)
     } else {
       console.warn('⚠️ Caja View: WebSocket falló, usando polling como fallback')
       // Fallback: polling cada 5 segundos si WebSocket falla
@@ -257,6 +347,13 @@ onUnmounted(() => {
   if (timerTurno) {
     clearInterval(timerTurno)
   }
+  
+  // Limpiar listeners WebSocket
+  websocketService.off('pedido_created', handlePedidoEvent)
+  websocketService.off('pedido_estado_changed', handlePedidoEvent)
+  websocketService.off('articulo_estado_changed', handlePedidoEvent)
+  websocketService.off('pedido_pagado', handlePedidoEvent)
+
   stopTicketsDelDiaAutoRefresh()
   stopAnalyticsDiaAutoRefresh()
   pedidosStore.disconnectWebSocket()
@@ -296,17 +393,17 @@ const cargarAnalyticsDia = async () => {
 }
 
 const startAnalyticsDiaAutoRefresh = () => {
-  stopAnalyticsDiaAutoRefresh()
+  // Deprecated: WebSocket handles updates
   cargarAnalyticsDia()
-  analyticsDiaTimer = window.setInterval(() => {
-    cargarAnalyticsDia()
-  }, 30000)
+  cargarTicketsDelDia()
 }
 
 const stopAnalyticsDiaAutoRefresh = () => {
-  if (!analyticsDiaTimer) return
-  clearInterval(analyticsDiaTimer)
-  analyticsDiaTimer = undefined
+  // Deprecated
+  if (analyticsDiaTimer) {
+    clearInterval(analyticsDiaTimer)
+    analyticsDiaTimer = undefined
+  }
 }
 
 const estadoEnVivoAnalytics = [
@@ -342,43 +439,30 @@ watch(activeTab, (newTab) => {
   if (newTab === 'propinas') {
     subTabReporteDia.value = 'reporte'
     cargarReportePropinas()
-    stopTicketsDelDiaAutoRefresh()
-    startAnalyticsDiaAutoRefresh()
+    cargarAnalyticsDia()
+    cargarTicketsDelDia()
     return
   }
-
-  stopTicketsDelDiaAutoRefresh()
-  stopAnalyticsDiaAutoRefresh()
 })
 
 watch(subTabReporteDia, (newSubTab) => {
-  if (activeTab.value !== 'propinas') {
-    stopTicketsDelDiaAutoRefresh()
-    stopAnalyticsDiaAutoRefresh()
-    return
-  }
-
-  if (newSubTab === 'tickets') {
-    startTicketsDelDiaAutoRefresh()
-    stopAnalyticsDiaAutoRefresh()
-  } else {
-    stopTicketsDelDiaAutoRefresh()
-    startAnalyticsDiaAutoRefresh()
+  if (activeTab.value === 'propinas') {
+    cargarAnalyticsDia()
+    cargarTicketsDelDia()
   }
 })
 
 const startTicketsDelDiaAutoRefresh = () => {
-  stopTicketsDelDiaAutoRefresh()
+  // Deprecated: WebSocket handles updates
   cargarTicketsDelDia()
-  ticketsDelDiaTimer = window.setInterval(() => {
-    cargarTicketsDelDia()
-  }, 30000)
 }
 
 const stopTicketsDelDiaAutoRefresh = () => {
-  if (!ticketsDelDiaTimer) return
-  clearInterval(ticketsDelDiaTimer)
-  ticketsDelDiaTimer = undefined
+  // Deprecated
+  if (ticketsDelDiaTimer) {
+    clearInterval(ticketsDelDiaTimer)
+    ticketsDelDiaTimer = undefined
+  }
 }
 
 const cargarTicketsDelDia = async () => {
@@ -1655,20 +1739,6 @@ const obtenerReporteTurno = async () => {
             <!-- Resumen diario -->
             <div class="bg-white rounded-lg border border-gray-200 p-6">
               <h3 class="text-lg font-bold text-gray-700 mb-4">📊 Reporte del dia</h3>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                  <div class="text-2xl font-bold text-green-700">${{ reportePropinas?.total_efectivo?.toFixed(2) || '0.00' }}</div>
-                  <div class="text-sm text-green-600 font-medium">Propina Efectivo</div>
-                </div>
-                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                  <div class="text-2xl font-bold text-blue-700">${{ reportePropinas?.total_tarjeta?.toFixed(2) || '0.00' }}</div>
-                  <div class="text-sm text-blue-600 font-medium">Propina Tarjeta</div>
-                </div>
-                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-                  <div class="text-2xl font-bold text-purple-700">${{ reportePropinas?.total_general?.toFixed(2) || '0.00' }}</div>
-                  <div class="text-sm text-purple-600 font-medium">Propina Total</div>
-                </div>
-              </div>
             </div>
 
             <!-- Analiticas del dia (estilo dashboard) -->
@@ -1921,6 +1991,213 @@ const obtenerReporteTurno = async () => {
                   </div>
                 </div>
               </div>
+
+                <!-- Lista de Pedidos del Día (Importada de AdminView) -->
+                <div class="bg-white shadow rounded-lg overflow-hidden border border-gray-100 mt-6">
+                   <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                         <div class="flex-1">
+                           <div class="flex items-center space-x-3">
+                             <h3 class="text-lg font-semibold text-gray-900">📋 Pedidos del Día</h3>
+                             <div class="hidden md:flex items-center space-x-4">
+                               <div class="flex items-center space-x-2">
+                                 <span class="text-sm text-gray-600">Mostrando:</span>
+                                 <span class="px-2 py-1 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700">
+                                   {{ filteredPedidosDelDia.length }} de {{ ticketsDelDia ? ticketsDelDia.length : 0 }}
+                                 </span>
+                               </div>
+                               <div class="h-4 w-px bg-gray-300"></div>
+                               <div class="flex items-center space-x-2">
+                                 <span class="text-sm text-gray-600">Orden:</span>
+                                 <button
+                                   @click="sortDescending = !sortDescending"
+                                   :class="[
+                                     'px-3 py-1 rounded-md text-xs font-medium flex items-center space-x-1 border transition-colors',
+                                     sortDescending 
+                                       ? 'bg-gray-800 text-white border-gray-800' 
+                                       : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
+                                   ]"
+                                 >
+                                   <span>{{ sortDescending ? '🔼' : '🔽' }}</span>
+                                   <span>{{ sortDescending ? 'Más Reciente' : 'Más Antiguo' }}</span>
+                                 </button>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                         
+                         <!-- Filtros -->
+                         <div class="flex-shrink-0">
+                           <div class="flex flex-col sm:flex-row gap-3">
+                             <div class="flex items-center space-x-2">
+                               <span class="text-sm font-medium text-gray-700 hidden sm:inline">Filtrar:</span>
+                               <div class="flex flex-wrap gap-1">
+                                 <button
+                                   @click="selectedPaymentMethod = 'todos'"
+                                   :class="[
+                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border',
+                                     selectedPaymentMethod === 'todos'
+                                       ? 'bg-blue-600 text-white border-blue-700'
+                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                   ]"
+                                 >
+                                   Todos
+                                 </button>
+                                 <button
+                                   @click="selectedPaymentMethod = 'efectivo'"
+                                   :class="[
+                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
+                                     selectedPaymentMethod === 'efectivo'
+                                       ? 'bg-green-600 text-white border-green-700'
+                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                   ]"
+                                 >
+                                   <span>💵</span>
+                                   <span>Efectivo</span>
+                                 </button>
+                                 <button
+                                   @click="selectedPaymentMethod = 'tarjeta'"
+                                   :class="[
+                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
+                                     selectedPaymentMethod === 'tarjeta'
+                                       ? 'bg-blue-500 text-white border-blue-600'
+                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                   ]"
+                                 >
+                                   <span>💳</span>
+                                   <span>Tarjeta</span>
+                                 </button>
+                                 <button
+                                   @click="selectedPaymentMethod = 'transferencia'"
+                                   :class="[
+                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
+                                     selectedPaymentMethod === 'transferencia'
+                                       ? 'bg-purple-500 text-white border-purple-600'
+                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                                   ]"
+                                 >
+                                   <span>📱</span>
+                                   <span>Transferencia</span>
+                                 </button>
+                               </div>
+                             </div>
+                           </div>
+                          </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Estados vacíos -->
+                    <div v-if="!ticketsDelDia || ticketsDelDia.length === 0" class="px-6 py-12 text-center">
+                        <div class="mx-auto max-w-md">
+                            <div class="text-4xl mb-4">📋</div>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">No hay pedidos hoy</h3>
+                            <p class="text-gray-500">Aún no se han registrado tickets en el día de hoy.</p>
+                        </div>
+                    </div>
+                    
+                    <div v-else-if="filteredPedidosDelDia.length === 0" class="px-6 py-12 text-center">
+                        <div class="mx-auto max-w-md">
+                            <div class="text-4xl mb-4">🔍</div>
+                            <h3 class="text-lg font-medium text-gray-900 mb-2">No hay pedidos con el filtro seleccionado</h3>
+                            <p class="text-gray-500">Intenta cambiar el método de pago o revisa los pedidos de hoy.</p>
+                            <button
+                                @click="selectedPaymentMethod = 'todos'"
+                                class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+                            >
+                                Ver todos los pedidos
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div v-else class="overflow-x-auto lg:overflow-x-visible rounded-b-lg border border-gray-200 border-t-0">
+                       <table class="w-full table-fixed divide-y divide-gray-200">
+                          <thead class="bg-gray-50 sticky top-0 z-10">
+                               <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">Pedido</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[25%]">Mesa/Cliente</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[7%]">Tipo</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">Total</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">Pago</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[13%]">Propinas</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">Hora</th>
+                                </tr>
+                         </thead>
+                         <tbody class="bg-white divide-y divide-gray-200">
+                               <tr v-for="(pedido, index) in filteredPedidosDelDia" :key="pedido.id" 
+                                   :class="[
+                                     'transition-colors duration-150',
+                                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50',
+                                     'hover:bg-blue-50'
+                                   ]">
+                                  <td class="px-4 py-3 whitespace-nowrap">
+                                      <div class="text-sm font-bold text-gray-900">#{{ pedido.numero_display }}</div>
+                                  </td>
+                                   <td class="px-4 py-3">
+                                       <div class="text-sm text-gray-700 truncate max-w-[120px] lg:max-w-[180px] xl:max-w-[220px]" :title="getMesaClienteDisplay(pedido)">
+                                           {{ getMesaClienteDisplay(pedido) }}
+                                       </div>
+                                   </td>
+                                  <td class="px-4 py-3 whitespace-nowrap">
+                                      <div class="flex items-center space-x-1">
+                                          <span class="text-lg">{{ getTipoOrdenEmoji(pedido.tipo_orden || '') }}</span>
+                                          <span class="text-xs text-gray-500 capitalize hidden lg:inline">
+                                              {{ (pedido.tipo_orden || '').replace('_', ' ') }}
+                                          </span>
+                                      </div>
+                                  </td>
+                                  <td class="px-4 py-3 whitespace-nowrap">
+                                      <div class="text-sm font-bold text-green-700">${{ Number(pedido.total).toFixed(2) }}</div>
+                                  </td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        <div class="flex items-center space-x-1">
+                                            <span class="text-sm">{{ getPaymentMethodIcon(pedido.metodo_pago) }}</span>
+                                            <span :class="['px-2 py-1 rounded-full text-xs font-medium capitalize hidden md:inline', getPaymentMethodColor(pedido.metodo_pago)]"
+                                                  :title="pedido.metodo_pago || '-'">
+                                                {{ pedido.metodo_pago || '-' }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="text-sm text-gray-700 truncate" :title="formatTipDisplay(pedido)">
+                                            {{ formatTipDisplay(pedido) }}
+                                        </div>
+                                    </td>
+                                   <td class="px-4 py-3 whitespace-nowrap">
+                                       <div class="text-xs text-gray-500">
+                                           {{ new Date(pedido.fecha_evento || pedido.fecha_creacion || Date.now()).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
+                                       </div>
+                                   </td>
+                              </tr>
+                          </tbody>
+                          <tfoot v-if="filteredSummary" class="bg-gray-800 text-white">
+                              <tr>
+                                  <td colspan="7" class="px-4 py-3">
+                                      <div class="flex flex-wrap items-center justify-between gap-4">
+                                          <div class="flex items-center space-x-6">
+                                              <div>
+                                                  <div class="text-xs font-medium text-gray-300">Total Pedidos</div>
+                                                  <div class="text-lg font-bold">{{ filteredSummary.count }}</div>
+                                              </div>
+                                              <div>
+                                                  <div class="text-xs font-medium text-gray-300">Total Ventas</div>
+                                                  <div class="text-lg font-bold text-green-300">${{ filteredSummary.total.toFixed(2) }}</div>
+                                              </div>
+                                              <div>
+                                                  <div class="text-xs font-medium text-gray-300">Propinas Totales</div>
+                                                  <div class="text-lg font-bold text-yellow-300">${{ filteredSummary.propina_total.toFixed(2) }}</div>
+                                              </div>
+                                              <div class="hidden md:block">
+                                                  <div class="text-xs font-medium text-gray-300">Ticket Promedio</div>
+                                                  <div class="text-lg font-bold text-blue-300">${{ filteredSummary.promedio_ticket.toFixed(2) }}</div>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </td>
+                              </tr>
+                          </tfoot>
+                      </table>
+                 </div>
+             </div>
             </div>
 
             <!-- Detalle por mesero -->

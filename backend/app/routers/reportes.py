@@ -84,6 +84,7 @@ def tickets_del_dia(
             "fecha_creacion": fecha_creacion.isoformat() if fecha_creacion is not None else None,
             "fecha_evento": fecha_evento.isoformat() if fecha_evento is not None else None,
             "mesero_nombre": p.usuario_nombre,
+            "tipo_orden": p.tipo_orden,
         }
 
     return [_serialize_ticket(p) for p in pedidos]

@@ -118,6 +118,7 @@ export interface ReporteDiaTicket {
   fecha_creacion: string | null;
   fecha_evento: string | null;
   mesero_nombre: string | null;
+  tipo_orden?: "aqui" | "llevar" | "uber_eats";
 }
 
 export interface ReporteDiaAnalytics {
