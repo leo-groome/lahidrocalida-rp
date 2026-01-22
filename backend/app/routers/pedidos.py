@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 import pytz
+import requests
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
@@ -24,6 +25,53 @@ from app.websocket_manager import websocket_manager
 from app.core.config import settings
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
+
+async def print_ticket_automatic(pedido_data):
+    """
+    Envía ticket al servicio de impresión automática
+    """
+    try:
+        print_service_url = "http://localhost:3001/print"
+
+        # Preparar datos del ticket para impresión
+        ticket_data = {
+            "numero_display": pedido_data.get("numero_display", "N/A"),
+            "mesa": pedido_data.get("mesa"),
+            "nombre_cliente": pedido_data.get("nombre_cliente"),
+            "mesero_nombre": None,  # Se puede agregar si se tiene la información
+            "fecha_llegada": pedido_data.get("fecha_creacion"),
+            "fecha_salida": pedido_data.get("fecha_salida"),
+            "articulos": [
+                {
+                    "cantidad": articulo.get("cantidad", 1),
+                    "nombre": articulo.get("platillo", {}).get("nombre", "Producto"),
+                    "precio": articulo.get("precio_cobrado", 0),
+                    "modificaciones": articulo.get("modificaciones")
+                }
+                for articulo in pedido_data.get("articulos_pedido", [])
+            ],
+            "total": pedido_data.get("total", 0)
+        }
+
+        # Enviar al servicio de impresión
+        response = requests.post(
+            print_service_url,
+            json=ticket_data,
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            print(f"✅ Ticket #{pedido_data.get('numero_display', 'N/A')} enviado a impresión automática: {result}")
+        else:
+            print(f"⚠️  Error en impresión automática: {response.status_code} - {response.text}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error de conexión con servicio de impresión: {e}")
+        # No fallar la transacción principal por error de impresión
+    except Exception as e:
+        print(f"❌ Error en impresión automática: {e}")
+        # No fallar la transacción principal por error de impresión
 
 
 def generate_numero_display(db: Session, sucursal_id: int) -> str:
@@ -662,6 +710,15 @@ async def update_pedido(
                 nuevo_estado=data.estado,
                 pedido_data=pedido_data
             )
+
+            # Integración automática con servicio de impresión
+            if data.estado == "cuenta_solicitada":
+                try:
+                    await print_ticket_automatic(pedido_data)
+                except Exception as e:
+                    print(f"Error en impresión automática: {e}")
+                    # No fallar la actualización del pedido por error de impresión
+
         except Exception as e:
             # Log del error pero no fallar la actualización del pedido
             print(f"Error notifying pedido estado change via WebSocket: {e}")

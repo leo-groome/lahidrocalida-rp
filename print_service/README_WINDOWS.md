@@ -1,6 +1,6 @@
 # 🖨️ Sistema de Impresión La Hidrocálida - Windows
 
-> **Para computadora de caja Windows** - Guía rápida de instalación y uso
+> **Sistema completo de impresión automática para tickets** - Optimizado para Easytime SP-POS891ED
 
 ---
 
@@ -12,17 +12,18 @@ install.bat
 ```
 **¡Esto configura TODO automáticamente!**
 
-### 2. Iniciar Servicio
-```batch
-inicio_rapido.bat
-```
-**Seleccionar Opción 1** - Iniciar servicio
+### 2. Configurar Impresora
+- Asegúrese de que la impresora Easytime SP-POS891ED esté conectada por USB
+- Si no es la impresora por defecto, modifique `config/settings.py`
 
-### 3. Probar Funcionamiento
-**En el mismo menú** - **Opción 2** - Probar impresión
+### 3. Iniciar Servicio
+```batch
+start_service.bat
+```
+**El servicio se conecta automáticamente al backend**
 
 ### 4. ¡Listo!
-**Ahora el sistema de caja imprime automáticamente** ✅
+**Ahora los tickets se imprimen automáticamente al solicitar cuenta** ✅
 
 ---
 
@@ -31,95 +32,131 @@ inicio_rapido.bat
 | Archivo | Función | Cuándo usar |
 |---------|---------|-------------|
 | `install.bat` | 📦 Instala todo | Solo la primera vez |
-| `inicio_rapido.bat` | 🎯 Menú principal | **Uso diario** |
-| `start_print_service.bat` | 🚀 Inicia servicio | Inicio directo |
-| `test_connection.bat` | 🧪 Prueba sistema | Verificar funcionamiento |
-| `stop_print_service.bat` | 🛑 Detiene servicio | Si hay problemas |
+| `start_service.bat` | 🚀 Inicia servicio | **Uso diario** |
+| `test_printer.bat` | 🧪 Prueba impresora | Verificar funcionamiento |
+| `stop_service.bat` | 🛑 Detiene servicio | Si hay problemas |
+| `config/settings.py` | ⚙️ Configuración | Personalizar impresora |
+| `logs/print_service.log` | 📊 Logs detallados | Revisar problemas |
 
 ---
 
 ## 🎯 USO DIARIO
 
 ### Cada Mañana
-1. **Conectar impresora térmica** USB
-2. **Doble click** en `inicio_rapido.bat`
-3. **Opción 1** - Iniciar servicio
+1. **Conectar impresora térmica** Easytime SP-POS891ED por USB
+2. **Doble click** en `start_service.bat`
+3. **Verificar** que aparezca "🚀 Puente WebSocket iniciado"
 4. **¡Listo!** - Funciona automáticamente
 
 ### Durante el Día
-- **Los tickets se imprimen solos** cuando se procesa pago
-- **Si no imprime** → Verifica que la ventana del servicio esté abierta
-- **Si hay problemas** → `inicio_rapido.bat` → Opción 4
+- **Los tickets se imprimen solos** cuando se solicita cuenta
+- **Si no imprime** → Verificar que el servicio esté ejecutándose
+- **Si hay problemas** → Revisar logs en `logs/print_service.log`
 
 ### Al Cerrar
 - **Dejar el servicio ejecutándose** (opcional)
-- **O cerrar** la ventana del servidor
+- **O cerrar** la ventana del servicio
 
 ---
 
 ## ⚡ SISTEMA DE IMPRESIÓN INTELIGENTE
 
-### 🔥 PRIORIDAD 1: Impresora Térmica
+### 🔥 PRIORIDAD 1: Impresora Térmica Easytime
 - ✅ **Automática** - Sin intervención
-- ✅ **Profesional** - Formato de restaurante
+- ✅ **Profesional** - Formato perfecto para 80mm
 - ✅ **Rápida** - Impresión instantánea
+- ✅ **Robusta** - Sistema de cola con reintentos
 
-### 💻 PRIORIDAD 2: Impresora del Sistema
-- ✅ **Fallback automático** si térmica no funciona
-- ✅ **Usa impresora normal** de Windows
-- ✅ **Formato optimizado** para papel A4
-
-### 🖥️ PRIORIDAD 3: Consola del Navegador
-- ✅ **Nunca falla** - Siempre funciona
-- ✅ **Visible en F12** del navegador
-- ✅ **Formato completo** para copiar/pegar
+### 💻 PRIORIDAD 2: Cola de Impresión
+- ✅ **Reintentos automáticos** cada 30 segundos
+- ✅ **Máximo 5 reintentos** por ticket
+- ✅ **Tickets fallidos guardados** para revisión
+- ✅ **Notificaciones** de fallos críticos
 
 ---
 
-## 🛠️ SOLUCIONES RÁPIDAS
+## 🛠️ CONFIGURACIÓN AVANZADA
+
+### Cambiar Impresora
+Edite `config/settings.py`:
+```python
+PRINTER_NAME = "Nombre de su impresora"
+```
+
+### Configurar Backend
+Edite `config/settings.py`:
+```python
+BACKEND_URL = "http://localhost:8000"
+WEBSOCKET_URL = "ws://localhost:8000/ws/orders"
+```
+
+### Ver Logs
+Los logs se guardan en `logs/print_service.log`:
+```batch
+type logs\print_service.log
+```
+
+---
+
+## 🔧 SOLUCIONES RÁPIDAS
 
 ### ❌ "Servicio no disponible"
-**Solución**: `inicio_rapido.bat` → Opción 1
+**Solución**: `start_service.bat` → Verificar "🚀 Puente WebSocket iniciado"
 
 ### ❌ "Python no encontrado"
 **Solución**: Instalar Python desde https://python.org → Marcar "Add to PATH"
 
 ### ❌ "Impresora no funciona"
-**Solución**: ¡Tranquilo! El sistema usa fallback automático
+**Solución**:
+1. Verificar conexión USB
+2. Probar con `test_printer.bat`
+3. Revisar nombre en `config/settings.py`
 
-### ⚠️ "Puerto 3001 ocupado"
-**Solución**: `stop_print_service.bat` → `start_print_service.bat`
+### ⚠️ "Tickets no se imprimen"
+**Solución**:
+1. Verificar que el backend esté ejecutándose
+2. Revisar logs del servicio
+3. Probar conexión manual con `test_printer.bat`
 
 ---
 
-## 🔧 CONFIGURACIÓN AVANZADA
+## 📊 MONITOREO Y DASHBOARD
 
-### Inicio Automático con Windows
-1. **Windows + R** → `shell:startup`
-2. **Copiar** `inicio_rapido.bat` a esa carpeta
-3. **Reiniciar** - Se abre automáticamente
+### Verificar Estado
+```batch
+curl http://localhost:3001/health
+```
 
-### Acceso Directo en Escritorio
-1. **Click derecho** en `inicio_rapido.bat`
-2. **Enviar a → Escritorio**
-3. **Renombrar** a "🖨️ La Hidrocálida"
+### Ver Cola de Impresión
+```batch
+type logs\print_queue.json
+```
+
+### Ver Tickets Fallidos
+```batch
+dir logs\failed_tickets\
+```
 
 ---
 
 ## 🎉 RESULTADO FINAL
 
 ### ✅ LO QUE FUNCIONA:
-- **Impresión automática** de tickets al procesar pagos
-- **3 métodos de respaldo** - nunca falla
-- **Formato profesional** para restaurante
+- **Impresión automática** al solicitar cuenta (estado `cuenta_solicitada`)
+- **Formato de ticket idéntico** al actual
+- **Soporte nativo** para Easytime SP-POS891ED (80mm térmica)
+- **Sistema de cola robusto** con reintentos automáticos
+- **Integración completa** con el backend vía WebSocket
+- **Logs detallados** para troubleshooting
 - **Fácil de usar** - solo doble click diario
-- **Sin configuración compleja** - todo automático
 
 ### 🔄 FLUJO COMPLETO:
-1. **Mesero** solicita cuenta
-2. **Caja** procesa pago
-3. **Ticket se imprime automáticamente** 🖨️
-4. **Cliente recibe su comprobante** ✅
+1. **Mesero** solicita cuenta en el sistema
+2. **Backend** cambia estado a `cuenta_solicitada`
+3. **WebSocket** notifica al servicio de impresión
+4. **Servicio** genera ticket ESC/POS automáticamente
+5. **Easytime SP-POS891ED** imprime el ticket
+6. **Cliente recibe** su comprobante ✅
 
 ---
 
@@ -127,20 +164,39 @@ inicio_rapido.bat
 
 ### Verificar que Todo Funciona
 ```batch
-test_connection.bat
+# 1. Instalar
+install.bat
+
+# 2. Configurar impresora (opcional)
+# Editar config/settings.py si es necesario
+
+# 3. Iniciar
+start_service.bat
+
+# 4. Probar
+test_printer.bat
+
+# 5. Verificar logs
+type logs\print_service.log
 ```
 
 ### Ver Estado del Sistema
 ```batch
-inicio_rapido.bat
+# Health check
+curl http://localhost:3001/health
+
+# Cola de impresión
+type logs\print_queue.json
+
+# Logs del servicio
+type logs\print_service.log
 ```
-→ **Opción 4**
 
 ### Controlar Servicio
-- **Iniciar**: Opción 1
-- **Probar**: Opción 2  
-- **Detener**: Opción 3
-- **Estado**: Opción 4
+- **Iniciar**: `start_service.bat`
+- **Detener**: `stop_service.bat`
+- **Probar**: `test_printer.bat`
+- **Estado**: `curl http://localhost:3001/health`
 
 ---
 
@@ -148,12 +204,14 @@ inicio_rapido.bat
 
 - **Puerto del servicio**: 3001
 - **URL de verificación**: http://localhost:3001/health
-- **Formato de impresión**: ESC/POS (térmicas 80mm/58mm)
-- **Compatibilidad**: Windows 7/8/10/11
-- **Respaldos**: Tickets fallidos en `failed_tickets\`
+- **Formato de impresión**: ESC/POS (térmica 80mm)
+- **Impresora compatible**: Easytime SP-POS891ED
+- **Compatibilidad**: Windows 10/11
+- **Tickets fallidos**: `logs/failed_tickets/`
+- **Cola persistente**: `logs/print_queue.json`
 
 ---
 
 **🏪 Sistema POS La Hidrocálida**  
-**📅 Versión Windows - Enero 2025**  
+**📅 Versión Nueva - Enero 2025**  
 **🖨️ Impresión automática garantizada**

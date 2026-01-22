@@ -1736,11 +1736,6 @@ const obtenerReporteTurno = async () => {
           </div>
 
           <div v-if="subTabReporteDia === 'reporte'" class="space-y-6">
-            <!-- Resumen diario -->
-            <div class="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 class="text-lg font-bold text-gray-700 mb-4">📊 Reporte del dia</h3>
-            </div>
-
             <!-- Analiticas del dia (estilo dashboard) -->
             <div class="bg-white rounded-lg border border-gray-200 p-6">
               <div class="flex items-center justify-between mb-4">
