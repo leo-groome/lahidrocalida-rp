@@ -31,9 +31,8 @@ curl http://localhost:8000/health/database
 ```bash
 # No automated test framework configured
 # Run individual test files manually:
-python print_service/test_escpos_format.py
-python print_service/test_connection.py
-python print_service/test_ticket.py
+python print_service/scripts/test_printer.bat
+python print_service/scripts/test_full_system.bat
 ```
 
 ### Frontend (Vue.js/TypeScript)
@@ -144,8 +143,89 @@ VITE_API_URL=http://localhost:8000
 
 - No automated test framework configured.
 - Manual testing via API endpoints and UI.
-- Utility test scripts in `print_service/` (run individually).
+- Utility test scripts in `print_service/scripts/` (run individually).
+- Print service includes comprehensive verification scripts.
 - Recommended future setup: pytest (backend), Vitest/Playwright (frontend).
+
+## 🖨️ Sistema de Impresión Automática
+
+**Nuevo sistema completo para impresión automática de tickets de caja**
+
+### Arquitectura del Sistema
+- **Tecnología**: Python + ESC/POS + Flask API
+- **Impresora compatible**: Easytime SP-POS891ED (80mm térmica)
+- **Integración**: WebSocket + HTTP con backend FastAPI
+- **Sistema operativo**: Windows 10/11
+
+### Inicio Rápido
+```batch
+# 1. Instalar
+cd print_service
+install.bat
+
+# 2. Iniciar servicio
+start_service.bat
+
+# 3. ¡Listo! Los tickets se imprimen automáticamente
+```
+
+### Scripts de Control
+```batch
+install.bat          # Instalación automática
+start_service.bat    # Iniciar servicio
+stop_service.bat     # Detener servicio
+test_printer.bat     # Probar impresora
+scripts/test_full_system.bat    # Pruebas completas
+scripts/verify_system.bat      # Verificación final
+scripts/status.bat             # Estado del sistema
+```
+
+### Estructura del Sistema
+```
+print_service/
+├── config/           # Configuración específica
+├── core/             # Lógica principal
+│   ├── printer_manager.py     # Gestión impresora
+│   ├── ticket_formatter.py    # Formato ESC/POS
+│   └── print_queue.py         # Cola con reintentos
+├── server/           # API y WebSocket
+├── scripts/          # Control y verificación
+├── logs/             # Logs y cola persistente
+└── README.md         # Documentación completa
+```
+
+### Integración con Backend
+**Archivo modificado**: `backend/app/routers/pedidos.py`
+- Nueva función: `print_ticket_automatic()`
+- Trigger automático: Estado `cuenta_solicitada`
+- Comunicación: HTTP POST a `http://localhost:3001/print`
+
+### Características Técnicas
+- **Impresión automática** al solicitar cuenta
+- **Formato idéntico** al sistema actual (48 chars/línea)
+- **Sistema de cola robusto** con reintentos (máx. 5)
+- **Logs detallados** en `logs/print_service.log`
+- **API REST** en puerto 3001 para integración
+- **Puente WebSocket** para eventos en tiempo real
+
+### Verificación del Sistema
+```batch
+# Estado completo
+scripts\status.bat
+
+# Verificación final
+scripts\verify_system.bat
+
+# Health check
+curl http://localhost:3001/health
+```
+
+### Configuración
+- **Impresora**: Configurable en `config/settings.py`
+- **Backend URL**: Configurable en `config/settings.py`
+- **Puerto**: 3001 (configurable)
+- **Reintentos**: 5 (configurable)
+- **Intervalo**: 30 segundos (configurable)
 
 ## 🚨 Critical Patterns to Follow
 
@@ -275,7 +355,7 @@ VITE_API_URL=http://localhost:8000
 - `app/main.py` – FastAPI app setup and CORS
 - `app/models.py` – SQLAlchemy database models (incluye `Turno`, `TurnoDenominacion`)
 - `app/schemas.py` – Pydantic request/response models (incluye schemas para turnos)
-- `app/routers/` – API endpoint definitions (incluye `turnos.py` para gestión de turnos)
+- `app/routers/` – API endpoint definitions (incluye `turnos.py` para gestión de turnos y `pedidos.py` con integración de impresión automática)
 
 **Frontend:**
 - `src/types.ts` – TypeScript type definitions (incluye `Turno`, `Denominacion`)
@@ -284,6 +364,18 @@ VITE_API_URL=http://localhost:8000
 - `src/views/` – Main application views/pages
 - `src/components/TurnoModal.vue` – Modal para inicio/cierre de turno con conteo rápido
 
+**Sistema de Impresión:**
+- `print_service/printer_service.py` – Servicio principal de impresión
+- `print_service/core/printer_manager.py` – Gestión de impresora Easytime SP-POS891ED
+- `print_service/core/ticket_formatter.py` – Formateo ESC/POS de tickets
+- `print_service/core/print_queue.py` – Sistema de cola con reintentos
+- `print_service/server/api_server.py` – API REST para integración
+- `print_service/server/websocket_bridge.py` – Puente WebSocket con backend
+- `print_service/config/settings.py` – Configuración del sistema de impresión
+- `print_service/config/printer_config.py` – Configuración específica SP-POS891ED
+
 ---
+
+**🖨️ Actualización Enero 2025:** Sistema de impresión automática implementado con soporte completo para impresora térmica Easytime SP-POS891ED. Ver sección "Sistema de Impresión Automática" para detalles completos.
 
 *No Cursor rules (`/.cursor/rules/`) or Copilot instructions (`/.github/copilot‑instructions.md`) are present in this repository.*
