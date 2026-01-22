@@ -434,6 +434,51 @@ const getAnalyticsCantidadEstado = (estado: string) => {
   return data ? data.cantidad : 0
 }
 
+// Computadas para métricas del turno actual (dinámicas)
+const turnoMetrics = computed(() => {
+  if (!turnoActivo.value) {
+    return null
+  }
+
+  const inicioTurno = new Date(turnoActivo.value.fecha_apertura).getTime()
+  
+  // Filtrar tickets pagados DESPUÉS del inicio del turno
+  const ticketsDelTurno = ticketsDelDia.value.filter(t => {
+    if (!t.fecha_pago) return false
+    const fechaPago = new Date(t.fecha_pago).getTime()
+    return fechaPago >= inicioTurno
+  })
+
+  // Calcular totales
+  const ventasEfectivo = ticketsDelTurno
+    .filter(t => t.metodo_pago === 'efectivo')
+    .reduce((sum, t) => sum + Number(t.total), 0)
+
+  const ventasTarjeta = ticketsDelTurno
+    .filter(t => t.metodo_pago === 'tarjeta' || t.metodo_pago === 'transferencia')
+    .reduce((sum, t) => sum + Number(t.total), 0)
+
+  const propinasEfectivo = ticketsDelTurno
+    .reduce((sum, t) => sum + Number(t.propina_efectivo || 0), 0)
+
+  const propinasTarjeta = ticketsDelTurno
+    .reduce((sum, t) => sum + Number(t.propina_tarjeta || 0), 0)
+
+  // Efectivo esperado en caja = Fondo Inicial + Ventas Efectivo + Propinas Efectivo
+  // Nota: Gastos se restarían aquí si estuvieran disponibles en el frontend en tiempo real
+  const efectivoEsperado = Number(turnoActivo.value.total_inicial) + ventasEfectivo + propinasEfectivo
+
+  return {
+    ticketsCount: ticketsDelTurno.length,
+    ventasEfectivo,
+    ventasTarjeta,
+    propinasEfectivo,
+    propinasTarjeta,
+    efectivoEsperado,
+    fondoInicial: Number(turnoActivo.value.total_inicial)
+  }
+})
+
 // Watch para cargar reporte cuando se activa la pestaña
 watch(activeTab, (newTab) => {
   if (newTab === 'propinas') {
@@ -1699,642 +1744,221 @@ const obtenerReporteTurno = async () => {
         </div>
       </div>
 
-      <!-- Tab Reporte del dia -->
+      <!-- Tab Reporte del Dia (Renovado) -->
       <div v-else-if="activeTab === 'propinas'" class="space-y-6">
-        <div v-if="loadingPropinas" class="text-center py-8 text-gray-600 font-medium">
-          <div class="text-4xl mb-4">⏳</div>
-          <p class="text-lg">Cargando reporte...</p>
-        </div>
-
-        <div v-else>
-          <!-- Subtabs: Reporte / Tickets -->
-          <div class="flex justify-center md:justify-start">
-            <div class="flex gap-1 bg-white rounded-lg p-1 shadow-sm border">
-              <button
-                @click="subTabReporteDia = 'reporte'"
-                :class="[
-                  'px-4 py-2 rounded-md font-medium transition-all text-sm',
-                  subTabReporteDia === 'reporte'
-                    ? 'bg-[#00126D] text-white shadow-md'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                ]"
-              >
-                Reporte
-              </button>
-              <button
-                @click="subTabReporteDia = 'tickets'"
-                :class="[
-                  'px-4 py-2 rounded-md font-medium transition-all text-sm',
-                  subTabReporteDia === 'tickets'
-                    ? 'bg-[#00126D] text-white shadow-md'
-                    : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                ]"
-              >
-                Tickets
-              </button>
-            </div>
-          </div>
-
-          <div v-if="subTabReporteDia === 'reporte'" class="space-y-6">
-            <!-- Analiticas del dia (estilo dashboard) -->
-            <div class="bg-white rounded-lg border border-gray-200 p-6">
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-bold text-gray-700">📈 Analiticas del dia</h3>
-                <div class="text-xs text-gray-500">Auto-actualiza cada 30s</div>
+        
+        <!-- Sección de Control de Turno -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="p-6">
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                  🛡️ Control de Turno
+                  <span v-if="turnoActivo" class="text-sm font-normal text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
+                    Activo desde {{ new Date(turnoActivo.fecha_apertura).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}
+                  </span>
+                  <span v-else class="text-sm font-normal text-red-600 bg-red-50 px-2 py-1 rounded-full border border-red-200">
+                    🔴 Turno Cerrado
+                  </span>
+                </h2>
+                <p class="text-sm text-gray-500 mt-1">Cálculos en tiempo real basados en los tickets cobrados durante este turno.</p>
               </div>
-
-              <div v-if="loadingAnalyticsDia" class="text-center py-8 text-gray-600 font-medium">
-                <div class="text-4xl mb-4">⏳</div>
-                <p class="text-lg">Cargando analiticas...</p>
-              </div>
-
-              <div v-else-if="!analyticsDia" class="text-center py-8 text-gray-500">
-                No hay datos para mostrar
-              </div>
-
-              <div v-else>
-                <!-- Métricas del día -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">#</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Total Pedidos</dt>
-                            <dd class="text-lg font-medium text-gray-900">{{ analyticsDia.total_pedidos }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">$</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Efectivo</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.ingresos.efectivo.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">💳</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Tarjeta</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.ingresos.tarjeta.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-yellow-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">💰</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Total Ingresos</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.ingresos.total.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-indigo-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">🎫</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Ticket Promedio</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.promedio_ticket.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">💵</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Propina Efectivo</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.propinas.efectivo.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">💳</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Propina Tarjeta</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.propinas.tarjeta.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-100">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-purple-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">💰</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-gray-500 truncate">Propina Total</dt>
-                            <dd class="text-lg font-medium text-gray-900">${{ analyticsDia.propinas.total.toFixed(2) }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="analyticsDia.cancelaciones > 0" class="bg-red-50 overflow-hidden shadow rounded-lg border border-red-200">
-                    <div class="p-5">
-                      <div class="flex items-center">
-                        <div class="flex-shrink-0">
-                          <div class="w-8 h-8 bg-red-500 rounded-md flex items-center justify-center">
-                            <span class="text-white text-sm font-bold">🚫</span>
-                          </div>
-                        </div>
-                        <div class="ml-5 w-0 flex-1">
-                          <dl>
-                            <dt class="text-sm font-medium text-red-700 truncate">Cancelaciones</dt>
-                            <dd class="text-lg font-medium text-red-900">{{ analyticsDia.cancelaciones }}</dd>
-                          </dl>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div class="lg:col-span-2 bg-white shadow rounded-lg p-6 border border-gray-100">
-                    <h3 class="text-lg font-medium text-gray-900 mb-4">⏰ Ventas por Hora</h3>
-                    <div class="h-64 flex items-end justify-between space-x-1">
-                      <div v-for="hora in 24" :key="hora" class="flex flex-col items-center flex-1 h-full justify-end group">
-                        <div
-                          class="w-full bg-blue-100 rounded-t hover:bg-blue-200 transition-all relative"
-                          :style="{ height: `${Math.max(getAnalyticsPorcentajeHora(hora-1), 5)}%` }"
-                        >
-                          <div class="opacity-0 group-hover:opacity-100 absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs rounded py-1 px-2 whitespace-nowrap z-10 pointer-events-none">
-                            {{ hora-1 }}:00 - {{ getAnalyticsDataHora(hora-1).cantidad }} pedidos (${{ getAnalyticsDataHora(hora-1).total }})
-                          </div>
-                        </div>
-                        <span class="text-[10px] text-gray-500 mt-1">{{ hora-1 }}h</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="space-y-6">
-                    <div class="bg-white shadow rounded-lg p-6 border border-gray-100">
-                      <h3 class="text-lg font-medium text-gray-900 mb-4">🟢 Estado en Vivo</h3>
-                      <div class="space-y-3">
-                        <div
-                          v-for="estado in estadoEnVivoAnalytics"
-                          :key="estado"
-                          class="flex justify-between items-center"
-                        >
-                          <span class="capitalize text-sm text-gray-600">{{ estado.replace('_', ' ') }}</span>
-                          <span
-                            class="px-3 py-1 rounded-full text-sm font-bold"
-                            :class="{
-                              'bg-red-100 text-red-800': estado === 'pendiente',
-                              'bg-yellow-100 text-yellow-800': estado === 'preparando',
-                              'bg-green-100 text-green-800': estado === 'listo',
-                              'bg-blue-100 text-blue-800': estado === 'entregado',
-                              'bg-purple-100 text-purple-800': estado === 'cuenta_solicitada',
-                              'bg-gray-100 text-gray-800': estado === 'dividido'
-                            }"
-                          >
-                            {{ getAnalyticsCantidadEstado(estado) }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="bg-white shadow rounded-lg p-6 border border-gray-100">
-                      <h3 class="text-lg font-medium text-gray-900 mb-4">📊 Tipos de Orden</h3>
-                      <div class="space-y-4">
-                        <div v-for="tipo in analyticsDia.tipos_orden" :key="tipo.tipo">
-                          <div class="flex justify-between text-sm mb-1">
-                            <span class="capitalize">{{ tipo.tipo.replace('_', ' ') }}</span>
-                            <span class="font-medium">{{ tipo.cantidad }}</span>
-                          </div>
-                          <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              class="bg-blue-600 h-2 rounded-full"
-                              :style="{ width: `${analyticsDia.total_pedidos > 0 ? (tipo.cantidad / analyticsDia.total_pedidos) * 100 : 0}%` }"
-                            ></div>
-                          </div>
-                        </div>
-                        <div v-if="analyticsDia.tipos_orden.length === 0" class="text-sm text-gray-500 text-center">
-                          Sin datos aún
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-                <!-- Lista de Pedidos del Día (Importada de AdminView) -->
-                <div class="bg-white shadow rounded-lg overflow-hidden border border-gray-100 mt-6">
-                   <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                         <div class="flex-1">
-                           <div class="flex items-center space-x-3">
-                             <h3 class="text-lg font-semibold text-gray-900">📋 Pedidos del Día</h3>
-                             <div class="hidden md:flex items-center space-x-4">
-                               <div class="flex items-center space-x-2">
-                                 <span class="text-sm text-gray-600">Mostrando:</span>
-                                 <span class="px-2 py-1 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700">
-                                   {{ filteredPedidosDelDia.length }} de {{ ticketsDelDia ? ticketsDelDia.length : 0 }}
-                                 </span>
-                               </div>
-                               <div class="h-4 w-px bg-gray-300"></div>
-                               <div class="flex items-center space-x-2">
-                                 <span class="text-sm text-gray-600">Orden:</span>
-                                 <button
-                                   @click="sortDescending = !sortDescending"
-                                   :class="[
-                                     'px-3 py-1 rounded-md text-xs font-medium flex items-center space-x-1 border transition-colors',
-                                     sortDescending 
-                                       ? 'bg-gray-800 text-white border-gray-800' 
-                                       : 'bg-white text-gray-700 border-gray-300 hover:border-gray-400'
-                                   ]"
-                                 >
-                                   <span>{{ sortDescending ? '🔼' : '🔽' }}</span>
-                                   <span>{{ sortDescending ? 'Más Reciente' : 'Más Antiguo' }}</span>
-                                 </button>
-                               </div>
-                             </div>
-                           </div>
-                         </div>
-                         
-                         <!-- Filtros -->
-                         <div class="flex-shrink-0">
-                           <div class="flex flex-col sm:flex-row gap-3">
-                             <div class="flex items-center space-x-2">
-                               <span class="text-sm font-medium text-gray-700 hidden sm:inline">Filtrar:</span>
-                               <div class="flex flex-wrap gap-1">
-                                 <button
-                                   @click="selectedPaymentMethod = 'todos'"
-                                   :class="[
-                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border',
-                                     selectedPaymentMethod === 'todos'
-                                       ? 'bg-blue-600 text-white border-blue-700'
-                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                   ]"
-                                 >
-                                   Todos
-                                 </button>
-                                 <button
-                                   @click="selectedPaymentMethod = 'efectivo'"
-                                   :class="[
-                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
-                                     selectedPaymentMethod === 'efectivo'
-                                       ? 'bg-green-600 text-white border-green-700'
-                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                   ]"
-                                 >
-                                   <span>💵</span>
-                                   <span>Efectivo</span>
-                                 </button>
-                                 <button
-                                   @click="selectedPaymentMethod = 'tarjeta'"
-                                   :class="[
-                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
-                                     selectedPaymentMethod === 'tarjeta'
-                                       ? 'bg-blue-500 text-white border-blue-600'
-                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                   ]"
-                                 >
-                                   <span>💳</span>
-                                   <span>Tarjeta</span>
-                                 </button>
-                                 <button
-                                   @click="selectedPaymentMethod = 'transferencia'"
-                                   :class="[
-                                     'px-3 py-1.5 rounded-md text-xs font-medium transition-colors border flex items-center space-x-1',
-                                     selectedPaymentMethod === 'transferencia'
-                                       ? 'bg-purple-500 text-white border-purple-600'
-                                       : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                                   ]"
-                                 >
-                                   <span>📱</span>
-                                   <span>Transferencia</span>
-                                 </button>
-                               </div>
-                             </div>
-                           </div>
-                          </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Estados vacíos -->
-                    <div v-if="!ticketsDelDia || ticketsDelDia.length === 0" class="px-6 py-12 text-center">
-                        <div class="mx-auto max-w-md">
-                            <div class="text-4xl mb-4">📋</div>
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">No hay pedidos hoy</h3>
-                            <p class="text-gray-500">Aún no se han registrado tickets en el día de hoy.</p>
-                        </div>
-                    </div>
-                    
-                    <div v-else-if="filteredPedidosDelDia.length === 0" class="px-6 py-12 text-center">
-                        <div class="mx-auto max-w-md">
-                            <div class="text-4xl mb-4">🔍</div>
-                            <h3 class="text-lg font-medium text-gray-900 mb-2">No hay pedidos con el filtro seleccionado</h3>
-                            <p class="text-gray-500">Intenta cambiar el método de pago o revisa los pedidos de hoy.</p>
-                            <button
-                                @click="selectedPaymentMethod = 'todos'"
-                                class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
-                            >
-                                Ver todos los pedidos
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div v-else class="overflow-x-auto lg:overflow-x-visible rounded-b-lg border border-gray-200 border-t-0">
-                       <table class="w-full table-fixed divide-y divide-gray-200">
-                          <thead class="bg-gray-50 sticky top-0 z-10">
-                               <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">Pedido</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[25%]">Mesa/Cliente</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[7%]">Tipo</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[10%]">Total</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[12%]">Pago</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[13%]">Propinas</th>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-[8%]">Hora</th>
-                                </tr>
-                         </thead>
-                         <tbody class="bg-white divide-y divide-gray-200">
-                               <tr v-for="(pedido, index) in filteredPedidosDelDia" :key="pedido.id" 
-                                   :class="[
-                                     'transition-colors duration-150',
-                                     index % 2 === 0 ? 'bg-white' : 'bg-gray-50',
-                                     'hover:bg-blue-50'
-                                   ]">
-                                  <td class="px-4 py-3 whitespace-nowrap">
-                                      <div class="text-sm font-bold text-gray-900">#{{ pedido.numero_display }}</div>
-                                  </td>
-                                   <td class="px-4 py-3">
-                                       <div class="text-sm text-gray-700 truncate max-w-[120px] lg:max-w-[180px] xl:max-w-[220px]" :title="getMesaClienteDisplay(pedido)">
-                                           {{ getMesaClienteDisplay(pedido) }}
-                                       </div>
-                                   </td>
-                                  <td class="px-4 py-3 whitespace-nowrap">
-                                      <div class="flex items-center space-x-1">
-                                          <span class="text-lg">{{ getTipoOrdenEmoji(pedido.tipo_orden || '') }}</span>
-                                          <span class="text-xs text-gray-500 capitalize hidden lg:inline">
-                                              {{ (pedido.tipo_orden || '').replace('_', ' ') }}
-                                          </span>
-                                      </div>
-                                  </td>
-                                  <td class="px-4 py-3 whitespace-nowrap">
-                                      <div class="text-sm font-bold text-green-700">${{ Number(pedido.total).toFixed(2) }}</div>
-                                  </td>
-                                    <td class="px-4 py-3 whitespace-nowrap">
-                                        <div class="flex items-center space-x-1">
-                                            <span class="text-sm">{{ getPaymentMethodIcon(pedido.metodo_pago) }}</span>
-                                            <span :class="['px-2 py-1 rounded-full text-xs font-medium capitalize hidden md:inline', getPaymentMethodColor(pedido.metodo_pago)]"
-                                                  :title="pedido.metodo_pago || '-'">
-                                                {{ pedido.metodo_pago || '-' }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td class="px-4 py-3">
-                                        <div class="text-sm text-gray-700 truncate" :title="formatTipDisplay(pedido)">
-                                            {{ formatTipDisplay(pedido) }}
-                                        </div>
-                                    </td>
-                                   <td class="px-4 py-3 whitespace-nowrap">
-                                       <div class="text-xs text-gray-500">
-                                           {{ new Date(pedido.fecha_evento || pedido.fecha_creacion || Date.now()).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) }}
-                                       </div>
-                                   </td>
-                              </tr>
-                          </tbody>
-                          <tfoot v-if="filteredSummary" class="bg-gray-800 text-white">
-                              <tr>
-                                  <td colspan="7" class="px-4 py-3">
-                                      <div class="flex flex-wrap items-center justify-between gap-4">
-                                          <div class="flex items-center space-x-6">
-                                              <div>
-                                                  <div class="text-xs font-medium text-gray-300">Total Pedidos</div>
-                                                  <div class="text-lg font-bold">{{ filteredSummary.count }}</div>
-                                              </div>
-                                              <div>
-                                                  <div class="text-xs font-medium text-gray-300">Total Ventas</div>
-                                                  <div class="text-lg font-bold text-green-300">${{ filteredSummary.total.toFixed(2) }}</div>
-                                              </div>
-                                              <div>
-                                                  <div class="text-xs font-medium text-gray-300">Propinas Totales</div>
-                                                  <div class="text-lg font-bold text-yellow-300">${{ filteredSummary.propina_total.toFixed(2) }}</div>
-                                              </div>
-                                              <div class="hidden md:block">
-                                                  <div class="text-xs font-medium text-gray-300">Ticket Promedio</div>
-                                                  <div class="text-lg font-bold text-blue-300">${{ filteredSummary.promedio_ticket.toFixed(2) }}</div>
-                                              </div>
-                                          </div>
-                                      </div>
-                                  </td>
-                              </tr>
-                          </tfoot>
-                      </table>
-                 </div>
-             </div>
-            </div>
-
-            <!-- Detalle por mesero -->
-            <div class="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 class="text-lg font-bold text-gray-700 mb-4">👥 Propinas por Mesero</h3>
-              <div v-if="reportePropinas?.por_mesero?.length === 0" class="text-center py-4 text-gray-500">
-                No hay propinas registradas hoy
-              </div>
-              <div v-else class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                  <thead>
-                    <tr class="bg-gray-50">
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mesero</th>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Propina Efectivo</th>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Propina Tarjeta</th>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-gray-200">
-                    <tr v-for="item in reportePropinas?.por_mesero || []" :key="item.mesero_id" class="hover:bg-gray-50">
-                      <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.nombre || `Mesero ${item.mesero_id}` }}</td>
-                      <td class="px-4 py-3 text-sm text-green-600 font-bold">${{ item.propina_efectivo?.toFixed(2) || '0.00' }}</td>
-                      <td class="px-4 py-3 text-sm text-blue-600 font-bold">${{ item.propina_tarjeta?.toFixed(2) || '0.00' }}</td>
-                      <td class="px-4 py-3 text-sm text-purple-600 font-bold">${{ item.propina_total?.toFixed(2) || '0.00' }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Turno de caja -->
-            <div class="bg-white rounded-lg border border-gray-200 p-6">
-              <h3 class="text-lg font-bold text-gray-700 mb-4">🧾 Turno de caja</h3>
-
+              
+              <!-- Botón de Acción de Turno -->
               <button
                 @click="manejarClickTurno"
-                :disabled="loadingTurno"
                 :class="[
-                  'w-full px-6 py-3 rounded-lg font-medium transition-all border',
-                  loadingTurno
-                    ? 'bg-gray-300 text-gray-500 border-gray-400 cursor-not-allowed'
-                    : tieneTurnoActivo
-                      ? 'bg-red-100 hover:bg-red-200 text-red-700 border-red-300 hover:border-red-400'
-                      : 'bg-green-100 hover:bg-green-200 text-green-700 border-green-300 hover:border-green-400'
+                  'px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2',
+                  tieneTurnoActivo 
+                    ? 'bg-white border-2 border-red-500 text-red-600 hover:bg-red-50' 
+                    : 'bg-[#00126D] text-white hover:bg-blue-900 hover:shadow-md transform hover:-translate-y-0.5'
                 ]"
               >
-                <span v-if="loadingTurno">⏳</span>
-                <span v-else-if="tieneTurnoActivo">📊</span>
-                <span v-else>💰</span>
-                <span class="ml-2 font-semibold">{{ botonTurnoTexto }}</span>
-                <span v-if="turnoActivo" class="ml-2 text-sm font-normal">
-                  (${{ turnoActivo.total_inicial.toFixed(2) }})
-                </span>
+                <span class="text-xl">{{ tieneTurnoActivo ? '🔒' : '🔓' }}</span>
+                {{ botonTurnoTexto }}
+              </button>
+            </div>
+
+            <!-- Si NO hay turno activo -->
+            <div v-if="!turnoActivo" class="py-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+              <div class="text-6xl mb-4 opacity-50">🔐</div>
+              <h3 class="text-xl font-bold text-gray-700 mb-2">Turno Cerrado</h3>
+              <p class="text-gray-500 max-w-md mx-auto mb-6">
+                Para comenzar a cobrar y registrar movimientos de caja, debes iniciar un nuevo turno contando el fondo inicial.
+              </p>
+              <button
+                @click="manejarClickTurno"
+                class="px-8 py-3 bg-[#00126D] text-white rounded-xl font-bold shadow-lg hover:bg-blue-900 transition-all text-lg"
+              >
+                Iniciar Turno Ahora
+              </button>
+            </div>
+
+            <!-- Si HAY turno activo: Dashboard de Métricas -->
+            <div v-else-if="turnoMetrics" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              <!-- Tarjeta Principal: Arqueo Esperado -->
+              <div class="lg:col-span-1 bg-gradient-to-br from-[#00126D] to-[#001E96] rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
+                <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <span class="text-8xl">💵</span>
+                </div>
+                
+                <h3 class="text-blue-100 font-medium mb-1 uppercase tracking-wider text-sm">Efectivo Esperado en Caja</h3>
+                <div class="text-4xl font-bold mb-4 tracking-tight">
+                  ${{ turnoMetrics.efectivoEsperado.toFixed(2) }}
+                </div>
+
+                <div class="space-y-2 text-sm border-t border-blue-800/50 pt-3">
+                  <div class="flex justify-between text-blue-200">
+                    <span>Fondo Inicial:</span>
+                    <span class="font-mono font-medium">+${{ turnoMetrics.fondoInicial.toFixed(2) }}</span>
+                  </div>
+                  <div class="flex justify-between text-blue-200">
+                    <span>Ventas Efectivo:</span>
+                    <span class="font-mono font-medium">+${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</span>
+                  </div>
+                  <div class="flex justify-between text-blue-200">
+                    <span>Propinas Efectivo:</span>
+                    <span class="font-mono font-medium">+${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tarjetas Secundarias: Desglose -->
+              <div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                
+                <!-- Venta Efectivo -->
+                <div class="bg-green-50 border border-green-100 rounded-xl p-4 flex flex-col justify-between">
+                  <div class="text-green-600 mb-1 font-medium text-xs uppercase">Venta Efectivo</div>
+                  <div class="text-2xl font-bold text-green-800">${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</div>
+                </div>
+
+                <!-- Venta Tarjeta -->
+                <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col justify-between">
+                  <div class="text-blue-600 mb-1 font-medium text-xs uppercase">Venta Tarjeta</div>
+                  <div class="text-2xl font-bold text-blue-800">${{ turnoMetrics.ventasTarjeta.toFixed(2) }}</div>
+                </div>
+
+                <!-- Propinas Efectivo -->
+                <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 flex flex-col justify-between">
+                  <div class="text-yellow-600 mb-1 font-medium text-xs uppercase">Propina Efectivo</div>
+                  <div class="text-2xl font-bold text-yellow-800">${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</div>
+                </div>
+
+                <!-- Propinas Tarjeta -->
+                <div class="bg-purple-50 border border-purple-100 rounded-xl p-4 flex flex-col justify-between">
+                  <div class="text-purple-600 mb-1 font-medium text-xs uppercase">Propina Tarjeta</div>
+                  <div class="text-2xl font-bold text-purple-800">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabla de Tickets del Día (Histórico Auditable) -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h3 class="font-bold text-gray-800">
+              🧾 Comandas del Día
+              <span class="text-sm font-normal text-gray-500 ml-2">({{ filteredSummary?.count || 0 }} tickets)</span>
+            </h3>
+            
+            <div class="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+              <button 
+                v-for="method in ['todos', 'efectivo', 'tarjeta']" 
+                :key="method"
+                @click="selectedPaymentMethod = method as any"
+                :class="[
+                  'px-3 py-1 text-xs font-medium rounded-md transition-all capitalize',
+                  selectedPaymentMethod === method ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
+                ]"
+              >
+                {{ method }}
               </button>
             </div>
           </div>
 
-          <div v-else class="bg-white rounded-lg border border-gray-200 p-6">
-            <div class="flex items-center justify-between mb-4">
-              <h3 class="text-lg font-bold text-gray-700">🧾 Historial de tickets del dia</h3>
-              <div class="text-xs text-gray-500">
-                Auto-actualiza cada 30s
-              </div>
-            </div>
-
-            <div v-if="loadingTicketsDelDia" class="text-center py-8 text-gray-600 font-medium">
-              <div class="text-4xl mb-4">⏳</div>
-              <p class="text-lg">Cargando tickets del dia...</p>
-            </div>
-
-            <div v-else-if="ticketsDelDia.length === 0" class="text-center py-8 text-gray-500">
-              No hay tickets registrados hoy
-            </div>
-
-            <div v-else class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr class="bg-gray-50">
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mesa/Cliente</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mesero</th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Metodo</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Propina</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                  <tr v-for="t in ticketsDelDia" :key="t.id" class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm text-gray-700 whitespace-nowrap">
-                      {{ t.fecha_evento ? new Date(t.fecha_evento).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : 'N/A' }}
-                    </td>
-                    <td class="px-4 py-3 text-sm whitespace-nowrap">
-                      <span
-                        :class="[
-                          'inline-flex items-center px-2 py-1 rounded-full text-xs font-bold',
-                          t.estado === 'pagado'
-                            ? 'bg-green-100 text-green-800'
-                            : t.estado === 'cancelado'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-800'
-                        ]"
-                      >
-                        {{ t.estado }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3 text-sm font-semibold text-gray-900 whitespace-nowrap">#{{ t.numero_display }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-700">
-                      <span v-if="t.mesa">Mesa {{ t.mesa }}</span>
-                      <span v-else-if="t.nombre_cliente">{{ t.nombre_cliente }}</span>
-                      <span v-else class="text-gray-400">-</span>
-                    </td>
-                    <td class="px-4 py-3 text-sm text-gray-700">{{ t.mesero_nombre || '-' }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-700 capitalize">{{ t.metodo_pago || '-' }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-900 font-bold text-right whitespace-nowrap">${{ Number(t.total).toFixed(2) }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-900 font-bold text-right whitespace-nowrap">${{ Number(t.propina_total || 0).toFixed(2) }}</td>
-                    <td class="px-4 py-3 text-right whitespace-nowrap">
-                      <div v-if="t.estado === 'pagado'" class="inline-flex gap-2">
-                        <button
-                          @click="reimprimirTicketDesdeHistorial(t)"
-                          :disabled="printingTicketId === t.id"
-                          class="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold disabled:opacity-50"
-                        >
-                          {{ printingTicketId === t.id ? 'Imprimiendo...' : '🖨️ Imprimir' }}
-                        </button>
-                        <button
-                          @click="abrirEditarPropina(t)"
-                          class="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all text-sm font-semibold"
-                        >
-                          ✏️ Propina
-                        </button>
-                      </div>
-                      <span v-else class="text-gray-400">-</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left">
+              <thead class="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
+                <tr>
+                  <th class="px-6 py-3">Hora</th>
+                  <th class="px-6 py-3">Ticket</th>
+                  <th class="px-6 py-3">Mesa/Cliente</th>
+                  <th class="px-6 py-3">Mesero</th>
+                  <th class="px-6 py-3 text-center">Método</th>
+                  <th class="px-6 py-3 text-right">Total</th>
+                  <th class="px-6 py-3 text-right">Propina</th>
+                  <th class="px-6 py-3 text-center">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                <tr v-if="loadingTicketsDelDia" class="animate-pulse">
+                  <td colspan="8" class="px-6 py-8 text-center text-gray-400">Cargando tickets...</td>
+                </tr>
+                <tr v-else-if="filteredPedidosDelDia.length === 0">
+                  <td colspan="8" class="px-6 py-8 text-center text-gray-400">No hay tickets registrados hoy con este filtro.</td>
+                </tr>
+                <tr 
+                  v-for="pedido in filteredPedidosDelDia" 
+                  :key="pedido.id"
+                  class="hover:bg-gray-50 transition-colors"
+                >
+                  <td class="px-6 py-3 text-gray-500 font-mono text-xs">
+                    {{ pedido.fecha_pago ? new Date(pedido.fecha_pago).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--' }}
+                  </td>
+                  <td class="px-6 py-3 font-medium text-gray-900">#{{ pedido.numero_display }}</td>
+                  <td class="px-6 py-3 text-gray-600 truncate max-w-[150px]" :title="getMesaClienteDisplay(pedido)">
+                    {{ getMesaClienteDisplay(pedido) }}
+                  </td>
+                  <td class="px-6 py-3 text-gray-500">{{ pedido.mesero_nombre || '-' }}</td>
+                  <td class="px-6 py-3 text-center">
+                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', getPaymentMethodColor(pedido.metodo_pago)]">
+                      <span class="mr-1">{{ getPaymentMethodIcon(pedido.metodo_pago) }}</span>
+                      {{ pedido.metodo_pago || 'Sin pago' }}
+                    </span>
+                  </td>
+                  <td class="px-6 py-3 text-right font-medium text-gray-900">
+                    ${{ Number(pedido.total).toFixed(2) }}
+                  </td>
+                  <td class="px-6 py-3 text-right text-gray-500">
+                     <span v-if="Number(pedido.propina_total) > 0" class="text-green-600 font-medium">
+                       +${{ Number(pedido.propina_total).toFixed(2) }}
+                     </span>
+                     <span v-else class="text-gray-300">-</span>
+                  </td>
+                  <td class="px-6 py-3 text-center flex justify-center gap-2">
+                    <button 
+                      @click="reimprimirTicketDesdeHistorial(pedido)"
+                      class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                      title="Reimprimir Ticket"
+                    >
+                      🖨️
+                    </button>
+                    <button 
+                      @click="abrirEditarPropina(pedido)"
+                      class="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                      title="Editar Propina"
+                    >
+                      💰
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+              <!-- Footer de Totales de la Tabla -->
+              <tfoot v-if="filteredSummary" class="bg-gray-50 font-medium text-gray-800 border-t border-gray-200">
+                <tr>
+                  <td colspan="5" class="px-6 py-3 text-right">Total Filtro:</td>
+                  <td class="px-6 py-3 text-right">${{ filteredSummary.total.toFixed(2) }}</td>
+                  <td class="px-6 py-3 text-right text-green-700">+${{ filteredSummary.propina_total.toFixed(2) }}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
+
       </div>
         </div>
 
