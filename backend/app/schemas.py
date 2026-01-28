@@ -33,21 +33,38 @@ class UsuarioLogin(BaseModel):
     password: str
 
 
-# ===== SCHEMAS PARA SUCURSALES =====
-class SucursalBase(BaseModel):
-    nombre: str
-    direccion: Optional[str] = None
+# ===== SCHEMAS PARA ANALÍTICAS DE GASTOS =====
+class GastoTimeline(BaseModel):
+    fecha: str
+    total: float
 
+class GastoPorCategoria(BaseModel):
+    categoria: str
+    total: float
 
-class SucursalCreate(SucursalBase):
-    pass
-
-
-class SucursalResponse(SucursalBase):
+class GastoTopProveedor(BaseModel):
     id: int
+    nombre: str
+    total: float
 
-    class Config:
-        from_attributes = True
+class GastosResumenResponse(BaseModel):
+    total_gastado: float
+    gasto_promedio_diario: float
+    por_categoria: List[GastoPorCategoria]
+    top_proveedor: Optional[GastoTopProveedor] = None
+    timeline: List[GastoTimeline]
+
+class HistorialPrecioItem(BaseModel):
+    fecha: datetime
+    precio_unitario: float
+    proveedor_nombre: str
+    cantidad_comprada: float
+
+class HistorialPreciosResponse(BaseModel):
+    articulo_id: int
+    articulo_nombre: str
+    historial: List[HistorialPrecioItem]
+
 
 
 # ===== SCHEMAS PARA PLATILLOS =====
@@ -247,6 +264,7 @@ class GastoBase(BaseModel):
 
 class GastoCreate(GastoBase):
     detalles: List[GastoDetalleCreate] = []
+    fecha_gasto: Optional[datetime] = None
 
 
 class GastoResponse(GastoBase):
@@ -259,6 +277,13 @@ class GastoResponse(GastoBase):
 
     class Config:
         from_attributes = True
+
+
+class PaginatedGastosResponse(BaseModel):
+    items: List[GastoResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 # ===== SCHEMAS PARA AUTENTICACIÓN =====

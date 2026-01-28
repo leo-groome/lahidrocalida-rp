@@ -15,6 +15,7 @@ from app.models import (
     GastoDetalle,
     Proveedor,
     Usuario,
+    get_local_datetime,
 )
 from app.schemas import (
     ArticuloCreate,
@@ -23,6 +24,13 @@ from app.schemas import (
     CategoriaArticuloResponse,
     GastoCreate,
     GastoResponse,
+    GastosResumenResponse,
+    GastoTimeline,
+    GastoPorCategoria,
+    GastoTopProveedor,
+    HistorialPreciosResponse,
+    HistorialPrecioItem,
+    PaginatedGastosResponse,
     ProveedorCreate,
     ProveedorResponse,
 )
@@ -273,6 +281,9 @@ def create_gasto(
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
+    # Determinar fecha de gasto: si viene en el payload usarla, si no usar hora actual
+    fecha_gasto = data.fecha_gasto if data.fecha_gasto else get_local_datetime()
+
     gasto = Gasto(
         proveedor_id=data.proveedor_id,
         tipo_gasto=data.tipo_gasto,
@@ -282,6 +293,7 @@ def create_gasto(
         subtotal=subtotal,
         total=total,
         total_manual=_normalize_decimal(data.total_manual) if data.total_manual is not None else None,
+        fecha_gasto=fecha_gasto,
         notas=data.notas,
         sucursal_id=current_user.sucursal_id,
         detalles=detalles,
@@ -292,7 +304,7 @@ def create_gasto(
     return gasto
 
 
-@router.get("/", response_model=List[GastoResponse])
+@router.get("/", response_model=PaginatedGastosResponse)
 def list_gastos(
     fecha_inicio: Optional[str] = None,
     fecha_fin: Optional[str] = None,
@@ -301,21 +313,15 @@ def list_gastos(
     metodo_pago: Optional[str] = None,
     categoria_id: Optional[int] = None,
     sucursal_id: Optional[int] = None,
+    page: int = 1,
+    page_size: int = 50,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
     fecha_inicio_date = _parse_date(fecha_inicio, "fecha_inicio")
     fecha_fin_date = _parse_date(fecha_fin, "fecha_fin")
 
-    query = (
-        db.query(Gasto)
-        .options(
-            joinedload(Gasto.proveedor),
-            joinedload(Gasto.detalles)
-            .joinedload(GastoDetalle.articulo)
-            .joinedload(Articulo.categoria),
-        )
-    )
+    query = db.query(Gasto)
 
     if current_user.rol == "compras":
         query = query.filter(Gasto.sucursal_id == current_user.sucursal_id)
@@ -332,6 +338,8 @@ def list_gastos(
         query = query.filter(Gasto.fecha_gasto >= fecha_inicio_date)
     if fecha_fin_date is not None:
         query = query.filter(Gasto.fecha_gasto <= fecha_fin_date)
+    
+    # Filtro complejo por categoría (requiere join)
     if categoria_id is not None:
         query = (
             query.join(Gasto.detalles)
@@ -340,7 +348,192 @@ def list_gastos(
             .distinct()
         )
 
-    return query.order_by(Gasto.fecha_gasto.desc()).all()
+    # Contar total antes de paginar
+    total = query.count()
+
+    # Aplicar orden y paginación
+    query = (
+        query
+        .options(
+            joinedload(Gasto.proveedor),
+            joinedload(Gasto.detalles)
+            .joinedload(GastoDetalle.articulo)
+            .joinedload(Articulo.categoria),
+        )
+        .order_by(Gasto.fecha_gasto.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    items = query.all()
+
+    return PaginatedGastosResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size
+    )
+
+
+@router.get("/analiticas/resumen", response_model=GastosResumenResponse)
+def get_gastos_analiticas(
+    fecha_inicio: Optional[str] = None,
+    fecha_fin: Optional[str] = None,
+    sucursal_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    fecha_inicio_date = _parse_date(fecha_inicio, "fecha_inicio")
+    fecha_fin_date = _parse_date(fecha_fin, "fecha_fin")
+
+    base_query = db.query(Gasto)
+
+    if current_user.rol == "compras":
+        base_query = base_query.filter(Gasto.sucursal_id == current_user.sucursal_id)
+    elif sucursal_id is not None:
+        base_query = base_query.filter(Gasto.sucursal_id == sucursal_id)
+
+    if fecha_inicio_date:
+        base_query = base_query.filter(Gasto.fecha_gasto >= fecha_inicio_date)
+    if fecha_fin_date:
+        base_query = base_query.filter(Gasto.fecha_gasto <= fecha_fin_date)
+
+    # 1. Total Gastado
+    total_gastado = base_query.with_entities(func.sum(Gasto.total)).scalar() or 0
+
+    # 2. Promedio Diario
+    if fecha_inicio_date and fecha_fin_date:
+        dias = (fecha_fin_date - fecha_inicio_date).days + 1
+        promedio_diario = float(total_gastado) / dias if dias > 0 else 0
+    else:
+        # Si no hay rango, calculamos sobre el rango de datos existente
+        min_date = base_query.with_entities(func.min(Gasto.fecha_gasto)).scalar()
+        max_date = base_query.with_entities(func.max(Gasto.fecha_gasto)).scalar()
+        if min_date and max_date:
+            dias = (max_date - min_date).days + 1
+            promedio_diario = float(total_gastado) / dias if dias > 0 else 0
+        else:
+            promedio_diario = 0
+
+    # 3. Por Categoría (más complejo porque 'nomina' no tiene articulos/categorias)
+    # Estrategia: Consultar GastoDetalle -> Articulo -> Categoria para gastos normales
+    # Y sumar gastos tipo 'nomina' o sin detalles como 'Otros'
+    
+    # A. Gastos con detalle
+    gastos_con_detalle = (
+        db.query(
+            CategoriaArticulo.nombre.label("categoria"),
+            func.sum(GastoDetalle.subtotal_linea).label("total")
+        )
+        .join(Articulo, GastoDetalle.articulo_id == Articulo.id)
+        .join(CategoriaArticulo, Articulo.categoria_id == CategoriaArticulo.id)
+        .join(Gasto, GastoDetalle.gasto_id == Gasto.id)
+    )
+    
+    # Aplicar mismos filtros a esta subquery
+    if current_user.rol == "compras":
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.sucursal_id == current_user.sucursal_id)
+    elif sucursal_id:
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.sucursal_id == sucursal_id)
+    if fecha_inicio_date:
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto >= fecha_inicio_date)
+    if fecha_fin_date:
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto <= fecha_fin_date)
+        
+    res_categorias = gastos_con_detalle.group_by(CategoriaArticulo.nombre).all()
+    
+    por_categoria = [GastoPorCategoria(categoria=r.categoria, total=float(r.total or 0)) for r in res_categorias]
+
+    # B. Agregar Nomina e Indirectos sin detalle
+    # Nómina
+    nomina_query = base_query.filter(Gasto.tipo_gasto == 'nomina')
+    total_nomina = nomina_query.with_entities(func.sum(Gasto.total)).scalar() or 0
+    if total_nomina > 0:
+        por_categoria.append(GastoPorCategoria(categoria="Nómina", total=float(total_nomina)))
+
+    # 4. Top Proveedor
+    top_prov = (
+        base_query.with_entities(
+            Proveedor.id,
+            Proveedor.nombre,
+            func.sum(Gasto.total).label("total")
+        )
+        .join(Proveedor, Gasto.proveedor_id == Proveedor.id)
+        .group_by(Proveedor.id, Proveedor.nombre)
+        .order_by(func.sum(Gasto.total).desc())
+        .first()
+    )
+    
+    top_proveedor_obj = None
+    if top_prov:
+        top_proveedor_obj = GastoTopProveedor(
+            id=top_prov.id,
+            nombre=top_prov.nombre,
+            total=float(top_prov.total)
+        )
+
+    # 5. Timeline
+    # Agrupar por fecha (día)
+    timeline_res = (
+        base_query.with_entities(
+            func.date(Gasto.fecha_gasto).label("fecha"),
+            func.sum(Gasto.total).label("total")
+        )
+        .group_by(func.date(Gasto.fecha_gasto))
+        .order_by(func.date(Gasto.fecha_gasto))
+        .all()
+    )
+    
+    timeline = [
+        GastoTimeline(fecha=str(r.fecha), total=float(r.total)) 
+        for r in timeline_res
+    ]
+
+    return GastosResumenResponse(
+        total_gastado=float(total_gastado),
+        gasto_promedio_diario=promedio_diario,
+        por_categoria=por_categoria,
+        top_proveedor=top_proveedor_obj,
+        timeline=timeline
+    )
+
+
+@router.get("/analiticas/historial-precios/{articulo_id}", response_model=HistorialPreciosResponse)
+def get_historial_precios(
+    articulo_id: int,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
+    if not articulo:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+        
+    query = (
+        db.query(GastoDetalle)
+        .join(Gasto)
+        .join(Proveedor)
+        .filter(GastoDetalle.articulo_id == articulo_id)
+        .order_by(Gasto.fecha_gasto.desc())
+        .limit(limit)
+    )
+    
+    items = []
+    for detalle in query.all():
+        items.append(
+            HistorialPrecioItem(
+                fecha=detalle.gasto.fecha_gasto,
+                precio_unitario=float(detalle.precio_unitario),
+                proveedor_nombre=detalle.gasto.proveedor.nombre,
+                cantidad_comprada=float(detalle.cantidad)
+            )
+        )
+        
+    return HistorialPreciosResponse(
+        articulo_id=articulo.id,
+        articulo_nombre=articulo.nombre,
+        historial=items
+    )
 
 
 @router.get("/{gasto_id}", response_model=GastoResponse)
@@ -413,6 +606,8 @@ def update_gasto(
     gasto.subtotal = subtotal
     gasto.total = total
     gasto.total_manual = _normalize_decimal(data.total_manual) if data.total_manual is not None else None
+    if data.fecha_gasto:
+        gasto.fecha_gasto = data.fecha_gasto
     gasto.notas = data.notas
 
     gasto.detalles.clear()

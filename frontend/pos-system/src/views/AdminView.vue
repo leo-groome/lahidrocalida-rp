@@ -116,7 +116,11 @@
         </div>
 
         <!-- ANALÍTICAS AVANZADAS -->
-        <div v-if="analyticsData && analyticsData.avanzado" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div v-if="loadingAdvanced" class="py-12 flex justify-center">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+        
+        <div v-else-if="advancedAnalyticsData" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
            
            <!-- Top Platillos -->
            <div class="bg-white p-6 rounded-lg shadow lg:col-span-2">
@@ -132,7 +136,7 @@
                    </tr>
                  </thead>
                  <tbody class="bg-white divide-y divide-gray-200">
-                   <tr v-for="(item, index) in analyticsData.avanzado.top_platillos" :key="index">
+                   <tr v-for="(item, index) in advancedAnalyticsData.top_platillos" :key="index">
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ index + 1 }}</td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ item.nombre }}</td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{{ item.cantidad }}</td>
@@ -156,7 +160,7 @@
            <div class="bg-white p-6 rounded-lg shadow">
              <h3 class="text-lg font-medium text-gray-900 mb-4">🤵 Rendimiento del Personal</h3>
              <ul class="divide-y divide-gray-200">
-               <li v-for="(mesero, idx) in analyticsData.avanzado.top_meseros" :key="idx" class="py-4 flex justify-between items-center">
+               <li v-for="(mesero, idx) in advancedAnalyticsData.top_meseros" :key="idx" class="py-4 flex justify-between items-center">
                  <div class="flex items-center">
                    <div class="flex-shrink-0 h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
                      {{ mesero.nombre.charAt(0).toUpperCase() }}
@@ -202,77 +206,17 @@
            </button>
         </div>
 
-        <!-- Contenido Subtabs Gastos (Reutilizado logicamente) -->
-        <div v-if="gastosSubTab === 'gastos'">
-           <!-- Filtros Gastos -->
-           <div class="bg-white shadow rounded-lg p-4 mb-6">
-             <h3 class="text-sm font-semibold text-gray-900 mb-3">Filtros</h3>
-             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-               <div>
-                 <label class="block text-xs font-medium text-gray-600">Inicio</label>
-                 <input v-model="gastoFilters.fecha_inicio" type="date" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm" />
-               </div>
-               <div>
-                 <label class="block text-xs font-medium text-gray-600">Fin</label>
-                 <input v-model="gastoFilters.fecha_fin" type="date" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm" />
-               </div>
-               <div>
-                 <label class="block text-xs font-medium text-gray-600">Proveedor</label>
-                 <select v-model="gastoFilters.proveedor_id" class="mt-1 w-full border border-gray-200 rounded-md px-2 py-1 text-sm">
-                   <option :value="null">Todos</option>
-                   <option v-for="proveedor in proveedoresList" :key="proveedor.id" :value="proveedor.id">{{ proveedor.nombre }}</option>
-                 </select>
-               </div>
-               <!-- Otros filtros simplificados para brevedad -->
-             </div>
-             <div class="flex gap-2 mt-4">
-               <button @click="loadGastosList" class="px-3 py-1.5 bg-gray-900 text-white rounded-md text-sm">Aplicar</button>
-               <button @click="clearGastoFilters" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm">Limpiar</button>
-             </div>
-           </div>
+        <!-- Contenido Subtabs Gastos -->
+        <div v-if="gastosSubTab === 'dashboard'">
+           <GastosDashboard @new-gasto="handleNewGasto" />
+        </div>
 
-           <!-- Lista Gastos -->
-           <div class="bg-white shadow overflow-hidden sm:rounded-md">
-             <ul class="divide-y divide-gray-200">
-               <li v-for="gasto in gastosList" :key="gasto.id" class="px-6 py-4">
-                 <div class="flex flex-wrap items-center justify-between gap-4">
-                   <div>
-                     <h4 class="text-lg font-medium text-gray-900">{{ gasto.proveedor.nombre }}</h4>
-                     <div class="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-500">
-                       <span class="font-medium text-gray-900">${{ formatCurrency(gasto.total) }}</span>
-                       <span class="capitalize px-2 py-0.5 bg-gray-100 rounded text-xs">{{ gasto.tipo_gasto }}</span>
-                       <span class="capitalize text-xs">{{ gasto.metodo_pago }}</span>
-                       <span v-if="gasto.folio" class="text-xs">Folio: {{ gasto.folio }}</span>
-                       <span class="text-xs">{{ new Date(gasto.fecha_gasto).toLocaleDateString() }}</span>
-                     </div>
-                   </div>
-                   <button @click="toggleGastoExpanded(gasto.id)" class="text-sm text-blue-600 hover:text-blue-700">
-                     {{ isGastoExpanded(gasto.id) ? 'Ocultar' : 'Ver detalles' }}
-                   </button>
-                 </div>
-                 
-                 <!-- Detalles expandidos del gasto -->
-                 <div v-if="isGastoExpanded(gasto.id)" class="mt-4 bg-gray-50 rounded-lg p-4 text-sm">
-                    <p v-if="gasto.descripcion" class="mb-2"><strong>Desc:</strong> {{ gasto.descripcion }}</p>
-                    <p v-if="gasto.notas" class="mb-2"><strong>Notas:</strong> {{ gasto.notas }}</p>
-                    
-                    <div v-if="gasto.detalles && gasto.detalles.length > 0" class="mt-2 border-t border-gray-200 pt-2">
-                      <table class="min-w-full">
-                        <thead><tr class="text-left text-xs text-gray-500"><th>Articulo</th><th>Cant</th><th>P.Unit</th><th>Total</th></tr></thead>
-                        <tbody>
-                          <tr v-for="d in gasto.detalles" :key="d.id">
-                            <td class="py-1">{{ d.articulo.nombre }}</td>
-                            <td class="py-1">{{ d.cantidad }} {{ d.articulo.unidad }}</td>
-                            <td class="py-1">${{ formatCurrency(d.precio_unitario) }}</td>
-                            <td class="py-1 font-medium">${{ formatCurrency(d.subtotal_linea) }}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                 </div>
-               </li>
-             </ul>
-           </div>
+        <div v-if="gastosSubTab === 'gastos'">
+           <GastosHistorial 
+             ref="gastosHistorialRef"
+             @new-gasto="handleNewGasto"
+             @edit-gasto="handleEditGasto"
+           />
         </div>
         
         <!-- Proveedores, Articulos, Categorias (Simplificado para vista) -->
@@ -461,52 +405,13 @@
       @save-usuario="saveUsuario"
     />
 
-    <!-- Modal Gasto (Simplificado en template, lógica compleja se mantiene) -->
-    <div v-if="showAddGastoModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white p-6 rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <h3 class="text-lg font-bold mb-4">Nuevo Gasto</h3>
-            <!-- Formulario de gasto (reutilizando lógica existente) -->
-            <form @submit.prevent="addGasto" class="space-y-4">
-               <div class="grid grid-cols-2 gap-4">
-                  <select v-model="newGasto.proveedor_id" class="border p-2 rounded" required>
-                     <option :value="null">Selecciona Proveedor</option>
-                     <option v-for="p in proveedoresList" :key="p.id" :value="p.id">{{ p.nombre }}</option>
-                  </select>
-                  <select v-model="newGasto.tipo_gasto" class="border p-2 rounded">
-                     <option value="directo">Directo</option>
-                     <option value="indirecto">Indirecto</option>
-                     <option value="nomina">Nómina</option>
-                  </select>
-                  <select v-model="newGasto.metodo_pago" class="border p-2 rounded">
-                     <option value="efectivo">Efectivo</option>
-                     <option value="tarjeta">Tarjeta</option>
-                  </select>
-                  <input v-model="newGasto.folio" placeholder="Folio" class="border p-2 rounded">
-                  <input v-model="newGasto.descripcion" placeholder="Descripción" class="border p-2 rounded col-span-2">
-                  <input v-model.number="newGasto.total_manual" type="number" step="0.01" placeholder="Total Manual (Opcional)" class="border p-2 rounded">
-               </div>
-
-               <!-- Detalles de artículos (si no es nomina) -->
-               <div v-if="newGasto.tipo_gasto !== 'nomina'" class="border-t pt-4">
-                  <div v-for="(d, idx) in newGasto.detalles" :key="idx" class="flex gap-2 mb-2">
-                     <select v-model="d.articulo_id" class="border p-1 rounded flex-1">
-                        <option :value="null">Articulo...</option>
-                        <option v-for="a in articulosList" :key="a.id" :value="a.id">{{ a.nombre }}</option>
-                     </select>
-                     <input v-model.number="d.cantidad" type="number" placeholder="Cant" class="border p-1 rounded w-20">
-                     <input v-model.number="d.precio_unitario" type="number" placeholder="Precio" class="border p-1 rounded w-24">
-                     <button type="button" @click="removeDetalleLine(idx)" class="text-red-500">x</button>
-                  </div>
-                  <button type="button" @click="addDetalleLine" class="text-sm text-green-600">+ Agregar Línea</button>
-               </div>
-               
-               <div class="flex justify-end gap-2 mt-4">
-                  <button type="button" @click="showAddGastoModal = false" class="bg-gray-200 px-4 py-2 rounded">Cancelar</button>
-                  <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Guardar</button>
-               </div>
-            </form>
-        </div>
-    </div>
+    <!-- Modal Gasto NUEVO -->
+    <GastoFormModal
+      v-if="showGastoModal"
+      :initial-data="editingGastoData"
+      @close="showGastoModal = false"
+      @save="handleGastoSaved"
+    />
     
     <!-- Otros Modales (Proveedor, Articulo, Categoria) se mantienen con lógica similar -->
     <div v-if="showProveedorModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -514,6 +419,8 @@
           <h3 class="font-bold mb-4">Proveedor</h3>
           <input v-model="proveedorForm.nombre" placeholder="Nombre" class="w-full border p-2 mb-2 rounded">
           <input v-model="proveedorForm.telefono" placeholder="Teléfono" class="w-full border p-2 mb-2 rounded">
+          <input v-model="proveedorForm.direccion" placeholder="Dirección" class="w-full border p-2 mb-2 rounded">
+          <textarea v-model="proveedorForm.notas" placeholder="Notas" class="w-full border p-2 mb-2 rounded" rows="3"></textarea>
           <div class="flex justify-end gap-2">
              <button @click="showProveedorModal = false" class="bg-gray-200 px-3 py-1 rounded">Cancelar</button>
              <button @click="saveProveedor" class="bg-blue-600 text-white px-3 py-1 rounded">Guardar</button>
@@ -528,6 +435,15 @@
           <select v-model="articuloForm.categoria_id" class="w-full border p-2 mb-2 rounded">
              <option :value="null">Categoría...</option>
              <option v-for="c in categoriasArticuloList" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+          </select>
+          <select v-model="articuloForm.unidad" class="w-full border p-2 mb-2 rounded">
+             <option value="kg">Kilogramos (kg)</option>
+             <option value="g">Gramos (g)</option>
+             <option value="lt">Litros (lt)</option>
+             <option value="ml">Mililitros (ml)</option>
+             <option value="pza">Piezas (pza)</option>
+             <option value="caja">Caja</option>
+             <option value="paq">Paquete (paq)</option>
           </select>
           <input v-model.number="articuloForm.costo_estandar" type="number" placeholder="Costo Estándar" class="w-full border p-2 mb-2 rounded">
           <div class="flex justify-end gap-2">
@@ -558,6 +474,9 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/api/client'
 import AppHeader from '@/components/AppHeader.vue'
 import AdminModals from '@/components/AdminModals.vue'
+import GastosDashboard from '@/components/gastos/GastosDashboard.vue'
+import GastosHistorial from '@/components/gastos/GastosHistorial.vue'
+import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -603,12 +522,35 @@ const activeMainTab = ref('analiticas')
 
 // --- PESTAÑAS SUB-NIVELES ---
 const gastosTabs = [
+  { id: 'dashboard', name: 'Dashboard' },
   { id: 'gastos', name: 'Historial' },
   { id: 'proveedores', name: 'Proveedores' },
   { id: 'articulos', name: 'Artículos' },
   { id: 'categorias', name: 'Cat. Artículos' }
 ]
-const gastosSubTab = ref('gastos')
+const gastosSubTab = ref('dashboard')
+
+const showGastoModal = ref(false)
+const editingGastoData = ref(null)
+const gastosHistorialRef = ref(null) // Para recargar tabla
+
+const handleNewGasto = () => {
+  editingGastoData.value = null
+  showGastoModal.value = true
+}
+
+const handleEditGasto = (gasto: any) => {
+  editingGastoData.value = gasto
+  showGastoModal.value = true
+}
+
+const handleGastoSaved = () => {
+  showGastoModal.value = false
+  // Recargar tabla si existe ref
+  if (gastosHistorialRef.value) {
+    (gastosHistorialRef.value as any).loadGastos()
+  }
+}
 
 const ajustesTabs = [
   { id: 'platillos', name: 'Menú & Platillos' },
@@ -622,7 +564,10 @@ const ajustesSubTab = ref('platillos')
 // 1. LÓGICA ANALÍTICAS
 // ==========================================
 const loadingAnalytics = ref(false)
+const loadingAdvanced = ref(false) // Nueva variable de carga
 const analyticsData = ref<any>(null)
+const advancedAnalyticsData = ref<any>(null) // Nueva variable para datos avanzados
+
 const analyticsDates = ref({
   start: new Date().toISOString().split('T')[0],
   end: new Date().toISOString().split('T')[0]
@@ -666,18 +611,37 @@ const setAnalyticsRange = (rangeId: string) => {
 
 const loadAnalytics = async () => {
   loadingAnalytics.value = true
+  loadingAdvanced.value = true
+  
+  // Limpiar datos previos
+  analyticsData.value = null
+  advancedAnalyticsData.value = null
+
   try {
     const { start, end } = analyticsDates.value
     let url = `/admin/analytics?fecha_inicio=${start}&fecha_fin=${end}`
     if (selectedPaymentMethodFilter.value !== 'todos') {
        url += `&metodo_pago=${selectedPaymentMethodFilter.value}`
     }
+    
+    // Carga básica primero
     const response = await api.get(url)
     analyticsData.value = response.data
+    loadingAnalytics.value = false // Termina carga básica
+
+    // Carga avanzada en segundo plano
+    let advancedUrl = `/admin/analytics/advanced?fecha_inicio=${start}&fecha_fin=${end}`
+    if (selectedPaymentMethodFilter.value !== 'todos') {
+       advancedUrl += `&metodo_pago=${selectedPaymentMethodFilter.value}`
+    }
+    const advancedResponse = await api.get(advancedUrl)
+    advancedAnalyticsData.value = advancedResponse.data
+
   } catch (err) {
     console.error('Error loading analytics', err)
   } finally {
     loadingAnalytics.value = false
+    loadingAdvanced.value = false
   }
 }
 
@@ -729,8 +693,8 @@ const chartOptions = {
 
 // Chart Circular para Categorias
 const categoryChartData = computed(() => {
-   if (!analyticsData.value?.avanzado?.ventas_categoria?.length) return null
-   const data = analyticsData.value.avanzado.ventas_categoria
+   if (!advancedAnalyticsData.value?.ventas_categoria?.length) return null
+   const data = advancedAnalyticsData.value.ventas_categoria
    return {
       labels: data.map((d: any) => d.categoria),
       datasets: [{
@@ -751,114 +715,53 @@ const doughnutOptions = {
 
 
 // ==========================================
-// 2. LÓGICA GASTOS (Migrada)
+// 2. LÓGICA GASTOS (Migrada a Componentes)
 // ==========================================
-// -- Variables --
-const gastosList = ref<any[]>([])
+// Variables de estado para sub-tabs de proveedores/artículos (aún en AdminView)
 const proveedoresList = ref<any[]>([])
 const categoriasArticuloList = ref<any[]>([])
 const articulosList = ref<any[]>([])
-const showAddGastoModal = ref(false)
+
 const showProveedorModal = ref(false)
 const showArticuloModal = ref(false)
 const showCategoriaModal = ref(false)
-const expandedGastos = ref<number[]>([])
-
-const gastoFilters = ref({
-  fecha_inicio: '',
-  fecha_fin: '',
-  proveedor_id: null,
-  tipo_gasto: '',
-  metodo_pago: '',
-  categoria_id: null
-})
-
-const newGasto = ref<any>({
-  proveedor_id: null,
-  tipo_gasto: 'directo',
-  metodo_pago: 'efectivo',
-  descripcion: '',
-  folio: '',
-  total_manual: null,
-  notas: '',
-  detalles: []
-})
 
 const proveedorForm = ref({ nombre: '', telefono: '', direccion: '', notas: '' })
 const articuloForm = ref({ nombre: '', unidad: 'kg', costo_estandar: 0, categoria_id: null })
 const categoriaForm = ref({ nombre: '' })
+
 const editingProveedor = ref<any>(null)
 const editingArticulo = ref<any>(null)
 const editingCategoria = ref<any>(null)
 const selectedArticuloCategoria = ref(null)
 
-// -- Funciones Gastos --
-const loadGastosList = async () => {
-  try {
-     const params: any = {}
-     if (gastoFilters.value.fecha_inicio) params.fecha_inicio = gastoFilters.value.fecha_inicio
-     if (gastoFilters.value.fecha_fin) params.fecha_fin = gastoFilters.value.fecha_fin
-     if (gastoFilters.value.proveedor_id) params.proveedor_id = gastoFilters.value.proveedor_id
-     const response = await api.get('/gastos/', { params })
-     gastosList.value = response.data
-  } catch(e) { console.error(e) }
-}
 
-const clearGastoFilters = () => {
-  gastoFilters.value = {
-    fecha_inicio: '', fecha_fin: '', proveedor_id: null, tipo_gasto: '', metodo_pago: '', categoria_id: null
-  }
-  loadGastosList()
-}
-
+// -- Fetchers Proveedores/Artículos --
 const loadProveedores = async () => {
-  const res = await api.get('/gastos/proveedores')
-  proveedoresList.value = res.data
+  try {
+    const res = await api.get('/gastos/proveedores')
+    proveedoresList.value = res.data
+  } catch (e) { console.error(e) }
 }
 
 const loadCategoriasArticulo = async () => {
-  const res = await api.get('/gastos/categorias-articulo')
-  categoriasArticuloList.value = res.data
+  try {
+    const res = await api.get('/gastos/categorias-articulo')
+    categoriasArticuloList.value = res.data
+  } catch (e) { console.error(e) }
 }
 
 const loadArticulos = async () => {
-  const params: any = {}
-  if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
-  const res = await api.get('/gastos/articulos', { params })
-  articulosList.value = res.data
+  try {
+    const params: any = {}
+    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
+    const res = await api.get('/gastos/articulos', { params })
+    articulosList.value = res.data
+  } catch (e) { console.error(e) }
 }
 
-const addGasto = async () => {
-   // Misma logica de validacion
-   try {
-     const payload = { ...newGasto.value }
-     // Mapear detalles correctamente
-     payload.detalles = payload.detalles.map((d: any) => ({
-        articulo_id: d.articulo_id,
-        cantidad: d.cantidad,
-        precio_unitario: d.precio_unitario
-     }))
-     await api.post('/gastos/', payload)
-     showAddGastoModal.value = false
-     newGasto.value = { proveedor_id: null, tipo_gasto: 'directo', metodo_pago: 'efectivo', detalles: [] }
-     loadGastosList()
-   } catch(e) { alert('Error al guardar gasto') }
-}
 
-const addDetalleLine = () => {
-  newGasto.value.detalles.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 })
-}
-const removeDetalleLine = (idx: number) => {
-  newGasto.value.detalles.splice(idx, 1)
-}
-
-const toggleGastoExpanded = (id: number) => {
-   if(expandedGastos.value.includes(id)) expandedGastos.value = expandedGastos.value.filter(x => x !== id)
-   else expandedGastos.value.push(id)
-}
-const isGastoExpanded = (id: number) => expandedGastos.value.includes(id)
-
-// Proveedores/Articulos/Categorias Actions
+// -- Actions Proveedores/Artículos/Categorías --
 const openNewProveedor = () => { editingProveedor.value = null; proveedorForm.value = { nombre:'', telefono:'', direccion:'', notas:'' }; showProveedorModal.value = true }
 const editProveedor = (p: any) => { editingProveedor.value = p; proveedorForm.value = { ...p }; showProveedorModal.value = true }
 const saveProveedor = async () => {
@@ -993,7 +896,7 @@ onMounted(() => {
 
 // Watchers para cargar datos al cambiar de tab si fuera necesario optimizar
 watch(activeMainTab, (newTab) => {
-   if(newTab === 'gastos') loadGastosList()
+   // if(newTab === 'gastos') loadGastosList() // ERROR: Function not defined
    if(newTab === 'analiticas') loadAnalytics()
 })
 </script>

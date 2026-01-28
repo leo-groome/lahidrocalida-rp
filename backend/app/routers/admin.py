@@ -167,8 +167,56 @@ def get_analytics(
         for m in metodos_pago_query
     ]
 
-    # === ANALÍTICAS AVANZADAS ===
+    # === ANALÍTICAS AVANZADAS (Ahora en endpoint separado, pero mantenemos compatibilidad por si acaso) ===
+    # Para optimizar, si el frontend llama al endpoint nuevo, este no devuelve 'avanzado'.
+    # Si el frontend viejo llama a este, calculamos 'avanzado' para no romper, o lo quitamos y obligamos a actualizar frontend.
+    # Decisión: Quitamos 'avanzado' de aquí para aligerar la carga principal.
     
+    return {
+        "resumen": {
+            "total_ventas": total_ventas,
+            "total_gastos": total_gastos,
+            "utilidad_neta": total_ventas - total_gastos,
+            "total_pedidos": total_pedidos,
+            "ticket_promedio": (total_ventas / total_pedidos) if total_pedidos > 0 else 0,
+            "total_propinas": total_propinas
+        },
+        "timeline": timeline,
+        "metodos_pago": metodos_pago_data,
+        "avanzado": None # Deprecated here, use /analytics/advanced
+    }
+
+
+@router.get("/analytics/advanced")
+def get_analytics_advanced(
+    fecha_inicio: str,  # YYYY-MM-DD
+    fecha_fin: str,     # YYYY-MM-DD
+    metodo_pago: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """
+    Analíticas avanzadas separadas para optimización de carga.
+    Top platillos, ventas por categoría, top meseros.
+    """
+    _ensure_admin_access(current_user)
+
+    try:
+        start_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        end_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
+
+    ventas_filters = [
+        func.date(Pedido.fecha_creacion) >= start_date,
+        func.date(Pedido.fecha_creacion) <= end_date,
+        Pedido.estado == "pagado",
+        Pedido.sucursal_id == current_user.sucursal_id
+    ]
+
+    if metodo_pago and metodo_pago != 'todos':
+        ventas_filters.append(Pedido.metodo_pago == metodo_pago)
+
     # Top Platillos (Cantidad y Dinero)
     top_platillos = db.query(
         Platillo.nombre,
@@ -201,33 +249,21 @@ def get_analytics(
      .order_by(func.sum(Pedido.total).desc()).all()
 
     return {
-        "resumen": {
-            "total_ventas": total_ventas,
-            "total_gastos": total_gastos,
-            "utilidad_neta": total_ventas - total_gastos,
-            "total_pedidos": total_pedidos,
-            "ticket_promedio": (total_ventas / total_pedidos) if total_pedidos > 0 else 0,
-            "total_propinas": total_propinas
-        },
-        "timeline": timeline,
-        "metodos_pago": metodos_pago_data,
-        "avanzado": {
-            "top_platillos": [
-                {
-                    "nombre": p.nombre, 
-                    "cantidad": int(p.cantidad), 
-                    "total": float(p.total_dinero or 0)
-                } for p in top_platillos
-            ],
-            "ventas_categoria": [
-                {"categoria": c.categoria, "total": float(c.total or 0)}
-                for c in ventas_por_categoria
-            ],
-            "top_meseros": [
-                {"nombre": m.nombre, "pedidos": m.pedidos, "total": float(m.total_vendido or 0)}
-                for m in top_meseros
-            ]
-        }
+        "top_platillos": [
+            {
+                "nombre": p.nombre, 
+                "cantidad": int(p.cantidad), 
+                "total": float(p.total_dinero or 0)
+            } for p in top_platillos
+        ],
+        "ventas_categoria": [
+            {"categoria": c.categoria, "total": float(c.total or 0)}
+            for c in ventas_por_categoria
+        ],
+        "top_meseros": [
+            {"nombre": m.nombre, "pedidos": m.pedidos, "total": float(m.total_vendido or 0)}
+            for m in top_meseros
+        ]
     }
 
 
