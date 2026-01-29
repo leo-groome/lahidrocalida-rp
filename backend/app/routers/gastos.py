@@ -43,7 +43,7 @@ UNIDADES_PERMITIDAS = {"kg", "g", "lt", "ml", "pza", "caja", "paq"}
 
 
 def _ensure_can_manage_gastos(user: Usuario) -> None:
-    if user.rol not in ["administrador", "compras"]:
+    if user.rol not in ["administrador", "compras", "cajero"]:
         raise HTTPException(status_code=403, detail="No autorizado para gestionar gastos")
 
 
@@ -296,6 +296,7 @@ def create_gasto(
         fecha_gasto=fecha_gasto,
         notas=data.notas,
         sucursal_id=current_user.sucursal_id,
+        turno_id=data.turno_id,
         detalles=detalles,
     )
     db.add(gasto)
@@ -609,6 +610,7 @@ def update_gasto(
     if data.fecha_gasto:
         gasto.fecha_gasto = data.fecha_gasto
     gasto.notas = data.notas
+    gasto.turno_id = data.turno_id
 
     gasto.detalles.clear()
     for detalle in detalles:

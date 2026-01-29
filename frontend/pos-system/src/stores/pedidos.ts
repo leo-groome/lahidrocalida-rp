@@ -99,21 +99,21 @@ export const usePedidosStore = defineStore('pedidos', () => {
   })
 
   // Acciones
-  async function loadInitialData(): Promise<void> {
-    loading.value = true
+  async function loadInitialData(showLoading = true): Promise<void> {
+    if (showLoading) loading.value = true
     error.value = null
 
     try {
-      console.log('🔄 Cargando datos iniciales de pedidos...')
+      console.log('🔄 Cargando datos de pedidos...')
       const { data } = await api.get<PedidoResponse[]>('/pedidos')
       pedidos.value = data
       lastUpdate.value = new Date()
-      console.log(`✅ ${data.length} pedidos cargados inicialmente`)
+      console.log(`✅ ${data.length} pedidos cargados`)
     } catch (e: any) {
       error.value = e?.response?.data?.detail || 'Error cargando pedidos'
-      console.error('❌ Error cargando datos iniciales:', e)
+      console.error('❌ Error cargando datos:', e)
     } finally {
-      loading.value = false
+      if (showLoading) loading.value = false
     }
   }
 
@@ -377,8 +377,23 @@ export const usePedidosStore = defineStore('pedidos', () => {
       })
       console.log(`✅ Artículo actualizado via REST: ${articuloId} → ${nuevoEstado}`)
       
-      // Refrescar datos siempre para que todas las pantallas se actualicen
-      await loadInitialData()
+      // Si el WebSocket NO está conectado, actualizar el estado localmente de forma manual
+      // Si el WebSocket SI está conectado, handleArticuloEstadoChanged se encargará cuando llegue el evento
+      if (!wsConnected.value) {
+        const pedidoId = data.pedido_id
+        const pedidoEstado = data.pedido_estado
+        
+        const pedidoIndex = pedidos.value.findIndex(p => p.id === pedidoId)
+        if (pedidoIndex !== -1) {
+          // Actualizar el estado del artículo
+          const articulo = pedidos.value[pedidoIndex].articulos_pedido?.find(a => a.id === articuloId)
+          if (articulo) {
+            articulo.estado_item = nuevoEstado
+          }
+          // Actualizar el estado del pedido por si cambió
+          pedidos.value[pedidoIndex].estado = pedidoEstado
+        }
+      }
       
       return true
     } catch (e: any) {
@@ -386,14 +401,13 @@ export const usePedidosStore = defineStore('pedidos', () => {
       console.error('❌ Error actualizando artículo:', e)
       return false
     }
-    // NO hay finally que ponga loading = false
   }
 
   // Función para refresh manual (fallback)
   async function refreshPedidos(): Promise<void> {
     if (!wsConnected.value) {
       console.log('🔄 WebSocket desconectado, refrescando manualmente...')
-      await loadInitialData()
+      await loadInitialData(false) // No mostrar loading en refrescos de polling
     } else {
       console.log('ℹ️ WebSocket activo, no es necesario refresh manual')
     }

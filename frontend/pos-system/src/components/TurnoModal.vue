@@ -24,13 +24,36 @@
       <!-- Contenido -->
       <div class="p-3 flex-1 overflow-y-auto">
         <!-- Instrucciones -->
-        <div class="mb-6 text-center">
+        <div class="mb-4 text-center">
           <p class="text-gray-600 text-sm">
             {{ tipo === 'inicio'
               ? 'Ingresa la cantidad de cada denominación para el conteo inicial'
               : 'Ingresa la cantidad de cada denominación para el conteo final'
             }}
           </p>
+          
+          <!-- Fondo anterior (Solo inicio) -->
+          <div v-if="tipo === 'inicio' && fondoAnterior !== undefined" class="mt-2 inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200 text-xs font-medium">
+            💰 Fondo esperado (cierre anterior): ${{ fondoAnterior.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+          </div>
+        </div>
+
+        <!-- Botones de cache -->
+        <div class="mb-4 flex justify-center gap-2">
+          <button 
+            @click="guardarEnCache"
+            class="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded border border-gray-300 transition-colors flex items-center gap-1"
+            title="Guardar progreso actual localmente"
+          >
+            💾 Guardar Progreso
+          </button>
+          <button 
+            v-if="tieneCache"
+            @click="cargarDesdeCache"
+            class="text-[10px] px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-200 transition-colors flex items-center gap-1"
+          >
+            📂 Cargar Guardado
+          </button>
         </div>
 
          <!-- Reporte (solo cierre) -->
@@ -169,6 +192,31 @@
           ></textarea>
         </div>
 
+        <!-- Desglose de Retiro vs Fondo (Solo cierre) -->
+        <div v-if="tipo === 'cierre'" class="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-bold text-amber-900">💵 ¿Cuánto dinero se queda en caja?</label>
+            <div class="relative w-32">
+              <span class="absolute left-2 top-1/2 -translate-y-1/2 text-amber-600 text-xs font-bold">$</span>
+              <input 
+                v-model.number="montoRestante"
+                type="number"
+                step="0.01"
+                class="w-full pl-5 pr-2 py-1.5 border border-amber-300 rounded-lg text-sm font-black text-amber-900 text-right focus:ring-amber-500 focus:border-amber-500"
+                placeholder="0.00"
+              />
+            </div>
+          </div>
+          
+          <div class="flex items-center justify-between border-t border-amber-200 pt-2">
+            <span class="text-[10px] text-amber-700 uppercase font-bold">Monto a retirar (para dueños):</span>
+            <span class="text-sm font-black text-amber-900">
+              ${{ Math.max(0, totalCalculado - (montoRestante || 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+            </span>
+          </div>
+          <p class="text-[9px] text-amber-600 italic">Este monto retirado no incluye los gastos ya registrados.</p>
+        </div>
+
         <!-- Total calculado -->
         <div class="mt-3 p-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
           <div class="flex justify-between items-center">
@@ -272,6 +320,7 @@ const props = defineProps<{
     cantidad: number
   }>
   reporteTurno?: any
+  fondoAnterior?: number
 }>()
 
 // Definir emits
@@ -284,6 +333,8 @@ const emit = defineEmits<{
       subtotal: number
     }>
     total: number
+    monto_retirado?: number
+    monto_restante_en_caja?: number
     observaciones?: string
   }]
 }>()
@@ -305,6 +356,41 @@ const denominaciones = [
 // Estado reactivo para conteos
 const conteos = ref<Record<number, number>>({})
 const observaciones = ref('')
+const montoRestante = ref<number | null>(null)
+
+// LocalStorage key based on type
+const CACHE_KEY = computed(() => `turno_conteo_${props.tipo}`)
+
+// Persistence methods
+const guardarEnCache = () => {
+  const data = {
+    conteos: conteos.value,
+    observaciones: observaciones.value,
+    timestamp: Date.now()
+  }
+  localStorage.setItem(CACHE_KEY.value, JSON.stringify(data))
+}
+
+const cargarDesdeCache = () => {
+  const saved = localStorage.getItem(CACHE_KEY.value)
+  if (saved) {
+    try {
+      const data = JSON.parse(saved)
+      conteos.value = data.conteos
+      observaciones.value = data.observaciones
+    } catch (e) {
+      console.error('Error cargando cache:', e)
+    }
+  }
+}
+
+const tieneCache = computed(() => {
+  return localStorage.getItem(CACHE_KEY.value) !== null
+})
+
+const limpiarCache = () => {
+  localStorage.removeItem(CACHE_KEY.value)
+}
 
 // Inicializar conteos
 const inicializarConteos = () => {
@@ -386,10 +472,18 @@ const confirmar = () => {
       subtotal: denom.value * conteos.value[denom.value]
     }))
 
+  const monto_restante_en_caja = props.tipo === 'cierre' ? (montoRestante.value || 0) : 0
+  const monto_retirado = props.tipo === 'cierre' ? Math.max(0, totalCalculado.value - monto_restante_en_caja) : 0
+
+  // Limpiar cache al confirmar exitosamente
+  limpiarCache()
+
   // Emitir datos
   emit('confirmar', {
     denominaciones: denominacionesData,
     total: totalCalculado.value,
+    monto_restante_en_caja,
+    monto_retirado,
     observaciones: observaciones.value.trim() || undefined
   })
 }

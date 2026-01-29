@@ -7,6 +7,7 @@ import { websocketService } from '@/services/websocket'
 import type { PedidoResponse, ReporteDiaAnalytics, ReporteDiaTicket, Turno } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
 import TurnoModal from '@/components/TurnoModal.vue'
+import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
 
@@ -93,6 +94,8 @@ const showTurnoModal = ref(false)
 const modalTipo = ref<'inicio' | 'cierre'>('inicio')
 const loadingTurno = ref(false)
 const reporteTurno = ref<any>(null)
+const shiftSummary = ref<any>(null)
+const showGastoModal = ref(false)
 
 
 // Estados para calculadora de efectivo
@@ -464,9 +467,11 @@ const turnoMetrics = computed(() => {
   const propinasTarjeta = ticketsDelTurno
     .reduce((sum, t) => sum + Number(t.propina_tarjeta || 0), 0)
 
-  // Efectivo esperado en caja = Fondo Inicial + Ventas Efectivo + Propinas Efectivo
-  // Nota: Gastos se restarían aquí si estuvieran disponibles en el frontend en tiempo real
-  const efectivoEsperado = Number(turnoActivo.value.total_inicial) + ventasEfectivo + propinasEfectivo
+  // Gastos del turno (desde el resumen del backend)
+  const gastosTurno = shiftSummary.value?.gastos_turno || 0
+
+  // Efectivo esperado en caja = Fondo Inicial + Ventas Efectivo + Propinas Efectivo - Gastos
+  const efectivoEsperado = Number(turnoActivo.value.total_inicial) + ventasEfectivo + propinasEfectivo - gastosTurno
 
   return {
     ticketsCount: ticketsDelTurno.length,
@@ -474,6 +479,7 @@ const turnoMetrics = computed(() => {
     ventasTarjeta,
     propinasEfectivo,
     propinasTarjeta,
+    gastosTurno,
     efectivoEsperado,
     fondoInicial: Number(turnoActivo.value.total_inicial)
   }
@@ -1336,6 +1342,14 @@ const cargarTurnoActivo = async () => {
   try {
     const response = await api.get('/turnos/activo')
     turnoActivo.value = response.data
+    
+    // Cargar resumen del turno para métricas en tiempo real (gastos, etc)
+    if (turnoActivo.value) {
+      const summaryRes = await api.get(`/turnos/${turnoActivo.value.id}/resumen`)
+      shiftSummary.value = summaryRes.data
+    } else {
+      shiftSummary.value = null
+    }
   } catch (error: any) {
     // 404 significa que no hay turno activo, lo cual es normal
     if (error.response?.status === 404) {
@@ -1418,6 +1432,12 @@ const obtenerReporteTurno = async () => {
     console.error('Error obteniendo reporte de turno:', e)
     return null
   }
+}
+
+const handleGastoSaved = async () => {
+  showGastoModal.value = false
+  showSuccessNotification('Gasto registrado y descontado de caja')
+  await cargarTurnoActivo()
 }
 </script>
 
@@ -1765,18 +1785,29 @@ const obtenerReporteTurno = async () => {
               </div>
               
               <!-- Botón de Acción de Turno -->
-              <button
-                @click="manejarClickTurno"
-                :class="[
-                  'px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2',
-                  tieneTurnoActivo 
-                    ? 'bg-white border-2 border-red-500 text-red-600 hover:bg-red-50' 
-                    : 'bg-[#00126D] text-white hover:bg-blue-900 hover:shadow-md transform hover:-translate-y-0.5'
-                ]"
-              >
-                <span class="text-xl">{{ tieneTurnoActivo ? '🔒' : '🔓' }}</span>
-                {{ botonTurnoTexto }}
-              </button>
+              <div class="flex items-center gap-3">
+                <button
+                  v-if="tieneTurnoActivo"
+                  @click="showGastoModal = true"
+                  class="px-4 py-2.5 bg-amber-500 text-white rounded-lg font-bold shadow-sm hover:bg-amber-600 transition-all flex items-center gap-2"
+                >
+                  <span>💸</span>
+                  Registrar Gasto
+                </button>
+
+                <button
+                  @click="manejarClickTurno"
+                  :class="[
+                    'px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2',
+                    tieneTurnoActivo 
+                      ? 'bg-white border-2 border-red-500 text-red-600 hover:bg-red-50' 
+                      : 'bg-[#00126D] text-white hover:bg-blue-900 hover:shadow-md transform hover:-translate-y-0.5'
+                  ]"
+                >
+                  <span class="text-xl">{{ tieneTurnoActivo ? '🔒' : '🔓' }}</span>
+                  {{ botonTurnoTexto }}
+                </button>
+              </div>
             </div>
 
             <!-- Si NO hay turno activo -->
@@ -1821,6 +1852,10 @@ const obtenerReporteTurno = async () => {
                     <span>Propinas Efectivo:</span>
                     <span class="font-mono font-medium">+${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</span>
                   </div>
+                  <div class="flex justify-between text-red-200 font-bold bg-red-900/20 px-1 rounded">
+                    <span>Gastos en Efectivo:</span>
+                    <span class="font-mono font-medium">-${{ turnoMetrics.gastosTurno.toFixed(2) }}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1849,6 +1884,12 @@ const obtenerReporteTurno = async () => {
                 <div class="bg-purple-50 border border-purple-100 rounded-xl p-4 flex flex-col justify-between">
                   <div class="text-purple-600 mb-1 font-medium text-xs uppercase">Propina Tarjeta</div>
                   <div class="text-2xl font-bold text-purple-800">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
+                </div>
+
+                <!-- Gastos Efectivo -->
+                <div class="bg-red-50 border border-red-100 rounded-xl p-4 flex flex-col justify-between">
+                  <div class="text-red-600 mb-1 font-medium text-xs uppercase">Gastos Caja (Efe)</div>
+                  <div class="text-2xl font-bold text-red-800">${{ turnoMetrics.gastosTurno.toFixed(2) }}</div>
                 </div>
 
               </div>
@@ -2802,8 +2843,16 @@ const obtenerReporteTurno = async () => {
       :tipo="modalTipo"
       :reporte-turno="modalTipo === 'cierre' ? reporteTurno : undefined"
       :denominaciones-iniciales="modalTipo === 'cierre' && turnoActivo ? turnoActivo.denominaciones_iniciales : undefined"
+      :fondo-anterior="turnoActivo?.fondo_anterior"
       @cancelar="showTurnoModal = false"
       @confirmar="modalTipo === 'inicio' ? iniciarTurno($event) : cerrarTurno($event)"
+    />
+
+    <GastoFormModal
+      v-if="showGastoModal"
+      :turno-id="turnoActivo?.id"
+      @close="showGastoModal = false"
+      @save="handleGastoSaved"
     />
 
     <!-- Modal de Confirmación de Cancelación -->

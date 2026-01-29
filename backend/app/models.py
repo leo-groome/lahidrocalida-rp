@@ -195,10 +195,12 @@ class Gasto(Base):
     fecha_gasto = Column(DateTime, default=get_local_datetime)
     notas = Column(Text)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
+    turno_id = Column(Integer, ForeignKey("turnos.id"), nullable=True)
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="gastos")
     proveedor = relationship("Proveedor", back_populates="gastos")
+    turno = relationship("Turno")
     detalles = relationship(
         "GastoDetalle", back_populates="gasto", cascade="all, delete-orphan"
     )
@@ -234,6 +236,8 @@ class Turno(Base):
     total_final = Column(DECIMAL(10, 2))
     ventas_efectivo = Column(DECIMAL(10, 2))
     propinas_efectivo = Column(DECIMAL(10, 2))
+    monto_retirado = Column(DECIMAL(10, 2))
+    monto_restante_en_caja = Column(DECIMAL(10, 2))
     diferencia = Column(DECIMAL(10, 2))
     observaciones = Column(Text)
 

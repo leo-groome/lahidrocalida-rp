@@ -90,12 +90,16 @@ def _guardar_denominaciones(
     db.flush()
 
 
-def _calcular_ventas_efectivo(
-    db: Session, sucursal_id: int, fecha_apertura: datetime, fecha_cierre: datetime
+def _calcular_movimientos_efectivo(
+    db: Session,
+    sucursal_id: int,
+    fecha_apertura: datetime,
+    fecha_cierre: datetime,
+    turno_id: Optional[int] = None,
 ) -> dict:
     """
-    Calcular ventas y propinas en efectivo entre dos fechas
-    Retorna: {"ventas_efectivo": Decimal, "propinas_efectivo": Decimal}
+    Calcular ventas, propinas y gastos en efectivo entre dos fechas
+    Retorna: {"ventas_efectivo": Decimal, "propinas_efectivo": Decimal, "gastos": Decimal}
     """
     # Asegurar que las fechas estén en la misma zona horaria
     tz = pytz.timezone(settings.TIMEZONE)
@@ -107,7 +111,7 @@ def _calcular_ventas_efectivo(
     )
 
     # Consultar pedidos pagados en efectivo en el rango de fechas
-    resultados = (
+    ventas_res = (
         db.query(
             func.sum(Pedido.total).label("total_ventas"),
             func.sum(Pedido.propina_efectivo).label("total_propinas"),
@@ -122,9 +126,25 @@ def _calcular_ventas_efectivo(
         .first()
     )
 
+    # Consultar gastos pagados en efectivo vinculados a este turno
+    gastos_query = db.query(func.sum(Gasto.total)).filter(
+        Gasto.sucursal_id == sucursal_id,
+        Gasto.metodo_pago == "efectivo",
+    )
+
+    if turno_id:
+        gastos_query = gastos_query.filter(Gasto.turno_id == turno_id)
+    else:
+        gastos_query = gastos_query.filter(
+            Gasto.fecha_gasto >= apertura_local, Gasto.fecha_gasto <= cierre_local
+        )
+
+    gastos_total = gastos_query.scalar() or Decimal("0")
+
     return {
-        "ventas_efectivo": resultados.total_ventas or Decimal("0"),
-        "propinas_efectivo": resultados.total_propinas or Decimal("0"),
+        "ventas_efectivo": ventas_res.total_ventas or Decimal("0"),
+        "propinas_efectivo": ventas_res.total_propinas or Decimal("0"),
+        "gastos": gastos_total,
     }
 
 
@@ -272,6 +292,19 @@ def obtener_turno_activo(
         else:
             denominaciones_finales.append(denom)
 
+    # Buscar fondo anterior (monto_restante_en_caja del último turno cerrado)
+    ultimo_turno_cerrado = (
+        db.query(Turno)
+        .filter(Turno.sucursal_id == current_user.sucursal_id, Turno.estado == "cerrado")
+        .order_by(Turno.fecha_cierre.desc())
+        .first()
+    )
+    fondo_anterior = (
+        float(ultimo_turno_cerrado.monto_restante_en_caja)
+        if ultimo_turno_cerrado and ultimo_turno_cerrado.monto_restante_en_caja
+        else None
+    )
+
     return TurnoResponse(
         id=turno.id,
         sucursal_id=turno.sucursal_id,
@@ -285,6 +318,11 @@ def obtener_turno_activo(
         propinas_efectivo=float(turno.propinas_efectivo)
         if turno.propinas_efectivo
         else None,
+        monto_retirado=float(turno.monto_retirado) if turno.monto_retirado else None,
+        monto_restante_en_caja=float(turno.monto_restante_en_caja)
+        if turno.monto_restante_en_caja
+        else None,
+        fondo_anterior=fondo_anterior,
         diferencia=float(turno.diferencia) if turno.diferencia else None,
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
@@ -336,26 +374,30 @@ def cerrar_turno(
 
     # Calcular ventas y propinas en efectivo durante el turno
     fecha_cierre = datetime.now(pytz.timezone(settings.TIMEZONE)).replace(tzinfo=None)
-    ventas_info = _calcular_ventas_efectivo(
+    movs_info = _calcular_movimientos_efectivo(
         db=db,
         sucursal_id=turno.sucursal_id,
         fecha_apertura=turno.fecha_apertura,
         fecha_cierre=fecha_cierre,
+        turno_id=turno.id,
     )
 
     # Calcular diferencia
     diferencia = total_final - (
         turno.total_inicial
-        + ventas_info["ventas_efectivo"]
-        + ventas_info["propinas_efectivo"]
+        + movs_info["ventas_efectivo"]
+        + movs_info["propinas_efectivo"]
+        - movs_info["gastos"]
     )
 
     # Actualizar turno
     turno.fecha_cierre = fecha_cierre
     turno.estado = "cerrado"
     turno.total_final = total_final
-    turno.ventas_efectivo = ventas_info["ventas_efectivo"]
-    turno.propinas_efectivo = ventas_info["propinas_efectivo"]
+    turno.ventas_efectivo = movs_info["ventas_efectivo"]
+    turno.propinas_efectivo = movs_info["propinas_efectivo"]
+    turno.monto_retirado = cierre_data.monto_retirado
+    turno.monto_restante_en_caja = cierre_data.monto_restante_en_caja
     turno.diferencia = diferencia
 
     if cierre_data.observaciones:
@@ -853,6 +895,10 @@ def obtener_resumen_turno(
             if turno.propinas_efectivo
             else None,
         },
+        "monto_retirado": float(turno.monto_retirado) if turno.monto_retirado else None,
+        "monto_restante_en_caja": float(turno.monto_restante_en_caja)
+        if turno.monto_restante_en_caja
+        else None,
         "diferencia": float(turno.diferencia) if turno.diferencia else None,
         "observaciones": turno.observaciones,
     }
@@ -866,24 +912,13 @@ def obtener_resumen_turno(
         else (turno.fecha_cierre or datetime.now(tz).replace(tzinfo=None))
     )
 
-    # Ventas y propinas en efectivo en el rango
-    ventas_info = _calcular_ventas_efectivo(
+    # Movimientos en efectivo en el rango
+    movs_info = _calcular_movimientos_efectivo(
         db=db,
         sucursal_id=turno.sucursal_id,
         fecha_apertura=fecha_inicio,
         fecha_cierre=fecha_fin,
-    )
-
-    # Gastos en el rango (se asume efectivo)
-    gastos_total = (
-        db.query(func.sum(Gasto.monto))
-        .filter(
-            Gasto.sucursal_id == turno.sucursal_id,
-            Gasto.fecha_gasto >= fecha_inicio,
-            Gasto.fecha_gasto <= fecha_fin,
-        )
-        .scalar()
-        or Decimal("0")
+        turno_id=turno.id,
     )
 
     # Comandas cobradas en efectivo durante el turno (por fecha_pago)
@@ -916,19 +951,19 @@ def obtener_resumen_turno(
         for p in comandas
     ]
 
-    resumen["gastos_turno"] = float(gastos_total)
+    resumen["gastos_turno"] = float(movs_info["gastos"])
 
     total_esperado = (
         Decimal(str(turno.total_inicial))
-        + ventas_info["ventas_efectivo"]
-        + ventas_info["propinas_efectivo"]
-        - gastos_total
+        + movs_info["ventas_efectivo"]
+        + movs_info["propinas_efectivo"]
+        - movs_info["gastos"]
     )
 
     resumen["ventas_hasta_ahora"] = {
-        "ventas_efectivo": float(ventas_info["ventas_efectivo"]),
-        "propinas_efectivo": float(ventas_info["propinas_efectivo"]),
-        "gastos": float(gastos_total),
+        "ventas_efectivo": float(movs_info["ventas_efectivo"]),
+        "propinas_efectivo": float(movs_info["propinas_efectivo"]),
+        "gastos": float(movs_info["gastos"]),
         "total_esperado": float(total_esperado),
     }
 

@@ -49,7 +49,11 @@
              </div>
              <div>
                <label class="block text-sm font-medium text-gray-700 mb-1">Método Pago</label>
-               <select v-model="form.metodo_pago" class="w-full border-gray-300 rounded-md shadow-sm">
+               <select 
+                 v-model="form.metodo_pago" 
+                 class="w-full border-gray-300 rounded-md shadow-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                 :disabled="pagadoDesdeCaja"
+               >
                  <option value="efectivo">Efectivo</option>
                  <option value="tarjeta">Tarjeta</option>
                </select>
@@ -58,6 +62,21 @@
                <label class="block text-sm font-medium text-gray-700 mb-1">Folio / Factura</label>
                <input v-model="form.folio" type="text" class="w-full border-gray-300 rounded-md shadow-sm" placeholder="Opcional">
              </div>
+          </div>
+
+          <!-- Opción de Caja -->
+          <div v-if="turnoId" class="bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <label class="flex items-center gap-3 cursor-pointer">
+              <input 
+                v-model="pagadoDesdeCaja"
+                type="checkbox"
+                class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+              />
+              <div>
+                <span class="block text-sm font-bold text-blue-900">¿Pagado con efectivo de caja actual?</span>
+                <span class="block text-xs text-blue-700">Se descontará del arqueo del turno #{{ turnoId }}</span>
+              </div>
+            </label>
           </div>
           
           <!-- Descripción -->
@@ -137,6 +156,7 @@ import SearchableSelect from './SearchableSelect.vue'
 
 const props = defineProps<{
   initialData?: any
+  turnoId?: number | null
 }>()
 
 const emit = defineEmits(['close', 'save'])
@@ -155,7 +175,19 @@ const form = reactive({
   descripcion: '',
   notas: '',
   total_manual: null as number | null,
+  turno_id: null as number | null,
   detalles: [] as any[]
+})
+
+const pagadoDesdeCaja = ref(false)
+
+watch(pagadoDesdeCaja, (val) => {
+  if (val) {
+    form.metodo_pago = 'efectivo'
+    form.turno_id = props.turnoId || null
+  } else {
+    form.turno_id = null
+  }
 })
 
 const isEditing = computed(() => !!form.id)
@@ -228,6 +260,11 @@ onMounted(() => {
     form.descripcion = d.descripcion
     form.notas = d.notas
     form.total_manual = d.total_manual
+    form.turno_id = d.turno_id
+    
+    if (d.turno_id) {
+      pagadoDesdeCaja.value = true
+    }
     
     // Fecha: convertir ISO a datetime-local format (YYYY-MM-DDTHH:mm)
     if (d.fecha_gasto) {
