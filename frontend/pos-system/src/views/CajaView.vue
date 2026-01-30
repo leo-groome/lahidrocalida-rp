@@ -1492,26 +1492,7 @@ const handleGastoSaved = async () => {
           </button>
         </div>
 
-        <!-- Búsqueda -->
-        <div class="flex items-center">
-          <div class="flex-1">
-            <div class="relative">
-              <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="🔍 Buscar por mesa, cliente o pedido..."
-                class="w-full pl-4 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00126D] focus:border-transparent text-sm"
-              />
-              <button
-                v-if="searchQuery"
-                @click="searchQuery = ''"
-                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
+        <!-- Búsqueda removida: ya no se usa -->
       </div>
     </div>
 
