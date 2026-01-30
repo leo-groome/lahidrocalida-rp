@@ -1559,7 +1559,23 @@ const handleGastoSaved = async () => {
                   </span>
                   <span v-else class="text-lg font-bold text-[#00126D]">#{{ pedido.numero_display }}</span>
                 </div>
-                <div :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm uppercase']">
+                <!-- Botón de estado con menú desplegable -->
+                <button
+                  v-if="canManualChangeEstado"
+                  @click.stop="toggleEstadoMenu(pedido, $event)"
+                  :disabled="estadoMenuLoading && showEstadoMenuPedidoId === pedido.id"
+                  :class="[
+                    getEstadoColor(pedido.estado),
+                    'text-white px-2 py-1 rounded-xl text-[10px] font-bold shadow-sm uppercase flex items-center gap-1 hover:opacity-90 transition-all disabled:opacity-60'
+                  ]"
+                >
+                  {{ getEstadoTexto(pedido.estado) }}
+                  <span class="text-[10px]">▼</span>
+                </button>
+                <div 
+                  v-else
+                  :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded-xl text-[10px] font-bold shadow-sm uppercase']"
+                >
                   {{ getEstadoTexto(pedido.estado) }}
                 </div>
               </div>
@@ -2726,19 +2742,19 @@ const handleGastoSaved = async () => {
       class="fixed z-[90]"
       :style="{ top: `${estadoMenuPos.top}px`, left: `${estadoMenuPos.left}px` }"
     >
-      <div class="w-60 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden">
+      <div class="w-60 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
         <div class="px-3 py-2 bg-gray-50 border-b border-gray-200">
           <div class="text-xs font-bold text-gray-700">Cambiar estado</div>
           <div class="text-[11px] text-gray-500">Solo administrador (casos especiales)</div>
         </div>
 
-        <div class="p-2">
+        <div class="p-2 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
           <button
             v-for="opt in estadoOptions"
             :key="opt.value"
             @click.stop="applyManualEstado(pedidosActivos.find(p => p.id === showEstadoMenuPedidoId), opt.value)"
             :disabled="estadoMenuLoading || pedidosActivos.find(p => p.id === showEstadoMenuPedidoId)?.estado === opt.value"
-            class="w-full text-left px-3 py-2 rounded-lg text-sm transition-all"
+            class="w-full text-left px-3 py-2 rounded-xl text-sm transition-all"
             :class="[
               pedidosActivos.find(p => p.id === showEstadoMenuPedidoId)?.estado === opt.value
                 ? 'bg-gray-100 text-gray-500'
@@ -2752,7 +2768,7 @@ const handleGastoSaved = async () => {
         <div class="px-3 py-2 bg-white border-t border-gray-200">
           <button
             @click.stop="closeEstadoMenu"
-            class="w-full px-3 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg"
+            class="w-full px-3 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl"
           >
             Cerrar
           </button>
