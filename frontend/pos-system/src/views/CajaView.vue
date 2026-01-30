@@ -773,6 +773,106 @@ const selectedPedidoDetails = ref<PedidoResponse | null>(null)
 const showCancelConfirmModal = ref(false)
 const pedidoACancelar = ref<PedidoResponse | null>(null)
 
+// Estado para edición de pedido
+const showEditPedidoModal = ref(false)
+const orderItemsToEdit = ref<any[]>([])
+const editingOrderId = ref<number | null>(null)
+const isSavingEdits = ref(false)
+
+// Abrir modal de edición
+const openEditPedido = (pedido: PedidoResponse) => {
+  editingOrderId.value = pedido.id
+  // Clonar los artículos para edición local
+  orderItemsToEdit.value = (pedido.articulos_pedido || []).map(a => ({
+    id: a.id,
+    cantidad: a.cantidad,
+    modificaciones: a.modificaciones,
+    nombre: a.platillo?.nombre || 'Producto',
+    precio_unitario: Number(a.precio_cobrado) / a.cantidad
+  }))
+  showEditPedidoModal.value = true
+}
+
+// Actualizar cantidad en edición
+const updateEditQuantity = (index: number, delta: number) => {
+  const item = orderItemsToEdit.value[index]
+  const nuevaCantidad = Math.max(1, item.cantidad + delta)
+  item.cantidad = nuevaCantidad
+}
+
+// Eliminar artículo en edición
+const removeEditItem = (index: number) => {
+  orderItemsToEdit.value.splice(index, 1)
+}
+
+// Guardar ediciones del pedido
+const saveOrderEdits = async () => {
+  if (!editingOrderId.value || orderItemsToEdit.value.length === 0) return
+  
+  isSavingEdits.value = true
+  try {
+    const payload = {
+      articulos: orderItemsToEdit.value.map(a => ({
+        id: a.id,
+        cantidad: a.cantidad,
+        modificaciones: a.modificaciones
+      }))
+    }
+    
+    await api.put(`/pedidos/${editingOrderId.value}/actualizar-articulos`, payload)
+    
+    // Recargar el pedido para actualizar UI
+    const res = await api.get(`/pedidos/${editingOrderId.value}`)
+    const updatedPedido = res.data
+    
+    // Actualizar en el store/lista local
+    const idx = pedidosStore.pedidosCaja.findIndex(p => p.id === editingOrderId.value)
+    if (idx !== -1) {
+      pedidosStore.pedidosCaja[idx] = updatedPedido
+    }
+    
+    // Si el modal de detalles estaba abierto con este pedido, actualizarlo
+    if (selectedPedidoDetails.value?.id === editingOrderId.value) {
+      selectedPedidoDetails.value = updatedPedido
+    }
+    
+    showSuccessNotification('Pedido actualizado correctamente')
+    showEditPedidoModal.value = false
+  } catch (error: any) {
+    console.error('Error al guardar cambios:', error)
+    showErrorNotification(error.response?.data?.detail || 'Error al guardar cambios')
+  } finally {
+    isSavingEdits.value = false
+  }
+}
+
+// Imprimir ticket adelantado
+const isPrintingTicket = ref(false)
+const imprimirPedidoAdelantado = async (pedido: PedidoResponse) => {
+  if (!pedido.articulos_pedido || pedido.articulos_pedido.length === 0) {
+    showErrorNotification('El pedido no tiene artículos')
+    return
+  }
+  
+  isPrintingTicket.value = true
+  try {
+    await api.post(`/pedidos/${pedido.id}/imprimir`)
+    showSuccessNotification('Ticket enviado a impresión')
+  } catch (error: any) {
+    console.error('Error al imprimir:', error)
+    showErrorNotification(error.response?.data?.detail || 'Error al imprimir ticket')
+  } finally {
+    isPrintingTicket.value = false
+  }
+}
+
+// Total calculado localmente para el modal de edición
+const totalEditado = computed(() => {
+  return orderItemsToEdit.value.reduce((acc, item) => {
+    return acc + (item.cantidad * item.precio_unitario)
+  }, 0)
+})
+
 // Mostrar detalles del pedido
 const showPedidoDetails = (pedido: PedidoResponse) => {
   selectedPedidoDetails.value = pedido
@@ -2458,12 +2558,21 @@ const handleGastoSaved = async () => {
              <h2 class="text-lg font-semibold flex items-center gap-2">
                Pedido #{{ selectedPedidoDetails.numero_display }}
              </h2>
-            <button
-              @click="closeDetailsModal"
-              class="text-white hover:text-gray-200 text-xl"
-            >
-              ×
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                @click="openEditPedido(selectedPedidoDetails)"
+                class="bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-lg border border-white/30 transition-all flex items-center gap-2 text-sm font-bold"
+              >
+                <span>✏️</span>
+                Editar
+              </button>
+              <button
+                @click="closeDetailsModal"
+                class="text-white hover:text-gray-200 text-xl"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2553,6 +2662,17 @@ const handleGastoSaved = async () => {
               class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-all"
             >
               💰 Cobrar Ahora
+            </button>
+
+            <!-- Botón imprimir ticket adelantado -->
+            <button
+              v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
+              @click="imprimirPedidoAdelantado(selectedPedidoDetails)"
+              :disabled="isPrintingTicket"
+              class="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+            >
+              <span>🖨️</span>
+              {{ isPrintingTicket ? 'Imprimiendo...' : 'Imprimir Ticket' }}
             </button>
 
             <!-- Botón cancelar discreto (más pequeño) -->
@@ -2772,6 +2892,115 @@ const handleGastoSaved = async () => {
           >
             Cerrar
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Edición de Pedido -->
+    <div
+      v-if="showEditPedidoModal"
+      class="fixed inset-0 flex items-center justify-center z-[100] p-4 bg-black/60 backdrop-blur-sm"
+      @click.self="showEditPedidoModal = false"
+    >
+      <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-200 flex flex-col max-h-[90vh] md:max-h-[85vh]">
+        <!-- Header -->
+        <div class="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-black text-[#00126D] flex items-center gap-2">
+              <span>✏️</span>
+              Editar Artículos
+            </h2>
+            <p class="text-xs text-gray-400 font-bold uppercase tracking-wider mt-1">Pedido #{{ editingOrderId }}</p>
+          </div>
+          <button
+            @click="showEditPedidoModal = false"
+            class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-all text-2xl"
+          >
+            ×
+          </button>
+        </div>
+
+        <!-- Lista de artículos editables -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+          <div v-if="orderItemsToEdit.length === 0" class="text-center py-12">
+            <div class="text-4xl mb-4">⚠️</div>
+            <p class="text-gray-500 font-bold">No hay artículos en el pedido</p>
+          </div>
+          
+          <div
+            v-for="(item, index) in orderItemsToEdit"
+            :key="item.id"
+            class="bg-gray-50 rounded-2xl p-4 border border-gray-100 flex items-center justify-between gap-4 group hover:border-[#FDB700] transition-all"
+          >
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-gray-800 truncate" :title="item.nombre">{{ item.nombre }}</div>
+              <div v-if="item.modificaciones" class="text-[10px] text-gray-400 font-medium truncate italic mt-0.5">
+                "{{ item.modificaciones }}"
+              </div>
+              <div class="text-xs font-black text-[#FDB700] mt-1">
+                ${{ Number(item.precio_unitario * item.cantidad).toFixed(2) }}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+              <!-- Controles de cantidad -->
+              <div class="flex items-center bg-white rounded-xl border border-gray-200 p-1 shadow-sm">
+                <button
+                  @click="updateEditQuantity(index, -1)"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-600 font-bold transition-all active:scale-90"
+                >
+                  -
+                </button>
+                <span class="w-10 text-center font-black text-[#00126D] text-sm">{{ item.cantidad }}</span>
+                <button
+                  @click="updateEditQuantity(index, 1)"
+                  class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-50 text-gray-600 font-bold transition-all active:scale-90"
+                >
+                  +
+                </button>
+              </div>
+
+              <!-- Botón eliminar -->
+              <button
+                @click="removeEditItem(index)"
+                class="w-10 h-10 flex items-center justify-center rounded-xl bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-600 transition-all active:scale-95"
+                title="Eliminar artículo"
+              >
+                🗑️
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer del Modal -->
+        <div class="p-6 border-t border-gray-100 bg-gray-50 rounded-b-3xl">
+          <div class="flex items-center justify-between mb-6">
+            <div class="flex flex-col">
+              <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Estimado</span>
+              <span class="text-2xl font-black text-[#00126D]">$ {{ totalEditado.toFixed(2) }}</span>
+            </div>
+            <div class="text-right">
+              <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Artículos</span>
+              <span class="block text-lg font-bold text-gray-700">{{ orderItemsToEdit.length }}</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <button
+              @click="showEditPedidoModal = false"
+              class="py-3.5 px-6 rounded-2xl font-bold text-gray-500 bg-white border border-gray-200 hover:bg-gray-100 transition-all active:scale-95"
+            >
+              Cancelar
+            </button>
+            <button
+              @click="saveOrderEdits"
+              :disabled="isSavingEdits || orderItemsToEdit.length === 0"
+              class="py-3.5 px-6 rounded-2xl font-bold text-white bg-[#00126D] hover:bg-blue-900 shadow-lg shadow-blue-900/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              <span v-if="isSavingEdits" class="animate-spin text-lg">⏳</span>
+              {{ isSavingEdits ? 'Guardando...' : '💾 Guardar Cambios' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>

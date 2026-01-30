@@ -1047,13 +1047,13 @@ async def actualizar_articulos_pedido(
 ):
     """
     Actualizar artículos de un pedido existente.
-    Solo permitido para pedidos en estado 'pendiente'.
+    Permitido para pedidos en cualquier estado excepto finales.
     """
     # Validar permisos
-    if current_user.rol not in ["mesero", "administrador"]:
+    if current_user.rol not in ["mesero", "administrador", "cajero"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo meseros y administradores pueden modificar pedidos"
+            detail="Solo meseros, cajeros y administradores pueden modificar pedidos"
         )
     
     # Buscar el pedido
@@ -1064,11 +1064,11 @@ async def actualizar_articulos_pedido(
             detail="Pedido no encontrado"
         )
     
-    # Validar que el pedido esté en estado pendiente
-    if pedido.estado != "pendiente":
+    # Validar que el pedido no esté en estados finales
+    if pedido.estado in ["pagado", "cancelado", "dividido"]:
         raise HTTPException(
             status_code=400,
-            detail=f"Solo se pueden modificar pedidos en estado 'pendiente'. Estado actual: '{pedido.estado}'"
+            detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'"
         )
     
     # Validar permisos de acceso por sucursal
@@ -1179,3 +1179,60 @@ async def actualizar_articulos_pedido(
         traceback.print_exc()
     
     return pedido
+
+
+@router.post("/{pedido_id}/imprimir", response_model=dict)
+async def imprimir_ticket_pedido(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user)
+):
+    """
+    Imprimir el ticket de un pedido manualmente.
+    Disponible para meseros, cajeros y administradores.
+    """
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    
+    # Validar que el pedido tiene artículos
+    if not pedido.articulos_pedido:
+        raise HTTPException(status_code=400, detail="El pedido no tiene artículos para imprimir")
+
+    # Validar permisos de acceso por sucursal
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permisos para imprimir este pedido"
+        )
+
+    # Preparar datos para impresión
+    pedido_data = {
+        "id": pedido.id,
+        "numero_display": pedido.numero_display,
+        "nombre_cliente": pedido.nombre_cliente,
+        "mesa": pedido.mesa,
+        "total": float(pedido.total),
+        "estado": pedido.estado,
+        "tipo_orden": pedido.tipo_orden,
+        "sucursal_id": pedido.sucursal_id,
+        "fecha_creacion": pedido.fecha_creacion.isoformat(),
+        "fecha_salida": pedido.fecha_pago.isoformat() if pedido.fecha_pago else None,
+        "articulos_pedido": [
+            {
+                "cantidad": a.cantidad,
+                "precio_cobrado": float(a.precio_cobrado),
+                "modificaciones": a.modificaciones,
+                "platillo": {
+                    "nombre": a.platillo.nombre
+                } if a.platillo else None
+            } for a in pedido.articulos_pedido
+        ]
+    }
+
+    # Llamar al servicio de impresión
+    try:
+        await print_ticket_automatic(pedido_data)
+        return {"status": "ok", "message": "Ticket enviado a la cola de impresión"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al imprimir: {str(e)}")
