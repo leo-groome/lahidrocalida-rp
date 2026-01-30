@@ -1448,7 +1448,7 @@ const handleGastoSaved = async () => {
 
     <!-- Navigation Tabs -->
     <div class="bg-gray-50 border-b border-gray-200">
-      <div class="px-6 py-4 space-y-4">
+      <div class="px-6 py-4">
         <!-- Tabs principales -->
         <div class="flex gap-1 bg-white rounded-lg p-1 shadow-sm border">
           <button
@@ -1491,8 +1491,6 @@ const handleGastoSaved = async () => {
             📅 Reporte del dia
           </button>
         </div>
-
-        <!-- Búsqueda removida: ya no se usa -->
       </div>
     </div>
 
@@ -1511,43 +1509,97 @@ const handleGastoSaved = async () => {
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-6">
-        <!-- Header de Pedidos Activos eliminado a petición; mantenido Tiempo Real y Por Cobrar en otros bloques -->
-
-        <!-- Eliminado: pedidos activos secundarios para simplificar la vista -->
-      </div>
-
-      <!-- Tab Pendientes de Pago -->
-      <div v-else-if="activeTab === 'pendientes'">
-        <!-- Header con información de filtros -->
-        <div class="mb-4 flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <h3 class="text-lg font-bold text-gray-700">
-              Cuentas Pendientes
-              <span v-if="searchQuery" class="text-sm font-normal text-gray-500">
-                (filtrado por: "{{ searchQuery }}")
-              </span>
-            </h3>
+        <!-- Header unificado Blanco -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between">
+          <div class="flex items-center gap-6">
+            <h3 class="text-xl font-bold text-[#00126D]">Pedidos Activos</h3>
+            
+            <!-- Métrica de 1/4 (Resumen rápido) -->
+            <div class="hidden lg:flex items-center gap-3 px-4 py-2 bg-yellow-50 rounded-xl border border-yellow-100">
+              <span class="text-xs font-black text-yellow-600 uppercase tracking-wider">Por Cobrar:</span>
+              <span class="text-lg font-black text-yellow-700">${{ totalPendientesPago.toFixed(2) }}</span>
+            </div>
           </div>
-          <div class="text-sm text-gray-500">
-            {{ pedidosPendientes.length }} de {{ pedidosStore.pedidosPendientesPago.length }} cuentas
+
+          <div class="flex items-center gap-4">
+            <!-- Indicador Tiempo Real -->
+            <div v-if="pedidosStore.wsConnected" class="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200 text-xs font-bold shadow-sm">
+              <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              TIEMPO REAL ACTIVO
+            </div>
+            <div v-else class="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-200 text-xs font-bold shadow-sm">
+              <span class="animate-pulse">🟡</span>
+              ACTUALIZACIÓN CADA 5S
+            </div>
           </div>
         </div>
 
-        <div v-if="pedidosPendientes.length === 0" class="text-center py-12">
+        <!-- Lista de pedidos activos (Restaurada) -->
+        <div>
+          <div v-if="pedidosActivos.length === 0" class="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+            <div class="text-4xl mb-4">🎉</div>
+            <p class="text-gray-500 font-medium">No hay pedidos activos en este momento</p>
+          </div>
+          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div
+              v-for="pedido in pedidosActivos"
+              :key="pedido.id"
+              @click="showPedidoDetails(pedido)"
+              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-[#FDB700] hover:scale-105"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
+                  <span v-if="pedido.mesa" class="text-lg font-bold text-[#00126D]">Mesa {{ pedido.mesa }}</span>
+                  <span v-else-if="pedido.nombre_cliente" class="text-lg font-bold text-[#00126D] truncate max-w-[120px]" :title="pedido.nombre_cliente">
+                    {{ pedido.nombre_cliente }}
+                  </span>
+                  <span v-else class="text-lg font-bold text-[#00126D]">#{{ pedido.numero_display }}</span>
+                </div>
+                <div :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded text-[10px] font-bold shadow-sm uppercase']">
+                  {{ getEstadoTexto(pedido.estado) }}
+                </div>
+              </div>
+
+              <div class="text-sm">
+                <div class="text-blue-700 font-semibold mb-1">📄 Pedido #{{ pedido.numero_display }}</div>
+                <div class="text-[#FDB700] font-black text-xl">$ {{ Number(pedido.total).toFixed(2) }}</div>
+              </div>
+
+              <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
+                <div class="text-[10px] text-gray-400 font-bold flex items-center gap-1">
+                  ⏰ {{ new Date(pedido.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}
+                </div>
+                <button
+                  v-if="pedido.estado === 'entregado'"
+                  @click.stop="solicitarCuenta(pedido)"
+                  class="text-[10px] font-black text-purple-600 hover:text-purple-800 uppercase tracking-tighter bg-purple-50 px-2 py-1 rounded border border-purple-100 transition-colors"
+                >
+                  Solicitar Cuenta →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab Pendientes de Pago -->
+      <div v-else-if="activeTab === 'pendientes'" class="space-y-6">
+        <!-- Header con información -->
+        <div class="mb-4 flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+          <h3 class="text-lg font-bold text-gray-700">Cuentas Pendientes</h3>
+          <div class="text-sm text-gray-500 font-medium">
+            {{ pedidosPendientes.length }} cuentas esperando pago
+          </div>
+        </div>
+
+        <div v-if="pedidosPendientes.length === 0" class="text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
           <div class="text-6xl mb-4">💳</div>
-          <h2 class="text-2xl font-bold text-gray-600 mb-2">
-            {{ searchQuery ? 'No se encontraron resultados' : 'Sin pedidos pendientes de pago' }}
-          </h2>
-          <p class="text-gray-500">
-            {{ searchQuery ? 'Intenta con otro término de búsqueda' : 'Todos los pedidos están pagados' }}
-          </p>
-          <button
-            v-if="searchQuery"
-            @click="searchQuery = ''"
-            class="mt-4 px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all"
-          >
-            Limpiar filtro
-          </button>
+          <h2 class="text-2xl font-bold text-gray-600 mb-2">Sin pedidos pendientes</h2>
+          <p class="text-gray-500">Todos los pedidos están pagados en este momento</p>
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
