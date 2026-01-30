@@ -1530,6 +1530,46 @@ const handleGastoSaved = async () => {
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-6">
+        <!-- Header unificado Blanco (nuevo) -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div class="flex items-center gap-4">
+            <div class="flex flex-col">
+              <h3 class="text-xl font-bold text-[#00126D] flex items-center gap-2">
+                📦 Pedidos Activos
+                <span v-if="searchQuery" class="text-xs font-normal text-gray-400 bg-gray-50 px-2 py-1 rounded border">
+                  "{{ searchQuery }}"
+                </span>
+              </h3>
+              <div class="text-xs text-gray-500 font-medium mt-0.5">
+                {{ pedidosActivos.length }} pedidos en curso
+              </div>
+            </div>
+          </div>
+
+          <!-- Métrica Resumen (1/4 aprox) -->
+          <div class="bg-yellow-50 border border-yellow-100 rounded-xl px-6 py-2 flex flex-col items-center justify-center min-w-[160px]">
+            <span class="text-[10px] font-bold text-yellow-600 uppercase tracking-wider">Por Cobrar</span>
+            <span class="text-lg font-black text-yellow-700">${{ totalPendientesPago.toFixed(2) }}</span>
+          </div>
+
+          <!-- Estado Tiempo Real -->
+          <div class="flex items-center gap-3">
+            <div v-if="pedidosStore.wsConnected" class="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200 text-xs font-bold shadow-sm">
+              <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              TIEMPO REAL ACTIVO
+            </div>
+            <div v-else class="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-200 text-xs font-bold shadow-sm">
+              <span class="animate-pulse">🟡</span>
+              ACTUALIZACIÓN CADA 5S
+            </div>
+            <div v-if="pedidosStore.lastUpdate" class="text-[10px] text-gray-400 font-medium">
+              Último: {{ new Date(pedidosStore.lastUpdate).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) }}
+            </div>
+          </div>
+        </div>
         <!-- Debug info -->
         <div v-if="pedidosStore.wsConnected" class="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
           <div class="flex items-center gap-2 text-sm text-green-700">
@@ -1575,6 +1615,28 @@ const handleGastoSaved = async () => {
           </div>
         </div>
 
+        <!-- Resumen de Estados (Lista Estética) -->
+        <div class="mt-8 pt-6 border-t border-gray-100">
+          <h4 class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 bg-[#00126D] rounded-full"></span>
+            Resumen de Estados
+          </h4>
+          <div class="space-y-1.5">
+            <div 
+              v-for="estado in ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada']" 
+              :key="estado"
+              class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors group border border-transparent hover:border-gray-100"
+            >
+              <div class="flex items-center gap-2.5">
+                <div :class="[getEstadoColor(estado), 'w-2.5 h-2.5 rounded-full shadow-sm group-hover:scale-125 transition-transform']"></div>
+                <span class="text-xs font-bold text-gray-600 group-hover:text-gray-900 transition-colors">{{ getEstadoTexto(estado) }}</span>
+              </div>
+              <div class="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-black text-gray-500 group-hover:bg-[#00126D] group-hover:text-white transition-all">
+                {{ estadisticasOverview[estado as keyof typeof estadisticasOverview] }}
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- Lista de pedidos activos -->
         <div>
           <!-- Header con información de filtros -->
