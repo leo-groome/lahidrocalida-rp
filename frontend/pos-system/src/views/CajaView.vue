@@ -808,23 +808,36 @@ const removeEditItem = (index: number) => {
 // Guardar ediciones del pedido
 const saveOrderEdits = async () => {
   if (!editingOrderId.value || orderItemsToEdit.value.length === 0) return
-  
+
   isSavingEdits.value = true
   try {
-    const payload = {
-      articulos: orderItemsToEdit.value.map(a => ({
-        id: a.id,
-        cantidad: a.cantidad,
-        modificaciones: a.modificaciones
-      }))
-    }
-    
+    // Primero obtener el pedido actual para saber qué artículos quedan y cuáles eliminar
+    const pedidoResp = await api.get(`/pedidos/${editingOrderId.value}`)
+    const pedidoCompleto = pedidoResp.data
+    const existentes = pedidoCompleto.articulos_pedido || []
+    const idsEditados = new Set(orderItemsToEdit.value.map(i => i.id))
+
+    const finalArticulos = orderItemsToEdit.value.map(a => ({
+      id: a.id,
+      cantidad: a.cantidad,
+      modificaciones: a.modificaciones
+    }))
+
+    // Agregar entradas para eliminar los que ya no están en edicion
+    existentes.forEach((a: any) => {
+      if (!idsEditados.has(a.id)) {
+        finalArticulos.push({ id: a.id, cantidad: 0, modificaciones: '' })
+      }
+    })
+
+    const payload = { articulos: finalArticulos }
+
     await api.put(`/pedidos/${editingOrderId.value}/actualizar-articulos`, payload)
-    
-    // Recargar el pedido para actualizar UI
+
+    // Recargar el pedido completo para actualizar UI sin cambiar estado
     const res = await api.get(`/pedidos/${editingOrderId.value}`)
     const updatedPedido = res.data
-    
+
     // Actualizar en el store/lista local
     const idx = pedidosStore.pedidosCaja.findIndex(p => p.id === editingOrderId.value)
     if (idx !== -1) {
@@ -2921,7 +2934,7 @@ const handleGastoSaved = async () => {
         </div>
 
         <!-- Lista de artículos editables -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+        <div :class="['flex-1', orderItemsToEdit.length > 3 ? 'overflow-y-auto max-h-[420px] p-6 space-y-4 custom-scrollbar' : 'p-6 space-y-4']">
           <div v-if="orderItemsToEdit.length === 0" class="text-center py-12">
             <div class="text-4xl mb-4">⚠️</div>
             <p class="text-gray-500 font-bold">No hay artículos en el pedido</p>
