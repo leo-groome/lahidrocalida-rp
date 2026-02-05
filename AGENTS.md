@@ -145,6 +145,13 @@ VITE_API_URL=http://localhost:8000
 - Manual testing via API endpoints and UI.
 - Utility test scripts in `print_service/scripts/` (run individually).
 - Print service includes comprehensive verification scripts.
+- Nueva guía de pruebas para Caja (Edición de pedidos):
+- Edición de articulos en Pedido Actual mediante un modal accesible desde cada tarjeta en Pedidos Activos.
+- El modal permite eliminar artículos (con delete) y modificar cantidades; no se pueden añadir artículos nuevos.
+- El borrado de artículos se aplica al guardar enviando PUT /pedidos/{id}/actualizar-articulos con un payload que incluye artículos existentes con cantidad actualizada y artículos eliminados con cantidad 0.
+- Tras guardar, se recarga el pedido completo con GET /pedidos/{id} para reflejar los cambios, sin modificar el estado del pedido.
+- Se añadió la opción de imprimir adelantadamente el ticket desde la tarjeta (POST /pedidos/{id}/imprimir).
+- En la UI, la zona de edición de artículos es scrollable cuando hay más de 3 artículos para evitar desplazar el resto de la tarjeta.
 - Recommended future setup: pytest (backend), Vitest/Playwright (frontend).
 
 ## 🖨️ Sistema de Impresión Automática

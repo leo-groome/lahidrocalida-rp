@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, cast
 from sqlalchemy import Integer as SAInteger
@@ -1184,6 +1184,7 @@ async def actualizar_articulos_pedido(
 @router.post("/{pedido_id}/imprimir", response_model=dict)
 async def imprimir_ticket_pedido(
     pedido_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
@@ -1230,9 +1231,9 @@ async def imprimir_ticket_pedido(
         ]
     }
 
-    # Llamar al servicio de impresión
+    # Programar impresión en segundo plano; no bloquea la respuesta
     try:
-        await print_ticket_automatic(pedido_data)
-        return {"status": "ok", "message": "Ticket enviado a la cola de impresión"}
+        background_tasks.add_task(print_ticket_automatic, pedido_data)
+        return {"status": "ok", "message": "Ticket en cola de impresión"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al imprimir: {str(e)}")

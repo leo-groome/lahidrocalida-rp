@@ -13,8 +13,8 @@ const auth = useAuthStore()
 const pedidosStore = usePedidosStore()
 
 // Referencias reactivas
-const platillos = ref<PlatilloResponse[]>([])
-const carrito = ref<Array<{ platillo: PlatilloResponse; cantidad: number; modificaciones: string }>>([])
+  const platillos = ref<PlatilloResponse[]>([])
+  const carrito = ref<Array<{ platillo: PlatilloResponse; cantidad: number; modificaciones: string; comboKey?: string; proteina?: string; tamano?: string; tipo_pozole?: string }>>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
@@ -266,6 +266,10 @@ const pozolesByColor = computed(() => {
 // Proteínas disponibles para pozoles (se pasan al modal)
 const proteinasPozole = ['Cerdo', 'Pollo', 'Surtida', 'Mixta']
 
+// Enchilladas 1/2 - proteínas disponibles (MVP)
+const enchiladasProteins = ['Puerco', 'Pollo', 'Queso con cebolla', 'Queso y Cebolla']
+const selectedEnchiladasProtein = ref<string | null>(null)
+
 // Especificaciones rápidas por categoría - ESPECIFICACIONES REALES
 const especificacionesComunes = computed(() => {
   const categoria = platilloSeleccionado.value?.categoria || ''
@@ -302,10 +306,8 @@ const getCategoryColor = (category: string) => {
 
 // Agregar producto al carrito (para platillos normales - solo usado para pozoles)
 const agregarAlCarrito = (platillo: any) => {
-  const existente = carrito.value.find(item => 
-    item.platillo.id === platillo.id && 
-    item.modificaciones === ''
-  )
+  const key = `${platillo.id}|${proteina}|${tamano}|${tipo_pozole}`
+  const existente = carrito.value.find(item => item.comboKey === key)
   
   if (existente) {
     existente.cantidad++
@@ -319,23 +321,34 @@ const agregarAlCarrito = (platillo: any) => {
 }
 
 // Abrir modal de variantes de pozole
-const openPozoleVariants = (color: 'Verde' | 'Blanco' | 'Rojo') => {
-  selectedPozoleColor.value = color
+const abrirPozoleModal = () => {
   showPozoleModal.value = true
 }
 
 // Cerrar modal de pozole
 const closePozoleModal = () => {
   showPozoleModal.value = false
-  selectedPozoleColor.value = null
 }
 
 // Seleccionar variante de pozole desde el modal
-const selectPozoleVariant = (platillo: PlatilloResponse) => {
-  // NO agregar al carrito aquí, solo pasar al modal de especificaciones
+const selectPozoleVariant = ({ platillo, cantidad, proteina, tamano, tipo_pozole }: { platillo: PlatilloResponse; cantidad: number; proteina: string; tamano: string; tipo_pozole: string }) => {
+  const key = `${platillo.id}|${proteina}|${tamano}|${tipo_pozole}`
+  const existente = carrito.value.find(item => item.comboKey === key)
+  if (existente) {
+    existente.cantidad += cantidad
+  } else {
+    carrito.value.push({
+      platillo,
+      cantidad,
+      modificaciones: `Proteina:${proteina};Tamano:${tamano};Tipo:${tipo_pozole}`,
+      comboKey: key,
+      proteina,
+      tamano,
+      tipo_pozole
+    })
+  }
   closePozoleModal()
-  // Abrir especificaciones donde se agregará al carrito una sola vez
-  abrirEspecificaciones(platillo)
+  showSuccessNotification(`Agregado: ${platillo.nombre} (x${cantidad})`)
 }
 
 // Eliminar del carrito
@@ -392,7 +405,8 @@ const enviarPedido = async () => {
     const articulos: ArticuloPedidoCreate[] = carrito.value.map(item => ({
       platillo_id: item.platillo.id,
       cantidad: item.cantidad,
-      modificaciones: item.modificaciones || ''
+      modificaciones: item.modificaciones || '',
+      proteina: (item as any).proteina
     }))
 
     if (modoAgregarArticulos.value && pedidoExistenteId.value) {
@@ -412,8 +426,8 @@ const enviarPedido = async () => {
         showErrorNotification('Error al agregar artículos')
       }
       
-    } else {
-      // Modo nuevo pedido - usar endpoint POST
+  } else {
+    // Modo nuevo pedido - usar endpoint POST
       const pedidoData: PedidoCreate = {
         nombre_cliente: (tipoOrden.value === 'llevar' || tipoOrden.value === 'uber_eats') ? nombreCliente.value : null,
         mesa: tipoOrden.value === 'aqui' ? mesa.value : null,
@@ -560,9 +574,20 @@ const abrirEspecificaciones = (platillo: PlatilloResponse) => {
 
 const confirmarEspecificaciones = () => {
   if (platilloSeleccionado.value && cantidadTemp.value > 0) {
+    // Si es enchiladas 1/2, requiere proteína seleccionada
+    let proteinaParaAgregar: string | undefined = proteinaSeleccionada.value
+    if (platilloSeleccionado.value.nombre.toLowerCase().includes('enchiladas') && platilloSeleccionado.value.nombre.includes('1/2')) {
+      if (!selectedEnchiladasProtein.value) {
+        showErrorNotification('Selecciona una proteína para enchiladas 1/2')
+        return
+      }
+      proteinaParaAgregar = selectedEnchiladasProtein.value
+    }
+
     const existente = carrito.value.find(item => 
       item.platillo.id === platilloSeleccionado.value!.id && 
-      item.modificaciones === especificacionesTemp.value
+      item.modificaciones === especificacionesTemp.value &&
+      item.proteina === proteinaParaAgregar
     )
     
     if (existente) {
@@ -571,7 +596,8 @@ const confirmarEspecificaciones = () => {
       carrito.value.push({
         platillo: platilloSeleccionado.value,
         cantidad: cantidadTemp.value,
-        modificaciones: especificacionesTemp.value
+        modificaciones: especificacionesTemp.value,
+        proteina: proteinaParaAgregar
       })
     }
     
@@ -1020,32 +1046,16 @@ const guardarCambiosPedido = async () => {
         <div v-else-if="loading" class="p-4 text-center text-gray-600 font-medium">Cargando platillos...</div>
 
         <div v-else-if="pedidoConfigurado">
-          <!-- Pozoles Section -->
-          <div v-if="hasAnyPozole && pozolesByColor.Verde.length + pozolesByColor.Blanco.length + pozolesByColor.Rojo.length > 0" class="mb-6">
-            <h2 class="text-xl font-bold text-[#00126D] mb-4 flex items-center gap-2">
-              <span class="text-2xl">🍲</span> Pozoles Especiales
-            </h2>
-            <div class="grid grid-cols-3 gap-4">
+          <!-- Pozoles Section (responsive grid) -->
+          <div class="mx-auto w-full max-w-6xl px-1" v-if="hasAnyPozole">
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               <button
-                v-if="pozolesByColor.Verde.length > 0"
-                @click="openPozoleVariants('Verde')"
-                class="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-500 rounded-xl p-6 text-center hover:shadow-xl hover:scale-105 transition-all font-bold text-green-700 active:scale-95"
+                @click="abrirPozoleModal"
+                class="w-full col-span-1 sm:col-span-2 lg:col-span-2 xl:col-span-4 my-4 bg-gradient-to-br from-green-800 to-green-950 border-2 border-green-900 rounded-lg text-center font-bold text-white flex items-center justify-center h-[50px] p-[5px]"
               >
-                🟢<br>Verde
-              </button>
-              <button
-                v-if="pozolesByColor.Blanco.length > 0"
-                @click="openPozoleVariants('Blanco')"
-                class="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-400 rounded-xl p-6 text-center hover:shadow-xl hover:scale-105 transition-all font-bold text-gray-700 active:scale-95"
-              >
-                ⚪<br>Blanco
-              </button>
-              <button
-                v-if="pozolesByColor.Rojo.length > 0"
-                @click="openPozoleVariants('Rojo')"
-                class="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-500 rounded-xl p-6 text-center hover:shadow-xl hover:scale-105 transition-all font-bold text-red-700 active:scale-95"
-              >
-                🔴<br>Rojo
+                <span class="text-2xl">🍲</span>
+                <span class="text-lg ml-2">Pozoles</span>
               </button>
             </div>
           </div>
@@ -1087,9 +1097,15 @@ const guardarCambiosPedido = async () => {
                   {{ getCantidadEnCarrito(platillo.id) }}
                 </div>
                 
-                <div class="text-sm font-semibold text-[#FDB700] mb-1">$ {{ Number(platillo.precio).toFixed(2) }}</div>
+                <!-- Precio movido a esquina inferior derecha para lectura rápida -->
+                <div class="absolute bottom-2 right-3 text-[#FDB700] font-semibold text-sm">$ {{ Number(platillo.precio).toFixed(2) }}</div>
                 <div class="font-bold text-[#00126D] group-hover:text-[#3AAD08] text-sm">{{ platillo.kds_name || platillo.nombre }}</div>
-                <div class="text-xs text-gray-600 line-clamp-2 mt-1">{{ platillo.descripcion }}</div>
+                <!-- Descripción eliminada para MVP -->
+                
+                <!-- Distinción de orden: Ord de 2/4 cuando aplica -->
+                <div v-if="platillo.defaultPortion === 2 || platillo.defaultPortion === 4" class="text-xs text-gray-600 mt-1">
+                  Ord de {{ platillo.defaultPortion }}
+                </div>
               </button>
             </div>
           </div>
@@ -1823,6 +1839,42 @@ const guardarCambiosPedido = async () => {
           <div class="text-sm text-[#FDB700] font-semibold">$ {{ Number(platilloSeleccionado.precio).toFixed(2) }}</div>
           <div class="text-xs text-gray-600 mt-1">{{ platilloSeleccionado.descripcion }}</div>
         </div>
+
+        <!-- Proteínas para Enchiladas 1/2 (MVP) -->
+        <div v-if="platilloSeleccionado?.nombre?.toLowerCase().includes('enchiladas') && platilloSeleccionado?.nombre.includes('1/2')" class="mb-4 p-4 bg-white rounded-lg border border-gray-200">
+          <div class="font-semibold text-[#00126D] mb-2">Proteína</div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="p in enchiladasProteins"
+              :key="p"
+              @click="selectedEnchiladasProtein = p"
+              :class="[
+                'px-4 py-2 rounded border font-bold text-sm',
+                selectedEnchiladasProtein === p ? 'bg-[#FDB700] text-[#00126D] border-[#FDB700]' : 'bg-white border-gray-200'
+              ]"
+            >
+              {{ p }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Proteínas para Enchiladas 1/2 (MVP) -->
+        <div v-if="platilloSeleccionado?.nombre?.toLowerCase().includes('enchiladas') && platilloSeleccionado?.nombre.includes('1/2')" class="mb-6 p-4 bg-white rounded-lg border border-gray-200">
+          <div class="font-semibold text-[#00126D] mb-2">Proteína</div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="p in enchiladasProteins"
+              :key="p"
+              @click="selectedEnchiladasProtein = p"
+              :class="[
+                'px-4 py-2 rounded border font-bold text-sm',
+                selectedEnchiladasProtein === p ? 'bg-[#FDB700] text-[#00126D] border-[#FDB700]' : 'bg-white border-gray-200'
+              ]"
+            >
+              {{ p }}
+            </button>
+          </div>
+        </div>
         
 
         <!-- Selector de cantidad discreto -->
@@ -1902,9 +1954,8 @@ const guardarCambiosPedido = async () => {
 
     <!-- Pozole Variant Modal -->
     <PozoleVariantModal
-      v-if="selectedPozoleColor"
-      :color="selectedPozoleColor"
-      :platillos="pozolesByColor[selectedPozoleColor]"
+      v-if="showPozoleModal"
+      :platillos="platillos.filter(p => p.categoria === 'Pozole')"
       :isOpen="showPozoleModal"
       @close="closePozoleModal"
       @select="selectPozoleVariant"
@@ -2015,4 +2066,6 @@ const guardarCambiosPedido = async () => {
 .duration-300 {
   transition-duration: 300ms;
 }
+/* Pozole tile height adjustment: 5px less height for alignment with dropdowns */
+.pozole-tile { height: calc(15rem - 5px); }
 </style>

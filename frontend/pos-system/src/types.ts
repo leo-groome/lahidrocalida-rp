@@ -14,6 +14,7 @@ export interface ArticuloPedidoCreate {
   platillo_id: number;
   cantidad: number;
   modificaciones?: string | null;
+  proteina?: string;
 }
 
 export interface ArticuloPedidoResponse {
@@ -46,6 +47,7 @@ export interface PedidoCreate {
     platillo_id: number;
     cantidad: number;
     modificaciones?: string;
+    proteina?: string;
   }>;
 }
 

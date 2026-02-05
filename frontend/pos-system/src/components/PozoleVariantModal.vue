@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { Platillo } from '../types'
+import type { PlatilloResponse } from '../types'
 
 interface Props {
-  color: 'Verde' | 'Blanco' | 'Rojo'
-  platillos: Platillo[]
+  platillos: PlatilloResponse[]
   isOpen: boolean
 }
 
 interface Emit {
   (e: 'close'): void
-  (e: 'select', platillo: Platillo): void
+  (e: 'select', payload: { platillo: PlatilloResponse; cantidad: number; proteina: string; tamano: string; tipo_pozole: string }): void
 }
 
 const props = defineProps<Props>()
@@ -18,39 +17,63 @@ const emit = defineEmits<Emit>()
 
 const selectedTamaño = ref<string | null>(null)
 const selectedProteína = ref<string | null>(null)
+const selectedColor = ref<'Verde' | 'Blanco' | 'Rojo' | null>(null)
+const cantidad = ref(1)
 
 const tamaños = ['Infantil', 'Regular', 'Grande']
 const proteínas = ['Puerco', 'Pollo', 'Surtida', 'Mixta']
+const colores = ['Verde', 'Blanco', 'Rojo'] as const
 
 const tamañosDisponibles = computed(() => {
   return tamaños.filter(t => 
-    props.platillos.some(p => p.nombre.includes(`Pozole ${t} ${props.color}`))
+    props.platillos.some(p => p.nombre.toLowerCase().includes(t.toLowerCase()) && p.categoria === 'Pozole')
   )
 })
 
 const proteínasDisponibles = computed(() => {
   return proteínas.filter(p => 
-    props.platillos.some(pl => pl.nombre.includes(`${props.color} ${p}`))
+    props.platillos.some(pl => pl.nombre.toLowerCase().includes(p.toLowerCase()) && pl.categoria === 'Pozole')
+  )
+})
+
+const coloresDisponibles = computed(() => {
+  return colores.filter(c => 
+    props.platillos.some(p => p.nombre.toLowerCase().includes(c.toLowerCase()) && p.categoria === 'Pozole')
   )
 })
 
 const selectedPlatillo = computed(() => {
-  if (!selectedTamaño.value || !selectedProteína.value) return null
-  // Buscar por formato exacto: "Pozole [Tamaño] [Color] [Proteína]"
-  const nombreBuscado = `Pozole ${selectedTamaño.value} ${props.color} ${selectedProteína.value}`
-  return props.platillos.find(p => p.nombre === nombreBuscado)
+  if (!selectedTamaño.value || !selectedProteína.value || !selectedColor.value) return null
+  
+  // Buscar un platillo que contenga los tres términos en su nombre
+  // Esto es más robusto que un formato de string exacto
+  return props.platillos.find(p => {
+    if (p.categoria !== 'Pozole') return false
+    const nombre = p.nombre.toLowerCase()
+    return nombre.includes(selectedTamaño.value!.toLowerCase()) &&
+           nombre.includes(selectedColor.value!.toLowerCase()) &&
+           nombre.includes(selectedProteína.value!.toLowerCase())
+  })
 })
 
 function handleSelect() {
-  if (selectedPlatillo.value) {
-    emit('select', selectedPlatillo.value)
-    resetSelection()
+  if (selectedPlatillo.value && selectedProteína.value && selectedTamaño.value && selectedColor.value) {
+    emit('select', {
+      platillo: selectedPlatillo.value,
+      cantidad: cantidad.value,
+      proteina: selectedProteína.value,
+      tamano: selectedTamaño.value,
+      tipo_pozole: selectedColor.value
+    })
+    handleClose()
   }
 }
 
 function resetSelection() {
   selectedTamaño.value = null
   selectedProteína.value = null
+  selectedColor.value = null
+  cantidad.value = 1
 }
 
 function handleClose() {
@@ -60,23 +83,53 @@ function handleClose() {
 </script>
 
 <template>
-  <div v-if="isOpen" class="fixed inset-0 flex items-end justify-center z-50 pointer-events-none">
-    <div class="bg-gradient-to-b from-white to-blue-50 rounded-t-3xl p-8 w-full max-w-2xl pointer-events-auto shadow-2xl">
+  <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[60]">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-black bg-opacity-75" @click="handleClose"></div>
+    
+    <!-- Modal Content -->
+    <div class="relative bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl overflow-y-auto max-h-[90vh]">
       <!-- Header -->
       <div class="flex items-center justify-between mb-8">
-        <div>
-          <h2 class="text-2xl font-bold text-[#00126D]">🍲 Pozole {{ color }}</h2>
-          <p class="text-xs text-gray-600 mt-1">Selecciona tamaño y proteína</p>
+        <div class="flex items-center gap-3">
+          <span class="text-4xl">🍲</span>
+          <h2 class="text-2xl font-bold text-[#00126D]">Pozoles</h2>
         </div>
         <button @click="handleClose" class="text-gray-400 hover:text-gray-600 text-3xl leading-none transition">×</button>
       </div>
 
-      <!-- Tamaño Selection -->
+      <!-- Proteína Selection -->
       <div class="mb-8">
-        <label class="block text-sm font-bold text-[#00126D] mb-3">📏 Tamaño</label>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xl">🍗</span>
+          <label class="text-sm font-bold text-[#00126D]">Proteína</label>
+        </div>
         <div class="flex gap-3 flex-wrap">
           <button
-            v-for="t in tamañosDisponibles"
+            v-for="p in proteínas"
+            :key="p"
+            @click="selectedProteína = p"
+            :class="[
+              'px-5 py-3 rounded-lg border-2 text-sm font-bold transition-all',
+              selectedProteína === p
+                ? 'bg-[#00126D] text-white border-[#00126D] shadow-md'
+                : 'bg-white border-gray-200 text-[#00126D] hover:border-[#00126D] hover:shadow-sm'
+            ]"
+          >
+            {{ p }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Tamaño Selection -->
+      <div class="mb-8">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xl">📏</span>
+          <label class="text-sm font-bold text-[#00126D]">Tamaño</label>
+        </div>
+        <div class="flex gap-3 flex-wrap">
+          <button
+            v-for="t in tamaños"
             :key="t"
             @click="selectedTamaño = t"
             :class="[
@@ -91,45 +144,58 @@ function handleClose() {
         </div>
       </div>
 
-      <!-- Proteína Selection -->
+      <!-- Tipo (Color) Selection -->
       <div class="mb-8">
-        <label class="block text-sm font-bold text-[#00126D] mb-3">🍗 Proteína</label>
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-xl">🎨</span>
+          <label class="text-sm font-bold text-[#00126D]">Tipos de pozole</label>
+        </div>
         <div class="flex gap-3 flex-wrap">
           <button
-            v-for="p in proteínasDisponibles"
-            :key="p"
-            @click="selectedProteína = p"
+            v-for="c in colores"
+            :key="c"
+            @click="selectedColor = c"
             :class="[
               'px-5 py-3 rounded-lg border-2 text-sm font-bold transition-all',
-              selectedProteína === p
-                ? 'bg-[#FDB700] text-[#00126D] border-[#FDB700] shadow-md'
-                : 'bg-white border-gray-200 text-[#00126D] hover:border-[#FDB700] hover:shadow-sm'
+              selectedColor === c
+                ? (c === 'Verde' ? 'bg-green-600 border-green-600 text-white' : 
+                   c === 'Rojo' ? 'bg-red-600 border-red-600 text-white' : 
+                   'bg-gray-200 border-gray-400 text-gray-800')
+                : 'bg-white border-gray-200 text-[#00126D] hover:shadow-sm'
             ]"
           >
-            {{ p }}
+            {{ c }}
           </button>
         </div>
       </div>
 
-      <!-- Price and Action -->
-      <div v-if="selectedPlatillo" class="bg-gradient-to-r from-[#00126D] to-[#001a4d] rounded-xl p-6 text-white">
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="text-sm text-blue-100">{{ selectedPlatillo.nombre }}</div>
-            <div class="text-3xl font-black mt-1">$ {{ Number(selectedPlatillo.precio).toFixed(2) }}</div>
+      <!-- Footer: Price and Action -->
+      <div v-if="selectedPlatillo" class="bg-[#00126D] rounded-xl p-6 text-white animate-in fade-in zoom-in duration-300">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div class="flex-1 w-full">
+            <div class="text-xs text-blue-200 uppercase tracking-wider font-bold mb-1">Total a pagar</div>
+            <div class="text-sm text-blue-100 mb-1">{{ selectedPlatillo.nombre }}</div>
+            <div class="text-3xl font-black">$ {{ (Number(selectedPlatillo.precio) * cantidad).toFixed(2) }}</div>
           </div>
+          
+          <div class="flex items-center gap-4 bg-white/10 p-2 rounded-lg">
+            <button @click="cantidad > 1 && cantidad--" class="w-10 h-10 rounded bg-white/20 hover:bg-white/30 flex items-center justify-center font-bold text-xl">−</button>
+            <span class="text-2xl font-black w-8 text-center">{{ cantidad }}</span>
+            <button @click="cantidad++" class="w-10 h-10 rounded bg-white/20 hover:bg-white/30 flex items-center justify-center font-bold text-xl">+</button>
+          </div>
+
           <button
             @click="handleSelect"
-            class="px-8 py-4 rounded-lg bg-[#FDB700] text-[#00126D] hover:bg-yellow-400 font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
+            class="w-full sm:w-auto px-5 py-3 rounded-lg bg-[#FDB700] text-[#00126D] hover:bg-yellow-400 font-bold text-base transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center justify-center gap-2"
           >
-            ✓ Agregar
+            <span>✓</span> Agregar
           </button>
         </div>
       </div>
 
-      <!-- Empty State -->
-      <div v-else class="text-center py-8 text-gray-500 bg-gray-50 rounded-lg">
-        <p class="text-lg font-semibold">Selecciona tamaño y proteína</p>
+      <!-- Missing Selection Message -->
+      <div v-else class="text-center py-6 text-gray-400 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+        <p class="font-medium">Selecciona proteína, tamaño y tipo para continuar</p>
       </div>
     </div>
   </div>
