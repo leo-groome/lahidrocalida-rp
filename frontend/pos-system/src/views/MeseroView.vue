@@ -341,7 +341,7 @@ const selectPozoleVariant = ({ platillo, cantidad, proteina, tamano, tipo_pozole
     carrito.value.push({
       platillo,
       cantidad,
-      modificaciones: `Proteina:${proteina};Tamano:${tamano};Tipo:${tipo_pozole}`,
+      modificaciones: '',
       comboKey: key,
       proteina,
       tamano,
@@ -349,7 +349,6 @@ const selectPozoleVariant = ({ platillo, cantidad, proteina, tamano, tipo_pozole
     })
   }
   closePozoleModal()
-  showSuccessNotification(`Agregado: ${platillo.nombre} (x${cantidad})`)
 }
 
 // Eliminar del carrito
