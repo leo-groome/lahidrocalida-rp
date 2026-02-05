@@ -144,6 +144,9 @@ VITE_API_URL=http://localhost:8000
 - No automated test framework configured.
 - Manual testing via API endpoints and UI.
 - Utility test scripts in `print_service/scripts/` (run individually).
+- Frontend UI Guidelines:
+- - Pozole button: ensure desktop grid alignment; color green; increased padding and height adjustments as implemented.
+- - Ensure consistency across responsive breakpoints; mobile keeps the existing modal behavior.
 - Print service includes comprehensive verification scripts.
 - Nueva guía de pruebas para Caja (Edición de pedidos):
 - Edición de articulos en Pedido Actual mediante un modal accesible desde cada tarjeta en Pedidos Activos.
