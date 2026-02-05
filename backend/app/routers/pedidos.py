@@ -6,11 +6,11 @@ from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
 from decimal import Decimal
-import pytz
 import requests
 
 from app.db.session import get_db
 from app.models import Pedido, ArticuloPedido, Platillo, Usuario
+from app.utils.timezone import get_mexico_now, MEXICO_TZ
 from app.schemas import (
     PedidoCreate,
     PedidoResponse,
@@ -80,14 +80,12 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
     Formato: 001, 002, 003, etc.
     Se reinicia automáticamente cada día en zona horaria local.
     """
-    # Usar zona horaria local del restaurante directamente
-    tz = pytz.timezone(settings.TIMEZONE)
-    now_local = datetime.now(tz)
+    now_local = get_mexico_now()
     today_local = now_local.date()
     
-    # Usar fechas locales directamente (BD ya está en zona local)
-    start_dt = tz.localize(datetime.combine(today_local, datetime.min.time())).replace(tzinfo=None)
-    end_dt = tz.localize(datetime.combine(today_local + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    # Rango del día actual en zona horaria de México
+    start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
 
     # Obtener el máximo numero_display como entero para la sucursal y día actuales
     max_number = (
@@ -273,14 +271,12 @@ def list_pedidos(
     Cajeros ven solo pedidos de su sucursal.
     Administradores ven todos los pedidos.
     """
-    # Usar zona horaria local del restaurante para filtrar pedidos del día
-    tz = pytz.timezone(settings.TIMEZONE)
-    now_local = datetime.now(tz)
+    now_local = get_mexico_now()
     today_local = now_local.date()
     
-    # Usar fechas locales directamente (BD ya está en zona local)
-    start_dt = tz.localize(datetime.combine(today_local, datetime.min.time())).replace(tzinfo=None)
-    end_dt = tz.localize(datetime.combine(today_local + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    # Rango del día actual en zona horaria de México
+    start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
     
     query = db.query(Pedido).filter(
         Pedido.fecha_creacion >= start_dt,
@@ -645,7 +641,7 @@ async def update_pedido(
 
     # Registrar fecha de pago cuando se marca como pagado
     if data.estado == "pagado" and pedido.fecha_pago is None:
-        pedido.fecha_pago = datetime.now(pytz.timezone(settings.TIMEZONE)).replace(tzinfo=None)
+        pedido.fecha_pago = get_mexico_now()
     
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
     # EXCEPTO aquellos que ya están "entregado" (bebidas)

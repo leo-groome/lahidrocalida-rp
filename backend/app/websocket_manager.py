@@ -5,6 +5,8 @@ import json
 import logging
 import asyncio
 
+from app.utils.timezone import get_mexico_now
+
 logger = logging.getLogger(__name__)
 
 class ConnectionInfo:
@@ -13,8 +15,8 @@ class ConnectionInfo:
         self.user_id = user_id
         self.user_role = user_role
         self.sucursal_id = sucursal_id
-        self.connected_at = datetime.now()
-        self.last_ping = datetime.now()
+        self.connected_at = get_mexico_now()
+        self.last_ping = get_mexico_now()
 
 class WebSocketManager:
     def __init__(self):
@@ -59,7 +61,7 @@ class WebSocketManager:
                 "type": "connection_established",
                 "data": {
                     "client_type": client_type,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": get_mexico_now().isoformat()
                 }
             })
             
@@ -116,7 +118,7 @@ class WebSocketManager:
             "type": "pedido_created",
             "data": {
                 "pedido": pedido_data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_mexico_now().isoformat()
             }
         }
         
@@ -144,7 +146,7 @@ class WebSocketManager:
                 "pedido_id": pedido_id,
                 "nuevo_estado": nuevo_estado,
                 "pedido": pedido_data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_mexico_now().isoformat()
             }
         }
         
@@ -201,7 +203,7 @@ class WebSocketManager:
                 "articulo_id": articulo_id,
                 "nuevo_estado": nuevo_estado,
                 "pedido": pedido_data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_mexico_now().isoformat()
             }
         }
         

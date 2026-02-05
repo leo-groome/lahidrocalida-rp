@@ -1,8 +1,8 @@
 from datetime import datetime
 
-import pytz
 from app.core.config import settings
 from app.db.session import Base
+from app.utils.timezone import get_mexico_now
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -23,9 +23,8 @@ from sqlalchemy.types import DECIMAL
 
 
 def get_local_datetime():
-    """Obtener datetime en zona horaria local del restaurante"""
-    tz = pytz.timezone(settings.TIMEZONE)
-    return datetime.now(tz).replace(tzinfo=None)
+    """Obtener datetime en zona horaria local del restaurante (aware)"""
+    return get_mexico_now()
 
 
 class Sucursal(Base):
@@ -101,8 +100,8 @@ class Pedido(Base):
     propina_efectivo = Column(DECIMAL(8, 2), default=0)
     propina_tarjeta = Column(DECIMAL(8, 2), default=0)
     tipo_orden = Column(String(20), default="aqui")  # 'aqui', 'llevar', 'uber_eats'
-    fecha_creacion = Column(DateTime, default=get_local_datetime)
-    fecha_pago = Column(DateTime, nullable=True)
+    fecha_creacion = Column(DateTime(timezone=True), default=get_local_datetime)
+    fecha_pago = Column(DateTime(timezone=True), nullable=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
 
@@ -192,7 +191,7 @@ class Gasto(Base):
     subtotal = Column(DECIMAL(10, 2), nullable=False)
     total = Column(DECIMAL(10, 2), nullable=False)
     total_manual = Column(DECIMAL(10, 2))
-    fecha_gasto = Column(DateTime, default=get_local_datetime)
+    fecha_gasto = Column(DateTime(timezone=True), default=get_local_datetime)
     notas = Column(Text)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     turno_id = Column(Integer, ForeignKey("turnos.id"), nullable=True)
@@ -227,8 +226,8 @@ class Turno(Base):
     id = Column(Integer, primary_key=True, index=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
-    fecha_apertura = Column(DateTime, default=get_local_datetime)
-    fecha_cierre = Column(DateTime)
+    fecha_apertura = Column(DateTime(timezone=True), default=get_local_datetime)
+    fecha_cierre = Column(DateTime(timezone=True))
     estado = Column(
         String(10), default="abierto", nullable=False
     )  # 'abierto', 'cerrado'

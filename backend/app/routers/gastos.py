@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional
 
@@ -8,6 +8,7 @@ from sqlalchemy import and_, func
 
 from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.utils.timezone import MEXICO_TZ, get_mexico_now
 from app.models import (
     Articulo,
     CategoriaArticulo,
@@ -336,9 +337,11 @@ def list_gastos(
     if metodo_pago is not None:
         query = query.filter(Gasto.metodo_pago == metodo_pago)
     if fecha_inicio_date is not None:
-        query = query.filter(Gasto.fecha_gasto >= fecha_inicio_date)
+        start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+        query = query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date is not None:
-        query = query.filter(Gasto.fecha_gasto <= fecha_fin_date)
+        end_dt = datetime.combine(fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        query = query.filter(Gasto.fecha_gasto < end_dt)
     
     # Filtro complejo por categoría (requiere join)
     if categoria_id is not None:
@@ -395,11 +398,14 @@ def get_gastos_analiticas(
         base_query = base_query.filter(Gasto.sucursal_id == sucursal_id)
 
     if fecha_inicio_date:
-        base_query = base_query.filter(Gasto.fecha_gasto >= fecha_inicio_date)
+        start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+        base_query = base_query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date:
-        base_query = base_query.filter(Gasto.fecha_gasto <= fecha_fin_date)
+        end_dt = datetime.combine(fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        base_query = base_query.filter(Gasto.fecha_gasto < end_dt)
 
     # 1. Total Gastado
+
     total_gastado = base_query.with_entities(func.sum(Gasto.total)).scalar() or 0
 
     # 2. Promedio Diario

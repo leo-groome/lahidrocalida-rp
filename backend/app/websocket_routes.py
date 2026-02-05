@@ -4,7 +4,7 @@ from app.db.session import get_db
 from app.websocket_manager import websocket_manager
 from app.models import Usuario
 from app.core.config import settings
-from datetime import datetime
+from app.utils.timezone import get_mexico_now
 from jose import JWTError, jwt
 import logging
 import json
@@ -89,7 +89,7 @@ async def websocket_endpoint(
                         # Responder a ping con pong
                         pong_response = {
                             "type": "pong", 
-                            "timestamp": datetime.now().isoformat()
+                            "timestamp": get_mexico_now().isoformat()
                         }
                         await websocket.send_text(json.dumps(pong_response))
                         
@@ -129,5 +129,5 @@ async def get_websocket_stats():
     return {
         "status": "active",
         "connections": websocket_manager.get_connection_stats(),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": get_mexico_now().isoformat()
     }

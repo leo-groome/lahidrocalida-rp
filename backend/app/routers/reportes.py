@@ -2,7 +2,6 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
-import pytz
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, case, extract, func, or_
 from sqlalchemy.orm import Session
@@ -11,6 +10,7 @@ from app.auth import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import ArticuloPedido, Pedido, Platillo, Usuario
+from app.utils.timezone import get_mexico_now, MEXICO_TZ
 
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
@@ -32,10 +32,10 @@ def tickets_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
-    tz = pytz.timezone(settings.TIMEZONE)
-    today_local = datetime.now(tz).date()
-    start_dt = tz.localize(datetime.combine(today_local, datetime.min.time())).replace(tzinfo=None)
-    end_dt = tz.localize(datetime.combine(today_local + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    now_local = get_mexico_now()
+    today_local = now_local.date()
+    start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
 
     fecha_evento_expr = case(
         (Pedido.estado == "pagado", Pedido.fecha_pago),
@@ -107,12 +107,16 @@ def analytics_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
-    today = date.today()
+    now_local = get_mexico_now()
+    today = now_local.date()
+    start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
 
     # Base query: pedidos pagados del dia
     base_query = db.query(Pedido).filter(
         and_(
-            func.date(Pedido.fecha_creacion) == today,
+            Pedido.fecha_creacion >= start_dt,
+            Pedido.fecha_creacion < end_dt,
             Pedido.estado == "pagado",
             Pedido.sucursal_id == user.sucursal_id,
         )
@@ -124,7 +128,8 @@ def analytics_del_dia(
         db.query(func.sum(Pedido.total))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.metodo_pago == "efectivo",
                 Pedido.sucursal_id == user.sucursal_id,
@@ -138,7 +143,8 @@ def analytics_del_dia(
         db.query(func.sum(Pedido.total))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.metodo_pago == "tarjeta",
                 Pedido.sucursal_id == user.sucursal_id,
@@ -152,7 +158,8 @@ def analytics_del_dia(
         db.query(func.sum(Pedido.total))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.metodo_pago == "transferencia",
                 Pedido.sucursal_id == user.sucursal_id,
@@ -167,7 +174,8 @@ def analytics_del_dia(
         db.query(func.sum(Pedido.propina_efectivo))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.metodo_pago == "efectivo",
                 Pedido.sucursal_id == user.sucursal_id,
@@ -181,7 +189,8 @@ def analytics_del_dia(
         db.query(func.sum(Pedido.propina_tarjeta))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.metodo_pago.in_(["tarjeta", "transferencia"]),
                 Pedido.sucursal_id == user.sucursal_id,
@@ -206,7 +215,8 @@ def analytics_del_dia(
         )
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.sucursal_id == user.sucursal_id,
             )
@@ -221,7 +231,8 @@ def analytics_del_dia(
         db.query(Pedido.tipo_orden, func.count(Pedido.id).label("cantidad"))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.sucursal_id == user.sucursal_id,
             )
@@ -235,7 +246,8 @@ def analytics_del_dia(
         db.query(func.count(Pedido.id))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "cancelado",
                 Pedido.sucursal_id == user.sucursal_id,
             )
@@ -257,7 +269,8 @@ def analytics_del_dia(
         db.query(Pedido.estado, func.count(Pedido.id).label("cantidad"))
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado.in_(estados_operativos),
                 Pedido.sucursal_id == user.sucursal_id,
             )
@@ -276,7 +289,8 @@ def analytics_del_dia(
         .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) == today,
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt,
                 Pedido.estado == "pagado",
                 Pedido.sucursal_id == user.sucursal_id,
             )

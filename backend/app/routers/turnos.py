@@ -2,11 +2,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 
-import pytz
 from app.auth import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import Gasto, Pedido, Sucursal, Turno, TurnoDenominacion, Usuario
+from app.utils.timezone import get_mexico_now, MEXICO_TZ
 from app.schemas import (
     ConteoRequest,
     DenominacionBase,
@@ -101,13 +101,16 @@ def _calcular_movimientos_efectivo(
     Calcular ventas, propinas y gastos en efectivo entre dos fechas
     Retorna: {"ventas_efectivo": Decimal, "propinas_efectivo": Decimal, "gastos": Decimal}
     """
-    # Asegurar que las fechas estén en la misma zona horaria
-    tz = pytz.timezone(settings.TIMEZONE)
+    # Las fechas ya deberían ser aware si vienen de la DB o de get_mexico_now()
     apertura_local = (
-        tz.localize(fecha_apertura) if fecha_apertura.tzinfo is None else fecha_apertura
+        fecha_apertura.replace(tzinfo=MEXICO_TZ)
+        if fecha_apertura.tzinfo is None
+        else fecha_apertura
     )
     cierre_local = (
-        tz.localize(fecha_cierre) if fecha_cierre.tzinfo is None else fecha_cierre
+        fecha_cierre.replace(tzinfo=MEXICO_TZ)
+        if fecha_cierre.tzinfo is None
+        else fecha_cierre
     )
 
     # Consultar pedidos pagados en efectivo en el rango de fechas
@@ -373,7 +376,7 @@ def cerrar_turno(
     )
 
     # Calcular ventas y propinas en efectivo durante el turno
-    fecha_cierre = datetime.now(pytz.timezone(settings.TIMEZONE)).replace(tzinfo=None)
+    fecha_cierre = get_mexico_now()
     movs_info = _calcular_movimientos_efectivo(
         db=db,
         sucursal_id=turno.sucursal_id,
@@ -502,13 +505,10 @@ def listar_turnos(
             query = query.filter(Turno.usuario_id == usuario_id)
 
     # Filtros de fecha
-    tz = pytz.timezone(settings.TIMEZONE)
     if fecha_inicio:
         try:
             fecha_ini = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
-            start_dt = tz.localize(
-                datetime.combine(fecha_ini, datetime.min.time())
-            ).replace(tzinfo=None)
+            start_dt = datetime.combine(fecha_ini, datetime.min.time(), tzinfo=MEXICO_TZ)
             query = query.filter(Turno.fecha_apertura >= start_dt)
         except ValueError:
             raise HTTPException(
@@ -519,11 +519,9 @@ def listar_turnos(
     if fecha_fin:
         try:
             fecha_fin_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-            end_dt = tz.localize(
-                datetime.combine(
-                    fecha_fin_date + timedelta(days=1), datetime.min.time()
-                )
-            ).replace(tzinfo=None)
+            end_dt = datetime.combine(
+                fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+            )
             query = query.filter(Turno.fecha_apertura < end_dt)
         except ValueError:
             raise HTTPException(
@@ -904,12 +902,11 @@ def obtener_resumen_turno(
     }
 
     # Determinar rango para reporte
-    tz = pytz.timezone(settings.TIMEZONE)
     fecha_inicio = turno.fecha_apertura
     fecha_fin = (
-        datetime.now(tz).replace(tzinfo=None)
+        get_mexico_now()
         if turno.estado == "abierto"
-        else (turno.fecha_cierre or datetime.now(tz).replace(tzinfo=None))
+        else (turno.fecha_cierre or get_mexico_now())
     )
 
     # Movimientos en efectivo en el rango

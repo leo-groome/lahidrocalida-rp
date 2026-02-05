@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from typing import List, Optional
 from datetime import datetime, date, timedelta
-import pytz
+from decimal import Decimal
+from typing import List, Optional
 
-from app.db.session import get_db
-from app.models import Pedido, Usuario
 from app.auth import get_current_active_user
 from app.core.config import settings
+from app.db.session import get_db
+from app.models import Pedido, Usuario
+from app.utils.timezone import MEXICO_TZ, get_mexico_now
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_, func
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/propinas", tags=["propinas"])
 
@@ -34,7 +35,6 @@ def get_reporte_propinas(
         )
     
     # Determinar fecha a usar
-    tz = pytz.timezone(settings.TIMEZONE)
     if fecha:
         try:
             target_date = datetime.strptime(fecha, "%Y-%m-%d").date()
@@ -45,11 +45,11 @@ def get_reporte_propinas(
             )
     else:
         # Usar hoy en zona horaria local
-        target_date = datetime.now(tz).date()
+        target_date = get_mexico_now().date()
     
     # Calcular rangos de fecha en zona horaria local
-    start_dt = tz.localize(datetime.combine(target_date, datetime.min.time())).replace(tzinfo=None)
-    end_dt = tz.localize(datetime.combine(target_date + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
     
     # Construir consulta base
     query = db.query(
@@ -125,7 +125,6 @@ def get_detalle_propinas(
         )
     
     # Determinar fecha a usar (misma lógica que reporte)
-    tz = pytz.timezone(settings.TIMEZONE)
     if fecha:
         try:
             target_date = datetime.strptime(fecha, "%Y-%m-%d").date()
@@ -135,11 +134,11 @@ def get_detalle_propinas(
                 detail="Formato de fecha inválido. Use YYYY-MM-DD"
             )
     else:
-        target_date = datetime.now(tz).date()
+        target_date = get_mexico_now().date()
     
     # Calcular rangos de fecha
-    start_dt = tz.localize(datetime.combine(target_date, datetime.min.time())).replace(tzinfo=None)
-    end_dt = tz.localize(datetime.combine(target_date + timedelta(days=1), datetime.min.time())).replace(tzinfo=None)
+    start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
     
     # Construir consulta
     query = db.query(Pedido).filter(
