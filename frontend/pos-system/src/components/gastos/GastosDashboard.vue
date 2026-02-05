@@ -139,6 +139,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import api from '@/api/client'
+import { parseSafeDate } from '@/utils/dateUtils'
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -207,7 +208,10 @@ const lineChartData = computed(() => {
   const timeline = stats.value.timeline || []
   
   return {
-    labels: timeline.map((t: any) => new Date(t.fecha).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })),
+    labels: timeline.map((t: any) => {
+      const date = parseSafeDate(t.fecha)
+      return date ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''
+    }),
     datasets: [{
       label: 'Gasto Diario',
       data: timeline.map((t: any) => t.total),

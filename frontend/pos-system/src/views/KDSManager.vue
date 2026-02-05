@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { useRouter } from 'vue-router'
+import { formatElapsed } from '@/utils/dateUtils'
 import AppHeader from '@/components/AppHeader.vue'
 
 interface Articulo {
@@ -216,21 +217,7 @@ let timerInterval: number | undefined
 
 function calcularTiempoTranscurrido(fechaCreacion: string) {
   timerTick.value // Forzar re-renderizado
-  const ahora = new Date()
-  const fechaPedido = new Date(fechaCreacion)
-  const diferenciaMs = ahora.getTime() - fechaPedido.getTime()
-  const minutos = Math.floor(diferenciaMs / (1000 * 60))
-  const segundos = Math.floor((diferenciaMs % (1000 * 60)) / 1000)
-  
-  if (minutos >= 60) {
-    const horas = Math.floor(minutos / 60)
-    const minutosRestantes = minutos % 60
-    return `${horas}h ${minutosRestantes}m`
-  } else if (minutos > 0) {
-    return `${minutos}m ${segundos}s`
-  } else {
-    return `${segundos}s`
-  }
+  return formatElapsed(fechaCreacion)
 }
 
 function getTiempoColor(fechaCreacion: string) {

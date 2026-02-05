@@ -167,6 +167,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import api from '@/api/client'
+import { parseSafeDate } from '@/utils/dateUtils'
 
 const emit = defineEmits(['new-gasto', 'edit-gasto'])
 
@@ -193,8 +194,9 @@ const filters = ref({
 const formatCurrency = (val: number) => val.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatDate = (dateStr: string) => {
-  if (!dateStr) return ''
-  return new Date(dateStr).toLocaleDateString('es-MX', {
+  const date = parseSafeDate(dateStr)
+  if (!date) return ''
+  return date.toLocaleDateString('es-MX', {
     day: '2-digit', month: 'short', year: 'numeric'
   })
 }

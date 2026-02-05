@@ -4,6 +4,7 @@
  */
 
 import type { PedidoResponse } from '../types'
+import { formatDateTime } from '@/utils/dateUtils'
 
 export interface PrintTicketData {
   numero_display: string
@@ -58,21 +59,14 @@ class PrintService {
       ? (pedido.nombre_cliente || '').replace(/\sCuenta\s\d+\/\d+\s*$/, '').trim() || undefined
       : (pedido.nombre_cliente || undefined)
 
-    const fechaFmt = (iso?: string | null) => {
-      if (!iso) return undefined
-      const d = new Date(iso)
-      const pad = (n: number) => String(n).padStart(2, '0')
-      return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-    }
-
     return {
       numero_display: pedido.numero_display,
       mesa: pedido.mesa || undefined,
       cuenta_label: hasMesa ? cuentaLabel : undefined,
       nombre_cliente: nombreClienteParaTicket,
       mesero_nombre: (pedido as any).usuario_nombre || undefined,
-      fecha_llegada: fechaFmt(pedido.fecha_creacion),
-      fecha_salida: fechaFmt((pedido as any).fecha_pago || null),
+      fecha_llegada: formatDateTime(pedido.fecha_creacion),
+      fecha_salida: formatDateTime((pedido as any).fecha_pago || null),
       articulos: (pedido.articulos_pedido || []).map(articulo => {
         const totalLinea = Number(articulo.precio_cobrado)
         const qty = Math.max(Number(articulo.cantidad || 0), 1)

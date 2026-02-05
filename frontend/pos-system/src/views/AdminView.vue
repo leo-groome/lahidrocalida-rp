@@ -471,6 +471,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { parseSafeDate } from '@/utils/dateUtils'
 import api from '@/api/client'
 import AppHeader from '@/components/AppHeader.vue'
 import AdminModals from '@/components/AdminModals.vue'
@@ -650,7 +651,10 @@ const chartData = computed(() => {
   if (!analyticsData.value) return { labels: [], datasets: [] }
   
   const timeline = analyticsData.value.timeline
-  const labels = timeline.map((d: any) => new Date(d.fecha).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))
+  const labels = timeline.map((d: any) => {
+    const date = parseSafeDate(d.fecha)
+    return date ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''
+  })
   
   return {
     labels,

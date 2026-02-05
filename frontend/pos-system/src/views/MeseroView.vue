@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { formatTime } from '@/utils/dateUtils'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { api } from '../api/client'
@@ -1453,7 +1454,7 @@ const guardarCambiosPedido = async () => {
                   Total: ${{ Number(pedido.total).toFixed(2) }}
                 </div>
                 <div class="text-xs text-gray-500">
-                  {{ new Date(pedido.fecha_creacion).toLocaleTimeString() }}
+                  {{ formatTime(pedido.fecha_creacion) }}
                 </div>
               </div>
             </div>
@@ -1487,7 +1488,7 @@ const guardarCambiosPedido = async () => {
                   Total: ${{ Number(pedido.total).toFixed(2) }}
                 </div>
                 <div class="text-xs text-gray-500">
-                  {{ new Date(pedido.fecha_creacion).toLocaleTimeString() }}
+                  {{ formatTime(pedido.fecha_creacion) }}
                 </div>
               </div>
             </div>

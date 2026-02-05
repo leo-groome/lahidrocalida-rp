@@ -10,6 +10,7 @@ import TurnoModal from '@/components/TurnoModal.vue'
 import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
+import { formatTime, formatDateTime, getMinutesElapsed } from '@/utils/dateUtils'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -1700,7 +1701,7 @@ const handleGastoSaved = async () => {
 
               <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
                 <div class="text-[10px] text-gray-400 font-bold flex items-center gap-1">
-                  ⏰ {{ new Date(pedido.fecha_creacion).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}
+                  ⏰ {{ formatTime(pedido.fecha_creacion) }}
                 </div>
                 <button
                   v-if="pedido.estado === 'entregado'"
@@ -1782,8 +1783,8 @@ const handleGastoSaved = async () => {
             <!-- Información adicional de tiempo -->
             <div class="mt-3 text-center text-xs text-gray-500 space-y-1">
               <div>
-                ⏰ {{ new Date(pedido.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
-                ({{ Math.floor((Date.now() - new Date(pedido.fecha_creacion).getTime()) / (1000 * 60)) }} min)
+                ⏰ {{ formatTime(pedido.fecha_creacion) }}
+                ({{ getMinutesElapsed(pedido.fecha_creacion) }} min)
               </div>
               <div class="group-hover:text-[#00126D] transition font-medium">
                 👆 Clic para procesar pago
@@ -1804,7 +1805,7 @@ const handleGastoSaved = async () => {
                 <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
                   🛡️ Control de Turno
                   <span v-if="turnoActivo" class="text-sm font-normal text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
-                    Activo desde {{ new Date(turnoActivo.fecha_apertura).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}
+                    Activo desde {{ formatTime(turnoActivo.fecha_apertura) }}
                   </span>
                   <span v-else class="text-sm font-normal text-red-600 bg-red-50 px-2 py-1 rounded-full border border-red-200">
                     🔴 Turno Cerrado
@@ -1976,7 +1977,7 @@ const handleGastoSaved = async () => {
                   class="hover:bg-gray-50 transition-colors"
                 >
                   <td class="px-6 py-3 text-gray-500 font-mono text-xs">
-                    {{ pedido.fecha_pago ? new Date(pedido.fecha_pago).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--' }}
+                    {{ pedido.fecha_pago ? formatTime(pedido.fecha_pago) : '--:--' }}
                   </td>
                   <td class="px-6 py-3 font-medium text-gray-900">#{{ pedido.numero_display }}</td>
                   <td class="px-6 py-3 text-gray-600 truncate max-w-[150px]" :title="getMesaClienteDisplay(pedido)">
@@ -2598,7 +2599,7 @@ const handleGastoSaved = async () => {
                 {{ getEstadoTexto(selectedPedidoDetails.estado) }}
               </div>
               <div class="text-sm text-gray-500">
-                {{ new Date(selectedPedidoDetails.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
+                {{ formatTime(selectedPedidoDetails.fecha_creacion) }}
               </div>
             </div>
 
@@ -3080,7 +3081,7 @@ const handleGastoSaved = async () => {
             </div>
 
             <div class="text-xs text-gray-500">
-              {{ new Date(pedidoACancelar.fecha_creacion).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) }}
+              {{ formatTime(pedidoACancelar.fecha_creacion) }}
             </div>
           </div>
 
