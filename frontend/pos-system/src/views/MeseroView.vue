@@ -37,6 +37,11 @@ const categoriasAbiertas = ref<Set<string>>(new Set())
 const showMesaModal = ref(false)
 const showMesaOcupadaModal = ref(false)
 
+// Guard de carga: true cuando los pedidos iniciales ya han cargado
+const pedidosInicialmenteListos = ref(false)
+// true si el usuario intentó abrir el modal de mesas antes de que cargaran los pedidos
+const esperandoCargaMesas = ref(false)
+
 // Control del modal inicial de tipo de orden
 const showTipoOrdenModal = ref(true)
 const pedidoConfigurado = ref(false)
@@ -134,6 +139,10 @@ onMounted(async () => {
     // Cargar datos iniciales del store PRIMERO - esto incluye pedidos para mesas
     await pedidosStore.loadInitialData()
     
+    // Marcar pedidos como listos ANTES de cargar platillos para que el watcher
+    // pueda abrir el modal si alguien lo intentó mientras cargaban
+    pedidosInicialmenteListos.value = true
+    
     // Luego cargar platillos en paralelo - mesas ya están en el store
     await loadPlatillos()
     
@@ -149,6 +158,17 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('❌ Mesero View: Error en inicialización:', error)
+    // Aunque falle, permitir abrir el modal (los pedidos pueden estar parcialmente cargados)
+    pedidosInicialmenteListos.value = true
+  }
+})
+
+// Cuando los pedidos iniciales terminen de cargar y alguien estaba esperando, abrir el modal
+watch(pedidosInicialmenteListos, (listos) => {
+  if (listos && esperandoCargaMesas.value) {
+    esperandoCargaMesas.value = false
+    showMesaModal.value = true
+    console.log('✅ Pedidos cargados – abriendo modal de mesas (estaba en espera)')
   }
 })
 
@@ -473,8 +493,17 @@ const setTipoOrden = (tipo: 'aqui' | 'llevar') => {
 // Funciones del modal inicial de tipo de orden
 const configurarTipoOrden = (tipo: 'aqui' | 'llevar' | 'uber_eats') => {
   tipoOrden.value = tipo
+
+  // FIX: Limpiar siempre el estado de sesiones anteriores para evitar mezcla de pedidos.
+  // Si modoAgregarArticulos quedó activo de una sesión previa, el envío iría al pedido
+  // equivocado (PUT en lugar de POST). Resetear previene ese bug.
+  modoAgregarArticulos.value = false
+  pedidoExistenteId.value = null
+  pedidoActual.value = null
+  carrito.value = []
+
   if (tipo === 'aqui') {
-    // Si es "aquí", abrir modal de mesas inmediatamente
+    // Si es "aquí", abrir modal de mesas
     showTipoOrdenModal.value = false
     openMesaModal()
   } else {
@@ -715,7 +744,14 @@ const getCantidadEnCarrito = (platilloId: number): number => {
 
 // Funciones del modal de mesas
 const openMesaModal = () => {
-  // Abrir modal inmediatamente - los datos ya están en el store
+  // FIX: Si los pedidos todavía no han cargado, encolar la apertura del modal.
+  // Esto evita que el usuario vea todas las mesas como "libres" cuando en realidad
+  // los pedidos activos aún no llegaron desde el backend.
+  if (!pedidosInicialmenteListos.value) {
+    console.log('⏳ Pedidos aún cargando, esperando antes de abrir modal de mesas...')
+    esperandoCargaMesas.value = true
+    return
+  }
   showMesaModal.value = true
 }
 
@@ -1535,6 +1571,22 @@ const guardarCambiosPedido = async () => {
             ← Cerrar
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- Modal de Espera: Cargando pedidos antes de mostrar mesas -->
+    <div
+      v-if="esperandoCargaMesas"
+      class="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+      <!-- Card -->
+      <div class="relative bg-white rounded-2xl p-8 max-w-xs w-full mx-4 shadow-2xl flex flex-col items-center gap-4">
+        <!-- Spinner -->
+        <div class="w-14 h-14 rounded-full border-4 border-[#FDB700] border-t-transparent animate-spin"></div>
+        <h3 class="text-lg font-bold text-[#00126D]">Cargando mesas...</h3>
+        <p class="text-sm text-gray-500 text-center">Verificando disponibilidad de mesas,<br>un momento por favor.</p>
       </div>
     </div>
 
