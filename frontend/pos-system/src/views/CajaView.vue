@@ -138,6 +138,7 @@ const printingTicketId = ref<number | null>(null)
 const showEditarPropinaModal = ref(false)
 const ticketParaPropina = ref<ReporteDiaTicket | null>(null)
 const propinaMontoManual = ref<string>('')
+const tipTypeOptions = ['efectivo', 'tarjeta'] as const
 const propinaTipoManual = ref<'efectivo' | 'tarjeta'>('tarjeta')
 const savingPropinaManual = ref(false)
 
@@ -2095,84 +2096,105 @@ const handleGastoSaved = async () => {
     </div>
   </main>
 
-    <!-- Modal: Editar propina (solo pagados) -->
+    <!-- Modal: Editar propina (solo pagados) (Renovado Premium) -->
     <div
       v-if="showEditarPropinaModal && ticketParaPropina"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-sm bg-black/30"
       @click.self="cerrarEditarPropina"
     >
-      <div class="bg-white rounded-lg max-w-md w-full shadow-lg border border-gray-200">
-        <div class="px-6 py-4 border-b border-gray-200">
+      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-200 overflow-hidden transform transition-all">
+        <!-- Header con gradiente -->
+        <div class="bg-gradient-to-r from-[#00126D] to-[#001E96] px-6 py-5 text-white">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-gray-800">
-              Editar Propina - Ticket #{{ ticketParaPropina.numero_display }}
+            <h2 class="text-xl font-black flex items-center gap-2">
+              <span>💰</span> Editar Propina
             </h2>
             <button
               @click="cerrarEditarPropina"
-              class="text-gray-400 hover:text-gray-600 text-xl"
+              class="text-white/70 hover:text-white transition-colors text-2xl font-bold leading-none"
               :disabled="savingPropinaManual"
             >
               ×
             </button>
           </div>
-          <div class="mt-2 text-sm text-gray-600">
-            <span v-if="ticketParaPropina.mesa">Mesa {{ ticketParaPropina.mesa }}</span>
-            <span v-else-if="ticketParaPropina.nombre_cliente">{{ ticketParaPropina.nombre_cliente }}</span>
-            <span v-else>-</span>
-            <span class="mx-2">•</span>
-            <span class="capitalize">{{ ticketParaPropina.metodo_pago || '-' }}</span>
+          <div class="mt-2 flex items-center gap-2 text-blue-100/80 text-sm font-medium">
+            <span class="bg-blue-800/40 px-2 py-0.5 rounded">Ticket #{{ ticketParaPropina.numero_display }}</span>
+            <span class="opacity-40">•</span>
+            <span>{{ ticketParaPropina.mesa ? 'Mesa ' + ticketParaPropina.mesa : ticketParaPropina.nombre_cliente }}</span>
           </div>
         </div>
 
-        <div class="p-6 space-y-4">
+        <div class="p-6 space-y-6">
+          <!-- Tipo de propina (Segmented Control) -->
           <div>
-            <div class="text-sm font-medium text-gray-700 mb-2">Tipo de propina</div>
-            <div class="flex gap-3">
-              <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input v-model="propinaTipoManual" type="radio" value="efectivo" />
-                Efectivo
-              </label>
-              <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                <input v-model="propinaTipoManual" type="radio" value="tarjeta" />
-                Tarjeta/Transferencia
-              </label>
+            <label class="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+              Tipo de propina
+            </label>
+            <div class="flex p-1 bg-gray-100 rounded-xl">
+              <button 
+                v-for="tipo in tipTypeOptions" 
+                :key="tipo"
+                @click="propinaTipoManual = tipo"
+                :class="[
+                  'flex-1 py-2.5 text-sm font-bold rounded-lg transition-all capitalize flex items-center justify-center gap-2',
+                  propinaTipoManual === tipo 
+                    ? 'bg-white shadow-sm text-[#00126D] scale-[1.02]' 
+                    : 'text-gray-500 hover:text-gray-700'
+                ]"
+              >
+                <span>{{ tipo === 'efectivo' ? '💵' : '💳' }}</span>
+                {{ tipo === 'tarjeta' ? 'Tarjeta' : tipo }}
+              </button>
             </div>
           </div>
 
+          <!-- Monto Input -->
           <div>
-            <label class="text-sm font-medium text-gray-700">Monto</label>
-            <div class="mt-1 flex items-center gap-2">
-              <span class="text-gray-600 font-semibold">$</span>
+            <label class="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
+              Monto de la propina
+            </label>
+            <div class="relative group">
+              <div class="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-400 group-focus-within:text-[#00126D] transition-colors">$</div>
               <input
                 v-model="propinaMontoManual"
                 type="number"
                 min="0"
                 step="0.01"
                 inputmode="decimal"
-                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#00126D] focus:border-transparent"
+                class="w-full pl-10 pr-4 py-4 bg-gray-50 border-2 border-transparent rounded-2xl text-2xl font-black text-[#00126D] focus:bg-white focus:border-[#FDB700] focus:ring-4 focus:ring-[#FDB700]/10 transition-all outline-none"
                 placeholder="0.00"
               />
             </div>
-            <div class="mt-2 text-xs text-gray-500">
-              Se sobrescribe la propina actual.
+            
+            <!-- Banner de información -->
+            <div class="mt-4 flex items-start gap-3 p-3 bg-amber-50 rounded-xl border border-amber-100">
+              <span class="text-amber-500">⚠️</span>
+              <p class="text-[11px] font-medium text-amber-800 leading-tight">
+                Al guardar, se sobrescribirá cualquier registro previo de propina para este ticket.
+              </p>
             </div>
           </div>
         </div>
 
-        <div class="px-6 py-4 border-t border-gray-200 flex gap-3 justify-end">
+        <!-- Footer con botones de acción -->
+        <div class="px-6 py-5 bg-gray-50 border-t border-gray-100 flex gap-3">
           <button
             @click="cerrarEditarPropina"
-            class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-all"
+            class="flex-1 py-3 border-2 border-gray-200 rounded-xl text-gray-600 font-bold hover:bg-white hover:border-gray-300 transition-all active:scale-95"
             :disabled="savingPropinaManual"
           >
             Cancelar
           </button>
           <button
             @click="guardarPropinaManual"
-            class="px-4 py-2 bg-[#00126D] text-white rounded-lg hover:bg-blue-900 transition-all disabled:opacity-50"
+            class="flex-[1.5] py-3 bg-[#00126D] text-white rounded-xl font-bold shadow-lg shadow-blue-900/20 hover:bg-blue-900 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 disabled:translate-y-0"
             :disabled="savingPropinaManual"
           >
-            {{ savingPropinaManual ? 'Guardando...' : 'Guardar' }}
+            <span v-if="savingPropinaManual" class="flex items-center justify-center gap-2">
+              <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              Guardando...
+            </span>
+            <span v-else>Confirmar Cambios</span>
           </button>
         </div>
       </div>
@@ -2408,19 +2430,19 @@ const handleGastoSaved = async () => {
 
             <div class="grid grid-cols-3 gap-2">
               <button
-                @click="efectivoRecibido = (Number(selectedPedido.total) + propinaEfectivoNum.value).toString(); calcularCambio()"
+                @click="efectivoRecibido = (Number(selectedPedido.total) + propinaEfectivoNum).toString(); calcularCambio()"
                 class="py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium text-sm rounded transition-all"
               >
                 Exacto
               </button>
               <button
-                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum.value) / 50) * 50).toString(); calcularCambio()"
+                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum) / 50) * 50).toString(); calcularCambio()"
                 class="py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium text-sm rounded transition-all"
               >
                 + $50
               </button>
               <button
-                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum.value) / 100) * 100).toString(); calcularCambio()"
+                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum) / 100) * 100).toString(); calcularCambio()"
                 class="py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 font-medium text-sm rounded transition-all"
               >
                 + $100
