@@ -989,43 +989,13 @@ async def agregar_articulos_pedido(
             ]
         }
         
-        if estado_original == "pendiente" or estado_original == "entregado":
-            # Re-enviar pedido completo actualizado
-            # Si era "pendiente": mantener flujo normal
-            # Si era "entregado": ahora es "pendiente" y debe aparecer en KDS con solo artículos no entregados
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=pedido.estado,
-                pedido_data=pedido_data
-            )
-        else:
-            # Para otros estados (preparando, listo): Enviar solo artículos nuevos como "agregados"
-            articulos_agregados_data = {
-                "id": f"{pedido.id}-agregado",  # ID especial para agregados
-                "numero_display": f"{pedido.numero_display}-A",
-                "nombre_cliente": pedido.nombre_cliente,
-                "mesa": pedido.mesa,
-                "total": float(total_agregado),
-                "estado": "pendiente",  # Los agregados siempre empiezan como pendiente
-                "tipo_orden": pedido.tipo_orden,
-                "sucursal_id": pedido.sucursal_id,
-                "fecha_creacion": datetime.now().isoformat(),
-                "articulos_pedido": [
-                    {
-                        "id": a.id,
-                        "cantidad": a.cantidad,
-                        "precio_cobrado": float(a.precio_cobrado),
-                        "modificaciones": a.modificaciones,
-                        "estado_item": a.estado_item,
-                    "platillo": {
-                        "nombre": a.platillo.nombre,
-                        "kds_name": a.platillo.kds_name,
-                        "categoria": a.platillo.categoria
-                    } if a.platillo else None
-                    } for a in nuevos_articulos
-                ]
-            }
-            await websocket_manager.notify_pedido_created(articulos_agregados_data)
+        # Siempre enviar actualización del pedido completo
+        # Esto agrupa los artículos nuevos con los existentes visualmente en lugar de crear un "-A" temporal
+        await websocket_manager.notify_pedido_estado_changed(
+            pedido_id=pedido.id,
+            nuevo_estado=pedido.estado,
+            pedido_data=pedido_data
+        )
         
     except Exception as e:
         # Log del error pero no fallar la operación
