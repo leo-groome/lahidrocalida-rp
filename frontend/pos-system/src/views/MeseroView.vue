@@ -318,21 +318,7 @@ const getCategoryColor = (category: string) => {
   return colors[category] || 'bg-gray-500 hover:bg-gray-600'
 }
 
-// Agregar producto al carrito (para platillos normales - solo usado para pozoles)
-const agregarAlCarrito = (platillo: any) => {
-  const key = `${platillo.id}|${proteina}|${tamano}|${tipo_pozole}`
-  const existente = carrito.value.find(item => item.comboKey === key)
-  
-  if (existente) {
-    existente.cantidad++
-  } else {
-    carrito.value.push({
-      platillo,
-      cantidad: 1,
-      modificaciones: ''
-    })
-  }
-}
+
 
 // Abrir modal de variantes de pozole
 const abrirPozoleModal = () => {
@@ -913,7 +899,7 @@ const actualizarModalPedido = () => {
              // Actualizar solo info que no afecte el trabajo actual (como el estado)
              const articuloLocal = articulosEditables.value.find(a => a.id === articuloWs.id)
              if (articuloLocal) {
-               articuloLocal.estado = articuloWs.estado
+               articuloLocal.estado_item = articuloWs.estado_item
              }
           }
         })

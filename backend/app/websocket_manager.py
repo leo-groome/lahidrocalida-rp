@@ -193,8 +193,9 @@ class WebSocketManager:
         
         sucursal_id = pedido_data.get("sucursal_id")
         
-        # CAJA necesita VER TODOS los cambios para el overview y seguimiento completo
+        # CAJA y MESERO necesitan VER TODOS los cambios para el overview y seguimiento completo
         await self._broadcast_to_group("caja", message, sucursal_id)
+        await self._broadcast_to_group("mesero", message, sucursal_id)
         
         # Lógica de notificación específica por estado
         if nuevo_estado in ["pendiente", "preparando"]:
@@ -202,33 +203,25 @@ class WebSocketManager:
             await self._broadcast_to_group("kds", message, sucursal_id)
         
         elif nuevo_estado == "listo":
-            # Notificar a meseros (para que sepan que pueden entregar)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
             await self._broadcast_to_group("kds", message, sucursal_id)
         
         elif nuevo_estado == "entregado":
-            # Notificar a meseros y KDS
             await self._broadcast_to_group("kds", message, sucursal_id)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
         
         elif nuevo_estado == "cuenta_solicitada":
-            # Notificar a meseros (ya notificado a caja arriba)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
+            pass
         
         elif nuevo_estado == "pagado":
             # Notificar a todos (pedido completado)
             await self._broadcast_to_group("kds", message, sucursal_id)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
         
         elif nuevo_estado == "cancelado":
             # Notificar a todos
             await self._broadcast_to_group("kds", message, sucursal_id)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
 
         elif nuevo_estado == "dividido":
             # Notificar a todos para que retiren el pedido original
             await self._broadcast_to_group("kds", message, sucursal_id)
-            await self._broadcast_to_group("mesero", message, sucursal_id)
         
         # Siempre notificar a administradores
         await self._broadcast_to_group("admin", message, sucursal_id)
@@ -250,16 +243,13 @@ class WebSocketManager:
         
         sucursal_id = pedido_data.get("sucursal_id")
         
-        # CAJA necesita ver progreso de artículos para overview completo
+        # CAJA y MESERO necesitan ver progreso de artículos para overview completo
         await self._broadcast_to_group("caja", message, sucursal_id)
+        await self._broadcast_to_group("mesero", message, sucursal_id)
         
         # Notificar principalmente a KDS y admin
         await self._broadcast_to_group("kds", message, sucursal_id)
         await self._broadcast_to_group("admin", message, sucursal_id)
-        
-        # Si todos los artículos están listos, también notificar a meseros
-        if nuevo_estado == "listo":
-            await self._broadcast_to_group("mesero", message, sucursal_id)
         
         logger.info(f"Notified articulo estado changed: pedido={pedido_id}, articulo={articulo_id} -> {nuevo_estado}")
     
