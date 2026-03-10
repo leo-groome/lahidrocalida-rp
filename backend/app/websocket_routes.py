@@ -93,8 +93,8 @@ async def websocket_endpoint(
                         }
                         await websocket.send_text(json.dumps(pong_response))
                         
-                        # Actualizar último ping en el manager si es necesario
-                        # (para futuras implementaciones de heartbeat)
+                        # Actualizar último ping en el manager (zombie cleanup)
+                        websocket_manager.update_last_ping(websocket)
                         
                 except Exception as e:
                     logger.warning(f"Error processing message from client: {e}")

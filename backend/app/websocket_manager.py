@@ -28,6 +28,7 @@ class WebSocketManager:
             "admin": []     # Administrators (receive all updates)
         }
         
+        
         # Mapeo de roles a grupos permitidos
         self.role_to_groups = {
             "cocina": ["kds"],
@@ -35,10 +36,44 @@ class WebSocketManager:
             "mesero": ["mesero"],
             "administrador": ["kds", "caja", "mesero", "admin"]
         }
+        
+        # Tarea de limpieza de conexiones "zombie"
+        self.cleanup_task = asyncio.create_task(self._cleanup_zombies())
     
     def _get_allowed_groups(self, user_role: str) -> List[str]:
         """Obtiene los grupos permitidos para un rol específico"""
         return self.role_to_groups.get(user_role, [])
+        
+    def update_last_ping(self, websocket: WebSocket):
+        """Actualiza el timestamp del último ping recibido para una conexión"""
+        for client_type, connections in self.connections.items():
+            for conn in connections:
+                if conn.websocket == websocket:
+                    conn.last_ping = get_mexico_now()
+                    return
+
+    async def _cleanup_zombies(self):
+        """Hilo de fondo que remueve conexiones silenciosas (sin pings en 120s)"""
+        while True:
+            await asyncio.sleep(30)
+            now = get_mexico_now()
+            
+            for client_type, connections in list(self.connections.items()):
+                # Filtrar conexiones vivas vs zombies
+                alive = []
+                for conn in connections:
+                    # 120 segundos sin ping = zombie
+                    if (now - conn.last_ping).total_seconds() > 120:
+                        logger.warning(f"Cerrando conexión zombie: user={conn.user_id}, type={client_type}")
+                        try:
+                            # Intentar cerrar la conexión (puede que ya esté cerrada del lado del cliente)
+                            await conn.websocket.close(code=1000, reason="Ping timeout")
+                        except Exception:
+                            pass
+                    else:
+                        alive.append(conn)
+                
+                self.connections[client_type] = alive
     
     async def connect(self, websocket: WebSocket, client_type: str, user_id: int, user_role: str, sucursal_id: int):
         """Conectar un nuevo cliente WebSocket"""
@@ -90,7 +125,7 @@ class WebSocketManager:
             return False
     
     async def _broadcast_to_group(self, client_type: str, message: dict, sucursal_id: Optional[int] = None):
-        """Enviar mensaje a todos los clientes de un grupo específico"""
+        """Enviar mensaje a todos los clientes de un grupo específico en paralelo"""
         if client_type not in self.connections:
             return
         
@@ -99,13 +134,19 @@ class WebSocketManager:
         # Filtrar por sucursal si se especifica
         if sucursal_id is not None:
             connections = [conn for conn in connections if conn.sucursal_id == sucursal_id]
+            
+        if not connections:
+            return
         
-        # Enviar a todas las conexiones válidas
+        # Crear tareas para enviar simultáneamente usando asyncio.gather
+        tasks = [self._send_to_connection(conn, message) for conn in connections]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Encontrar conexiones que fallaron y procesarlas
         failed_connections = []
-        for connection in connections:
-            success = await self._send_to_connection(connection, message)
-            if not success:
-                failed_connections.append(connection)
+        for conn, success in zip(connections, results):
+            if not success or isinstance(success, Exception):
+                failed_connections.append(conn)
         
         # Limpiar conexiones fallidas
         for failed_conn in failed_connections:

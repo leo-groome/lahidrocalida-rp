@@ -161,7 +161,20 @@ watch(() => pedidosStore.pedidos, (newPedidos, oldPedidos) => {
 // Watcher adicional específico para cuando el modal esté abierto
 watch(() => showVerPedidoModal.value, (isOpen) => {
   if (isOpen) {
-    console.log('👁️ Modal "Ver Pedido" abierto - iniciando escucha de WebSocket')
+    console.log('👁️ Modal "Ver Pedido" abierto - refrescando datos desde el store guardado por WebSocket')
+    if (pedidoActual.value) {
+      const pedidoFresca = pedidosStore.pedidos.find(p => p.id === pedidoActual.value.id)
+      if (pedidoFresca) {
+        pedidoActual.value = { ...pedidoActual.value, ...pedidoFresca }
+        // Forzar recarga de los artículos de la vista al abrir si el backend dice que hay nuevos
+        articulosEditables.value = pedidoFresca.articulos_pedido.map((articulo: any) => ({
+          ...articulo,
+          cantidad_original: articulo.cantidad,
+          modificaciones_original: articulo.modificaciones || '',
+          eliminado: false
+        }))
+      }
+    }
   } else {
     console.log('👁️ Modal "Ver Pedido" cerrado')
   }
@@ -868,16 +881,43 @@ const actualizarModalPedido = () => {
     }
     
     // Solo actualizar artículos editables si no hay cambios locales pendientes Y el modal está abierto
-    if (showVerPedidoModal.value && !hayCantidadesCambiadas.value) {
-      articulosEditables.value = pedidoActualizado.articulos_pedido.map((articulo: any) => ({
-        ...articulo,
-        cantidad_original: articulo.cantidad,
-        modificaciones_original: articulo.modificaciones || '',
-        eliminado: false
-      }))
-      console.log('📱 Modal artículos actualizados por WebSocket')
-    } else if (showVerPedidoModal.value) {
-      console.log('⚠️ Modal tiene cambios locales, solo actualizada info básica')
+    if (showVerPedidoModal.value) {
+      if (!hayCantidadesCambiadas.value) {
+        // Si no hay cambios locales, es seguro sobrescribir todo
+        articulosEditables.value = pedidoActualizado.articulos_pedido.map((articulo: any) => ({
+          ...articulo,
+          cantidad_original: articulo.cantidad,
+          modificaciones_original: articulo.modificaciones || '',
+          eliminado: false
+        }))
+        console.log('📱 Modal artículos actualizados por WebSocket (sin cambios locales)')
+      } else {
+        // Hay cambios locales: Fusión inteligente
+        // 1. Mantener los artículos que ya estaban y conservar sus cambios locales (cantidades modificadas, eliminaciones)
+        // 2. Agregar cualquier artículo NUEVO que venga en la actualización de WebSocket (agregado en otra pantalla)
+        
+        console.log('⚠️ Modal tiene cambios locales. Aplicando fusión inteligente...')
+        const idsArticulosExistentes = new Set(articulosEditables.value.map(a => a.id))
+        
+        pedidoActualizado.articulos_pedido.forEach((articuloWs: any) => {
+          if (!idsArticulosExistentes.has(articuloWs.id)) {
+            // Es un artículo totalmente nuevo (agregado por otro cliente/Cajero/KDS/etc)
+            articulosEditables.value.push({
+              ...articuloWs,
+              cantidad_original: articuloWs.cantidad,
+              modificaciones_original: articuloWs.modificaciones || '',
+              eliminado: false
+            })
+            console.log(`➕ Artículo nuevo inyectado en modal:`, articuloWs.platillo?.nombre)
+          } else {
+             // Actualizar solo info que no afecte el trabajo actual (como el estado)
+             const articuloLocal = articulosEditables.value.find(a => a.id === articuloWs.id)
+             if (articuloLocal) {
+               articuloLocal.estado = articuloWs.estado
+             }
+          }
+        })
+      }
     } else {
       console.log('📱 Modal cerrado, info básica actualizada para próxima apertura')
     }
