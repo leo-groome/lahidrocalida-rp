@@ -235,9 +235,6 @@ class Turno(Base):
     total_final = Column(DECIMAL(10, 2))
     ventas_efectivo = Column(DECIMAL(10, 2))
     propinas_efectivo = Column(DECIMAL(10, 2))
-    monto_retirado = Column(DECIMAL(10, 2))
-    monto_restante_en_caja = Column(DECIMAL(10, 2))
-    diferencia = Column(DECIMAL(10, 2))
     observaciones = Column(Text)
 
     # Relaciones

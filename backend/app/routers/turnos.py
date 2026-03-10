@@ -121,8 +121,8 @@ def _calcular_movimientos_efectivo(
         )
         .filter(
             Pedido.sucursal_id == sucursal_id,
-            Pedido.fecha_creacion >= apertura_local,
-            Pedido.fecha_creacion <= cierre_local,
+            Pedido.fecha_pago >= apertura_local,
+            Pedido.fecha_pago <= cierre_local,
             Pedido.metodo_pago == "efectivo",
             Pedido.estado == "pagado",
         )
@@ -302,11 +302,14 @@ def obtener_turno_activo(
         .order_by(Turno.fecha_cierre.desc())
         .first()
     )
-    fondo_anterior = (
-        float(ultimo_turno_cerrado.monto_restante_en_caja)
-        if ultimo_turno_cerrado and ultimo_turno_cerrado.monto_restante_en_caja
-        else None
+    ultimo_turno_cerrado = (
+        db.query(Turno)
+        .filter(Turno.sucursal_id == current_user.sucursal_id, Turno.estado == "cerrado")
+        .order_by(Turno.fecha_cierre.desc())
+        .first()
     )
+    # Reverting to None for fondo anterior since we don't have monto_restante_en_caja
+    fondo_anterior = None
 
     return TurnoResponse(
         id=turno.id,
@@ -321,12 +324,7 @@ def obtener_turno_activo(
         propinas_efectivo=float(turno.propinas_efectivo)
         if turno.propinas_efectivo
         else None,
-        monto_retirado=float(turno.monto_retirado) if turno.monto_retirado else None,
-        monto_restante_en_caja=float(turno.monto_restante_en_caja)
-        if turno.monto_restante_en_caja
-        else None,
         fondo_anterior=fondo_anterior,
-        diferencia=float(turno.diferencia) if turno.diferencia else None,
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
         denominaciones_finales=denominaciones_finales
@@ -392,16 +390,13 @@ def cerrar_turno(
         + movs_info["propinas_efectivo"]
         - movs_info["gastos"]
     )
-
+    
     # Actualizar turno
     turno.fecha_cierre = fecha_cierre
     turno.estado = "cerrado"
     turno.total_final = total_final
     turno.ventas_efectivo = movs_info["ventas_efectivo"]
     turno.propinas_efectivo = movs_info["propinas_efectivo"]
-    turno.monto_retirado = cierre_data.monto_retirado
-    turno.monto_restante_en_caja = cierre_data.monto_restante_en_caja
-    turno.diferencia = diferencia
 
     if cierre_data.observaciones:
         turno.observaciones = (
@@ -893,11 +888,6 @@ def obtener_resumen_turno(
             if turno.propinas_efectivo
             else None,
         },
-        "monto_retirado": float(turno.monto_retirado) if turno.monto_retirado else None,
-        "monto_restante_en_caja": float(turno.monto_restante_en_caja)
-        if turno.monto_restante_en_caja
-        else None,
-        "diferencia": float(turno.diferencia) if turno.diferencia else None,
         "observaciones": turno.observaciones,
     }
 
@@ -941,7 +931,7 @@ def obtener_resumen_turno(
             "mesa": p.mesa,
             "nombre_cliente": p.nombre_cliente,
             "total": float(p.total),
-            "propina_efectivo": float(p.propina_efectivo),
+            "propina_efectivo": float(p.propina_efectivo or 0),
             "fecha_pago": p.fecha_pago.isoformat() if p.fecha_pago else None,
             "usuario_nombre": p.usuario.nombre if p.usuario else None,
         }

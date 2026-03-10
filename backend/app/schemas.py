@@ -323,16 +323,12 @@ class TurnoCreate(BaseModel):
 
 class TurnoCierreRequest(BaseModel):
     conteo_final: ConteoRequest
-    monto_retirado: Optional[Decimal] = None
-    monto_restante_en_caja: Optional[Decimal] = None
     observaciones: Optional[str] = None
 
 
 class TurnoUpdate(BaseModel):
     conteo_inicial: Optional[ConteoRequest] = None
     conteo_final: Optional[ConteoRequest] = None
-    monto_retirado: Optional[Decimal] = None
-    monto_restante_en_caja: Optional[Decimal] = None
     observaciones: Optional[str] = None
 
 
@@ -347,10 +343,7 @@ class TurnoResponse(BaseModel):
     total_final: Optional[float] = None
     ventas_efectivo: Optional[float] = None
     propinas_efectivo: Optional[float] = None
-    monto_retirado: Optional[float] = None
-    monto_restante_en_caja: Optional[float] = None
     fondo_anterior: Optional[float] = None
-    diferencia: Optional[float] = None
     observaciones: Optional[str] = None
     denominaciones_iniciales: List[DenominacionBase]
     denominaciones_finales: Optional[List[DenominacionBase]] = None

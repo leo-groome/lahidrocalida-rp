@@ -266,10 +266,7 @@ onMounted(async () => {
       }, 5000)
     }
 
-    // Polling para turno activo cada 10 segundos
-    timerTurno = window.setInterval(() => {
-      cargarTurnoActivo()
-    }, 10000)
+    // No se necesita polling del turno: se carga al iniciar y el WebSocket maneja cambios en tiempo real
   } catch (error) {
     console.error('❌ Caja View: Error en inicialización:', error)
   }
@@ -1456,24 +1453,32 @@ const cargarTurnoActivo = async () => {
   try {
     const response = await api.get('/turnos/activo')
     turnoActivo.value = response.data
-    
-    // Cargar resumen del turno para métricas en tiempo real (gastos, etc)
-    if (turnoActivo.value) {
-      const summaryRes = await api.get(`/turnos/${turnoActivo.value.id}/resumen`)
-      shiftSummary.value = summaryRes.data
-    } else {
-      shiftSummary.value = null
-    }
   } catch (error: any) {
     // 404 significa que no hay turno activo, lo cual es normal
     if (error.response?.status === 404) {
       turnoActivo.value = null
+      shiftSummary.value = null
     } else {
       console.error('Error cargando turno activo:', error)
       showErrorNotification('Error al cargar turno activo')
     }
+    return
   } finally {
     loadingTurno.value = false
+  }
+
+  // Cargar resumen del turno para métricas de gastos (silencioso si falla)
+  if (turnoActivo.value) {
+    try {
+      const summaryRes = await api.get(`/turnos/${turnoActivo.value.id}/resumen`)
+      shiftSummary.value = summaryRes.data
+    } catch (summaryErr: any) {
+      // El resumen es opcional: solo registrar en consola, no mostrar error al usuario
+      console.warn('No se pudo cargar resumen del turno:', summaryErr?.message)
+      shiftSummary.value = null
+    }
+  } else {
+    shiftSummary.value = null
   }
 }
 
@@ -1523,9 +1528,7 @@ const cerrarTurno = async (conteoFinal: any) => {
       observaciones: conteoFinal.observaciones
     })
 
-    const diferencia = response.data.diferencia
-    const mensajeDiferencia = diferencia !== undefined ? ` (Diferencia: $${diferencia >= 0 ? '+' : ''}${diferencia.toFixed(2)})` : ''
-    showSuccessNotification(`Turno #${response.data.id} cerrado${mensajeDiferencia}`)
+    showSuccessNotification(`Turno #${response.data.id} cerrado exitosamente`)
 
     await cargarTurnoActivo()
     showTurnoModal.value = false

@@ -1,306 +1,209 @@
 <template>
   <div
-    class="fixed inset-0 flex items-center justify-center z-[70] p-4"
+    class="fixed inset-0 flex items-center justify-center z-[70] p-4 bg-black/60 backdrop-blur-sm transition-opacity"
     @click.self="$emit('cancelar')"
   >
-    <div class="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border-2 border-blue-300 max-h-[85vh] flex flex-col">
-      <!-- Header profesional -->
-      <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-5 py-3 rounded-t-2xl">
-        <div class="flex items-center justify-between text-white">
-          <h2 class="text-lg font-bold flex items-center gap-1.5">
-            <span v-if="tipo === 'inicio'">💰</span>
-            <span v-else>📊</span>
-            {{ tipo === 'inicio' ? 'Iniciar Turno' : 'Cerrar Turno' }}
-          </h2>
-          <button
-            @click="$emit('cancelar')"
-            class="text-white hover:text-gray-200 text-xl font-bold"
-          >
-            ×
+    <div class="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden">
+      <!-- Header -->
+      <div class="bg-gradient-to-r from-[#00126D] to-[#001D9A] px-6 py-4 flex items-center justify-between text-white border-b border-[#000d4d]">
+        <h2 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+          <span v-if="tipo === 'inicio'" class="text-2xl drop-shadow-sm">💰</span>
+          <span v-else class="text-2xl drop-shadow-sm">📊</span>
+          {{ tipo === 'inicio' ? 'Iniciar Turno' : 'Cerrar Turno' }}
+        </h2>
+        <div class="flex items-center gap-4">
+          <!-- Auto-save indicator -->
+          <div class="flex items-center gap-1.5 text-blue-100 text-xs font-medium bg-black/20 px-3 py-1.5 rounded-full border border-white/10 shadow-inner">
+             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+             Guardado automático
+          </div>
+          <button @click="$emit('cancelar')" class="text-white hover:text-rose-300 transition-colors text-3xl leading-none font-light hover:rotate-90 transform duration-200">
+            &times;
           </button>
         </div>
       </div>
 
       <!-- Contenido -->
-      <div class="p-3 flex-1 overflow-y-auto">
-        <!-- Instrucciones -->
-        <div class="mb-4 text-center">
-          <p class="text-gray-600 text-sm">
-            {{ tipo === 'inicio'
-              ? 'Ingresa la cantidad de cada denominación para el conteo inicial'
-              : 'Ingresa la cantidad de cada denominación para el conteo final'
-            }}
-          </p>
+      <div class="p-6 flex-1 overflow-y-auto bg-gray-50">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
-          <!-- Fondo anterior (Solo inicio) -->
-          <div v-if="tipo === 'inicio' && fondoAnterior !== undefined" class="mt-2 inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200 text-xs font-medium">
-            💰 Fondo esperado (cierre anterior): ${{ fondoAnterior.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
-          </div>
-        </div>
-
-        <!-- Botones de cache -->
-        <div class="mb-4 flex justify-center gap-2">
-          <button 
-            @click="guardarEnCache"
-            class="text-[10px] px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded border border-gray-300 transition-colors flex items-center gap-1"
-            title="Guardar progreso actual localmente"
-          >
-            💾 Guardar Progreso
-          </button>
-          <button 
-            v-if="tieneCache"
-            @click="cargarDesdeCache"
-            class="text-[10px] px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded border border-amber-200 transition-colors flex items-center gap-1"
-          >
-            📂 Cargar Guardado
-          </button>
-        </div>
-
-         <!-- Reporte (solo cierre) -->
-         <div v-if="tipo === 'cierre' && reporteTurno" class="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50">
-           <div class="flex items-center justify-between mb-2">
-             <div class="font-bold text-amber-900">📋 Reporte del turno (efectivo)</div>
-             <div class="text-xs text-amber-800">Previo al cierre</div>
-           </div>
-
-           <div class="grid grid-cols-2 gap-2 text-xs">
-             <div class="bg-white rounded-md p-2 border border-amber-100">
-               <div class="text-gray-600">Ventas efectivo</div>
-               <div class="font-black text-amber-900">$ {{ (reporteTurno.ventas_hasta_ahora?.ventas_efectivo ?? 0).toFixed(2) }}</div>
-             </div>
-             <div class="bg-white rounded-md p-2 border border-amber-100">
-               <div class="text-gray-600">Propinas efectivo</div>
-               <div class="font-black text-amber-900">$ {{ (reporteTurno.ventas_hasta_ahora?.propinas_efectivo ?? 0).toFixed(2) }}</div>
-             </div>
-             <div class="bg-white rounded-md p-2 border border-amber-100">
-               <div class="text-gray-600">Gastos (resta)</div>
-               <div class="font-black text-red-700">- $ {{ (reporteTurno.ventas_hasta_ahora?.gastos ?? reporteTurno.gastos_turno ?? 0).toFixed(2) }}</div>
-             </div>
-             <div class="bg-white rounded-md p-2 border border-amber-100">
-               <div class="text-gray-600">Total esperado</div>
-               <div class="font-black text-green-800">$ {{ (reporteTurno.ventas_hasta_ahora?.total_esperado ?? 0).toFixed(2) }}</div>
-             </div>
-           </div>
-
-           <div class="mt-3">
-             <div class="text-xs font-bold text-amber-900 mb-2">💳 Comandas cobradas (efectivo): {{ (reporteTurno.comandas_cobradas || []).length }}</div>
-             <div class="max-h-40 overflow-y-auto bg-white rounded-md border border-amber-100">
-               <table class="w-full text-[11px]">
-                 <thead class="sticky top-0 bg-amber-50">
-                   <tr>
-                     <th class="text-left px-2 py-1">Pedido</th>
-                     <th class="text-left px-2 py-1">Mesa/Cliente</th>
-                     <th class="text-right px-2 py-1">Total</th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   <tr v-for="p in (reporteTurno.comandas_cobradas || [])" :key="p.id" class="border-t">
-                     <td class="px-2 py-1">#{{ p.numero_display }}</td>
-                     <td class="px-2 py-1">{{ p.mesa ? `Mesa ${p.mesa}` : (p.nombre_cliente || '-') }}</td>
-                     <td class="px-2 py-1 text-right font-bold">$ {{ Number(p.total || 0).toFixed(2) }}</td>
-                   </tr>
-                 </tbody>
-               </table>
-             </div>
-           </div>
-         </div>
-
-         <!-- Tabla de denominaciones -->
-        <div class="overflow-x-auto">
-          <table class="w-full text-xs">
-            <thead>
-              <tr class="bg-gray-50 text-gray-700">
-                  <th class="py-1.5 px-2 text-left font-medium">Denominación</th>
-                  <th class="py-1.5 px-2 text-center font-medium">Cantidad</th>
-                  <th class="py-1.5 px-2 text-right font-medium">Subtotal</th>
-                </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="denominacion in denominaciones"
-                :key="denominacion.value"
-                class="border-b border-gray-100 hover:bg-gray-50"
-              >
-                <!-- Columna de denominación -->
-                <td class="py-1.5 px-2">
-                  <div class="flex items-center">
-                    <span class="text-sm font-bold text-gray-800">
-                      ${{ denominacion.value.toLocaleString() }}
-                    </span>
-                    <span v-if="denominacion.value >= 100" class="ml-1 text-[9px] text-gray-500">
-                      (billete)
-                    </span>
-                    <span v-else class="ml-1 text-[9px] text-gray-500">
-                      (moneda)
-                    </span>
-                  </div>
-                </td>
-
-                <!-- Columna de cantidad con controles -->
-                <td class="py-1.5 px-2">
-                  <div class="flex items-center justify-center space-x-1.5">
-                    <!-- Botón disminuir -->
-                    <button
-                      @click="decrementar(denominacion.value)"
-                      :disabled="conteos[denominacion.value] <= 0"
-                      class="w-6 h-6 flex items-center justify-center bg-gray-200 hover:bg-gray-300 disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-colors"
-                    >
-                      <span class="text-gray-700 font-bold text-sm">−</span>
-                    </button>
-
-                    <!-- Input numérico -->
-                    <input
-                      v-model.number="conteos[denominacion.value]"
-                      @input="validarInput(denominacion.value)"
-                      type="number"
-                      min="0"
-                      step="1"
-                      class="w-14 py-1 px-1.5 text-center border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-medium text-xs"
-                    />
-
-                    <!-- Botón aumentar -->
-                    <button
-                      @click="incrementar(denominacion.value)"
-                      class="w-6 h-6 flex items-center justify-center bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
-                    >
-                      <span class="font-bold text-sm">+</span>
-                    </button>
-                  </div>
-                </td>
-
-                <!-- Columna de subtotal -->
-                <td class="py-1.5 px-2 text-right">
-                  <div class="font-bold text-gray-800 text-xs">
-                    ${{ (denominacion.value * conteos[denominacion.value]).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Campo de observaciones -->
-        <div class="mt-3">
-          <label class="block text-xs font-medium text-gray-700 mb-1.5">
-            Observaciones (opcional)
-          </label>
-          <textarea
-            v-model="observaciones"
-            rows="1"
-            class="w-full px-2 py-1 border border-gray-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-xs"
-            :placeholder="tipo === 'inicio' ? 'Ej: Fondo inicial, billetes de muestra, etc.' : 'Ej: Diferencias, incidentes, etc.'"
-          ></textarea>
-        </div>
-
-        <!-- Desglose de Retiro vs Fondo (Solo cierre) -->
-        <div v-if="tipo === 'cierre'" class="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-bold text-amber-900">💵 ¿Cuánto dinero se queda en caja?</label>
-            <div class="relative w-32">
-              <span class="absolute left-2 top-1/2 -translate-y-1/2 text-amber-600 text-xs font-bold">$</span>
-              <input 
-                v-model.number="montoRestante"
-                type="number"
-                step="0.01"
-                class="w-full pl-5 pr-2 py-1.5 border border-amber-300 rounded-lg text-sm font-black text-amber-900 text-right focus:ring-amber-500 focus:border-amber-500"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-          
-          <div class="flex items-center justify-between border-t border-amber-200 pt-2">
-            <span class="text-[10px] text-amber-700 uppercase font-bold">Monto a retirar (para dueños):</span>
-            <span class="text-sm font-black text-amber-900">
-              ${{ Math.max(0, totalCalculado - (montoRestante || 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
-            </span>
-          </div>
-          <p class="text-[9px] text-amber-600 italic">Este monto retirado no incluye los gastos ya registrados.</p>
-        </div>
-
-        <!-- Total calculado -->
-        <div class="mt-3 p-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
-          <div class="flex justify-between items-center">
+          <!-- Lado Izquierdo: Denominaciones (7 columnas) -->
+          <div class="lg:col-span-7 space-y-5">
             <div>
-              <div class="text-xs font-medium text-blue-700">
-                Total {{ tipo === 'inicio' ? 'inicial' : 'final' }}
-              </div>
-              <div class="text-[10px] text-blue-600">
-                {{ totalItems }} items
+              <p class="text-gray-600 font-medium text-sm">
+                {{ tipo === 'inicio'
+                  ? 'Ingresa la cantidad de cada denominación para tu fondo inicial:'
+                  : 'Ingresa la cantidad de dinero físico actual en tu caja:'
+                }}
+              </p>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
+              <div v-for="denominacion in denominaciones" :key="denominacion.value" 
+                   class="bg-white p-2.5 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-2 transition-all hover:border-blue-200 hover:shadow-md group">
+                <div class="text-center">
+                  <span class="text-xl font-black text-gray-800 tracking-tight">${{ denominacion.value.toLocaleString() }}</span>
+                  <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 group-hover:text-blue-500 transition-colors">
+                    {{ denominacion.value >= 20 ? 'Billete' : 'Moneda' }}
+                  </div>
+                </div>
+                
+                <div class="flex items-center justify-between w-full bg-slate-50 rounded-lg p-1 border border-slate-200 shadow-inner">
+                  <button @click="decrementar(denominacion.value)" :disabled="conteos[denominacion.value] <= 0"
+                          class="w-7 h-7 flex items-center justify-center bg-white text-rose-500 hover:bg-rose-50 active:bg-rose-100 rounded-md font-bold text-base shadow-sm border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                    &minus;
+                  </button>
+                  <input v-model.number="conteos[denominacion.value]" @input="validarInput(denominacion.value)"
+                         type="number" min="0" step="1"
+                         class="w-10 text-center bg-transparent font-bold text-gray-800 focus:outline-none appearance-none text-sm px-0" />
+                  <button @click="incrementar(denominacion.value)"
+                          class="w-7 h-7 flex items-center justify-center bg-white text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 rounded-md font-bold text-base shadow-sm border border-slate-200 transition-all">
+                    +
+                  </button>
+                </div>
+                
+                <div class="text-xs font-black text-[#00126D] bg-blue-50 w-full text-center py-1 rounded-lg border border-blue-100/50">
+                  ${{ (denominacion.value * (conteos[denominacion.value] || 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+                </div>
               </div>
             </div>
-            <div class="text-right">
-              <div class="text-xl font-black text-blue-700">
-                ${{ totalCalculado.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
-              </div>
-              <div class="text-[10px] text-blue-600 mt-0.5">
-                Tiempo real
-              </div>
+            
+            <!-- Botón limpiar -->
+            <div class="flex justify-end pt-2">
+              <button v-if="totalItems > 0" @click="limpiarTodo"
+                      class="px-4 py-2 text-xs font-semibold bg-white hover:bg-rose-50 text-rose-600 rounded-lg shadow-sm border border-rose-200 transition-all flex items-center gap-1.5 hover:shadow-md">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                Limpiar contadores
+              </button>
             </div>
           </div>
-        </div>
+          
+          <!-- Lado Derecho: Resumen y Acciones (5 columnas) -->
+          <div class="lg:col-span-5 flex flex-col gap-5">
+            
+            <!-- Fondo anterior -->
+            <div v-if="tipo === 'inicio' && fondoAnterior !== undefined" 
+                 class="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
+                <span class="text-xl">💡</span>
+              </div>
+              <div>
+                <div class="text-xs text-blue-600 font-bold uppercase tracking-wider">Fondo esperado</div>
+                <div class="text-lg font-black text-blue-900">${{ fondoAnterior.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+              </div>
+            </div>
 
-        <!-- Botones de acción -->
-        <div class="mt-3 space-y-2">
-          <button
-            @click="onConfirmClick"
-            class="w-full py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
-          >
-            <span v-if="tipo === 'inicio'">✅</span>
-            <span v-else>📊</span>
-            {{ tipo === 'inicio' ? 'Iniciar Turno' : 'Cerrar Turno' }}
-          </button>
+            <!-- Modern Reporte Turno (Renovación de cuadro amarillo) -->
+            <div v-if="tipo === 'cierre' && reporteTurno" class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden transform transition-all hover:shadow-md hover:border-gray-300">
+              <div class="px-5 py-3.5 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                <h3 class="font-bold text-gray-800 text-sm flex items-center gap-2">
+                  <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                  Resumen del Turno
+                </h3>
+              </div>
+              <div class="p-5 grid grid-cols-2 gap-4">
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 relative overflow-hidden group">
+                  <div class="absolute inset-y-0 left-0 w-1 bg-emerald-400 rounded-l-xl"></div>
+                  <div class="text-[10px] text-gray-500 font-bold uppercase mb-1 tracking-wider">Ventas Efectivo</div>
+                  <div class="font-black text-gray-800 text-base">$ {{ (reporteTurno.ventas_hasta_ahora?.ventas_efectivo ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 relative overflow-hidden group">
+                  <div class="absolute inset-y-0 left-0 w-1 bg-blue-400 rounded-l-xl"></div>
+                  <div class="text-[10px] text-gray-500 font-bold uppercase mb-1 tracking-wider">Propinas</div>
+                  <div class="font-black text-gray-800 text-base">$ {{ (reporteTurno.ventas_hasta_ahora?.propinas_efectivo ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded-xl border border-gray-100 relative overflow-hidden">
+                  <div class="absolute inset-y-0 left-0 w-1 bg-indigo-400 rounded-l-xl"></div>
+                  <div class="text-[10px] text-gray-500 font-bold uppercase mb-1 tracking-wider">Fondo Inicial</div>
+                  <div class="font-black text-indigo-900 text-base">+ $ {{ (reporteTurno.conteo_inicial?.total ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</div>
+                </div>
+                <div class="bg-rose-50/50 p-3 rounded-xl border border-rose-100 relative overflow-hidden">
+                  <div class="absolute inset-y-0 left-0 w-1 bg-rose-400 rounded-l-xl"></div>
+                  <div class="text-[10px] text-rose-600 font-bold uppercase mb-1 tracking-wider">Gastos</div>
+                  <div class="font-black text-rose-700 text-base">- $ {{ (reporteTurno.ventas_hasta_ahora?.gastos ?? reporteTurno.gastos_turno ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</div>
+                </div>
+              </div>
+              <div class="bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4 border-t border-emerald-100 flex justify-between items-center">
+                <span class="text-xs font-bold text-emerald-800 uppercase tracking-widest">Total Esperado</span>
+                <span class="text-xl font-black text-emerald-900 drop-shadow-sm">$ {{ (reporteTurno.ventas_hasta_ahora?.total_esperado ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+              </div>
+            </div>
+            
+            <!-- Retiro vs Fondo (Cierre) -->
+            <div v-if="tipo === 'cierre'" class="bg-white border border-blue-100 rounded-2xl shadow-sm p-5 space-y-4">
+              <div>
+                <label class="block text-sm font-bold text-blue-900 mb-2">¿Cuánto dinero dejarás de fondo en caja?</label>
+                <div class="relative group">
+                  <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <span class="text-blue-500 font-black text-xl">$</span>
+                  </div>
+                  <input v-model.number="montoRestante" type="number" step="0.01" min="0"
+                         class="w-full pl-10 pr-4 py-3 border-2 border-blue-100 rounded-xl text-xl font-black text-[#00126D] bg-blue-50/30 focus:bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500 transition-all shadow-inner outline-none"
+                         placeholder="0.00" />
+                </div>
+              </div>
+              
+              <div class="bg-slate-50 rounded-xl p-4 flex justify-between items-center border border-slate-200">
+                <div>
+                  <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a retirar libre (Dueños)</div>
+                </div>
+                <div class="text-2xl font-black text-slate-800">
+                  ${{ Math.max(0, totalCalculado - (montoRestante || 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+                </div>
+              </div>
+            </div>
 
-          <button
-            @click="$emit('cancelar')"
-            class="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all text-sm"
-          >
-            Cancelar
-          </button>
-
-          <!-- Botón rápido para limpiar todo -->
-          <button
-            v-if="totalItems > 0"
-            @click="limpiarTodo"
-            class="w-full py-1 text-xs bg-red-50 hover:bg-red-100 text-red-600 font-medium rounded-lg transition-all border border-red-200"
-          >
-            Limpiar todo
-          </button>
+            <!-- Observaciones -->
+            <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+              <label class="block text-sm font-bold text-gray-700 mb-2">Observaciones</label>
+              <textarea v-model="observaciones" rows="2"
+                        class="w-full px-4 py-3 border border-gray-200 bg-gray-50 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 text-sm resize-none transition-all outline-none"
+                        :placeholder="tipo === 'inicio' ? 'Ej: Se dejan billetes de cambio...' : 'Ej: Hay un faltante justificado...'"></textarea>
+            </div>
+            
+            <!-- Totales Globales y Confirmar -->
+            <div class="bg-gradient-to-br from-[#00126D] to-[#000a3d] rounded-2xl shadow-xl p-6 text-white mt-auto border border-[#00126D] relative overflow-hidden">
+              <!-- Decorative element -->
+              <div class="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-white opacity-[0.03] rounded-full"></div>
+              <div class="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-white opacity-[0.03] rounded-full"></div>
+              
+              <div class="flex justify-between items-end mb-6 relative z-10">
+                <div>
+                  <div class="text-blue-200 text-xs font-bold uppercase tracking-wider mb-1">Total {{ tipo === 'inicio' ? 'Inicial' : 'Contado' }}</div>
+                  <div class="text-4xl font-black tracking-tight drop-shadow-md">${{ totalCalculado.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</div>
+                </div>
+                <div class="text-right">
+                  <div class="bg-white/10 px-3 py-1 rounded-full border border-white/20 text-blue-100 text-xs font-medium backdrop-blur-sm">{{ totalItems }} items</div>
+                </div>
+              </div>
+              
+              <button @click="onConfirmClick"
+                      class="w-full py-4 bg-white text-[#00126D] hover:bg-gray-50 border border-white font-black rounded-xl transition-all shadow-[0_4px_14px_0_rgba(255,255,255,0.39)] hover:shadow-[0_6px_20px_rgba(255,255,255,0.23)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-none flex items-center justify-center gap-2 text-base relative z-10">
+                {{ tipo === 'inicio' ? 'CONFIRMAR INICIO DE TURNO' : 'CONFIRMAR CIERRE DE TURNO' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-
+    
     <!-- Confirmación: total $0.00 -->
-    <div
-      v-if="showConfirmCero"
-      class="fixed inset-0 flex items-center justify-center z-[80] p-4"
-      @click.self="showConfirmCero = false"
-    >
-      <div class="bg-white rounded-xl max-w-sm w-full shadow-2xl border-2 border-amber-200">
-        <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-5 py-4 rounded-t-xl">
-          <div class="text-white font-bold text-lg">Confirmar $0.00</div>
-          <div class="text-amber-100 text-sm mt-1">
-            {{ tipo === 'inicio' ? 'Iniciar' : 'Cerrar' }} turno con total en cero
-          </div>
+    <div v-if="showConfirmCero" class="fixed inset-0 flex items-center justify-center z-[80] p-4 bg-black/60 backdrop-blur-sm" @click.self="showConfirmCero = false">
+      <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden border border-rose-100">
+        <div class="bg-rose-500 px-6 py-4 flex items-center gap-2">
+           <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+           <div class="text-white font-bold text-lg">Confirmar Total Cero</div>
         </div>
-
-        <div class="p-5">
-          <div class="text-sm text-gray-700">
-            Estas a punto de <span class="font-bold">{{ tipo === 'inicio' ? 'iniciar' : 'cerrar' }}</span> el turno con <span class="font-bold">$0.00</span>.
-            Confirma si es correcto.
-          </div>
-
-          <div class="mt-5 flex gap-3 justify-end">
-            <button
-              @click="showConfirmCero = false"
-              class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg transition-all"
-            >
+        <div class="p-6">
+          <p class="text-gray-700 text-base mb-6 leading-relaxed">
+             Estás a punto de <strong class="text-rose-600 bg-rose-50 px-1 rounded">{{ tipo === 'inicio' ? 'iniciar' : 'cerrar' }}</strong> el turno con <strong>$0.00</strong> calculados. ¿Estás seguro de que tu caja no tiene dinero?
+          </p>
+          <div class="flex gap-3 justify-end">
+            <button @click="showConfirmCero = false" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors">
               Cancelar
             </button>
-            <button
-              @click="confirmarCero"
-              class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg transition-all"
-            >
-              Si, {{ tipo === 'inicio' ? 'iniciar' : 'cerrar' }}
+            <button @click="confirmarCero" class="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition-all shadow-md hover:shadow-lg">
+              Sí, confirmar $0.00
             </button>
           </div>
         </div>
@@ -312,7 +215,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 
-// Definir props
 const props = defineProps<{
   tipo: 'inicio' | 'cierre'
   denominacionesIniciales?: Array<{
@@ -323,7 +225,6 @@ const props = defineProps<{
   fondoAnterior?: number
 }>()
 
-// Definir emits
 const emit = defineEmits<{
   cancelar: []
   confirmar: [data: {
@@ -339,7 +240,6 @@ const emit = defineEmits<{
   }]
 }>()
 
-// Denominaciones disponibles (ordenadas de mayor a menor)
 const denominaciones = [
   { value: 1000, label: '$1,000' },
   { value: 500, label: '$500' },
@@ -353,56 +253,56 @@ const denominaciones = [
   { value: 1, label: '$1' }
 ]
 
-// Estado reactivo para conteos
 const conteos = ref<Record<number, number>>({})
 const observaciones = ref('')
 const montoRestante = ref<number | null>(null)
+const showConfirmCero = ref(false)
 
 // LocalStorage key based on type
 const CACHE_KEY = computed(() => `turno_conteo_${props.tipo}`)
 
-// Persistence methods
-const guardarEnCache = () => {
+// Auto-save watch logic
+watch([conteos, observaciones, montoRestante], () => {
   const data = {
     conteos: conteos.value,
     observaciones: observaciones.value,
+    montoRestante: montoRestante.value,
     timestamp: Date.now()
   }
   localStorage.setItem(CACHE_KEY.value, JSON.stringify(data))
-}
+}, { deep: true })
 
 const cargarDesdeCache = () => {
   const saved = localStorage.getItem(CACHE_KEY.value)
   if (saved) {
     try {
       const data = JSON.parse(saved)
-      conteos.value = data.conteos
-      observaciones.value = data.observaciones
+      if (data.conteos) {
+         Object.keys(data.conteos).forEach(key => {
+            conteos.value[Number(key)] = data.conteos[key]
+         })
+      }
+      observaciones.value = data.observaciones || ''
+      if (data.montoRestante !== undefined) {
+        montoRestante.value = data.montoRestante
+      }
     } catch (e) {
-      console.error('Error cargando cache:', e)
+      console.error('Error cargando cache automática:', e)
     }
   }
 }
-
-const tieneCache = computed(() => {
-  return localStorage.getItem(CACHE_KEY.value) !== null
-})
 
 const limpiarCache = () => {
   localStorage.removeItem(CACHE_KEY.value)
 }
 
-// Inicializar conteos
-const inicializarConteos = () => {
+onMounted(() => {
+  // Inicializamos en 0
   denominaciones.forEach(denom => {
     conteos.value[denom.value] = 0
   })
-}
 
-// Si hay denominaciones iniciales (para cierre), cargarlas
-onMounted(() => {
-  inicializarConteos()
-
+  // Si venimos de la prop
   if (props.tipo === 'cierre' && props.denominacionesIniciales) {
     props.denominacionesIniciales.forEach(item => {
       if (item.denominacion in conteos.value) {
@@ -410,9 +310,11 @@ onMounted(() => {
       }
     })
   }
+
+  // Cargar caché si existe
+  cargarDesdeCache()
 })
 
-// Computed properties
 const totalCalculado = computed(() => {
   return denominaciones.reduce((total, denom) => {
     return total + (denom.value * (conteos.value[denom.value] || 0))
@@ -425,7 +327,6 @@ const totalItems = computed(() => {
   }, 0)
 })
 
-// Métodos
 const incrementar = (valor: number) => {
   conteos.value[valor] = (conteos.value[valor] || 0) + 1
 }
@@ -444,10 +345,10 @@ const validarInput = (valor: number) => {
 }
 
 const limpiarTodo = () => {
-  inicializarConteos()
+  denominaciones.forEach(denom => {
+    conteos.value[denom.value] = 0
+  })
 }
-
-const showConfirmCero = ref(false)
 
 const onConfirmClick = () => {
   if (totalItems.value === 0) {
@@ -463,7 +364,6 @@ const confirmarCero = () => {
 }
 
 const confirmar = () => {
-  // Preparar array de denominaciones
   const denominacionesData = denominaciones
     .filter(denom => conteos.value[denom.value] > 0)
     .map(denom => ({
@@ -475,10 +375,8 @@ const confirmar = () => {
   const monto_restante_en_caja = props.tipo === 'cierre' ? (montoRestante.value || 0) : 0
   const monto_retirado = props.tipo === 'cierre' ? Math.max(0, totalCalculado.value - monto_restante_en_caja) : 0
 
-  // Limpiar cache al confirmar exitosamente
   limpiarCache()
 
-  // Emitir datos
   emit('confirmar', {
     denominaciones: denominacionesData,
     total: totalCalculado.value,
@@ -487,9 +385,4 @@ const confirmar = () => {
     observaciones: observaciones.value.trim() || undefined
   })
 }
-
-// Watch para debug (opcional)
-watch(conteos, (newConteos) => {
-  console.log('Conteos actualizados:', newConteos)
-}, { deep: true })
 </script>
