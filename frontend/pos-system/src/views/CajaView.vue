@@ -11,6 +11,41 @@ import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
 import { formatTime, formatDateTime, getMinutesElapsed } from '@/utils/dateUtils'
+import { 
+  Users, 
+  CreditCard, 
+  Receipt, 
+  History, 
+  Plus, 
+  Search, 
+  CheckCircle2, 
+  Clock, 
+  DollarSign, 
+  ChefHat, 
+  Check, 
+  Printer, 
+  ArrowRight,
+  TrendingUp,
+  AlertCircle,
+  LayoutDashboard,
+  Lock,
+  Unlock,
+  PieChart,
+  ScrollText,
+  ShoppingBag,
+  TrendingDown,
+  RefreshCcw,
+  ShieldCheck,
+  Map,
+  CircleDollarSign,
+  Contact2,
+  Banknote,
+  SearchIcon,
+  ChevronDown,
+  ArrowBigRightDash,
+  MonitorCheck
+} from 'lucide-vue-next'
+
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -85,6 +120,54 @@ const canSplitDetailsPedido = computed(() => {
   if (!selectedPedidoDetails.value) return false
   return ['entregado', 'cuenta_solicitada'].includes(selectedPedidoDetails.value.estado)
 })
+
+const totalVentasDia = computed(() => {
+  return pedidosStore.analytics?.total_ventas || 0
+})
+
+const getEstadoAccentColor = (estado: string) => {
+  const colors: Record<string, string> = {
+    pendiente: 'bg-slate-200',
+    preparando: 'bg-amber-400',
+    listo: 'bg-green-400',
+    entregado: 'bg-blue-400',
+    cuenta_solicitada: 'bg-purple-400',
+    pagado: 'bg-emerald-500',
+    cancelado: 'bg-rose-500'
+  }
+  return colors[estado] || 'bg-slate-200'
+}
+
+const getEstadoBadgeColor = (estado: string) => {
+  const colors: Record<string, string> = {
+    pendiente: 'bg-slate-400',
+    preparando: 'bg-amber-500',
+    listo: 'bg-green-500',
+    entregado: 'bg-blue-500',
+    cuenta_solicitada: 'bg-purple-500',
+    pagado: 'bg-emerald-500',
+    cancelado: 'bg-rose-500'
+  }
+  return colors[estado] || 'bg-slate-400'
+}
+
+const getEstadoButtonColor = (estado: string) => {
+  const colors: Record<string, string> = {
+    pendiente: 'bg-slate-50 border-slate-200 text-slate-600',
+    preparando: 'bg-amber-50 border-amber-200 text-amber-700',
+    listo: 'bg-green-50 border-green-200 text-green-700',
+    entregado: 'bg-blue-50 border-blue-200 text-blue-700',
+    cuenta_solicitada: 'bg-purple-50 border-purple-200 text-purple-700',
+    pagado: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+    cancelado: 'bg-rose-50 border-rose-200 text-rose-700'
+  }
+  return colors[estado] || 'bg-slate-50 border-slate-200 text-slate-600'
+}
+
+const getEstadoBadgeClasses = (estado: string) => {
+  return `px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${getEstadoButtonColor(estado)}`
+}
+
 const successMessage = ref<string | null>(null)
 const showNotification = ref(false)
 const error = ref<string | null>(null)
@@ -1560,57 +1643,86 @@ const handleGastoSaved = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
+  <div class="min-h-screen bg-[#F8FAFC] font-sans selection:bg-blue-100 selection:text-blue-900">
     <!-- Header -->
     <AppHeader title="Caja" />
 
-    <!-- Navigation Tabs -->
-    <div class="bg-gray-50 border-b border-gray-200">
-      <div class="px-6 py-4">
-        <!-- Tabs principales -->
-        <div class="flex gap-1 bg-white rounded-lg p-1 shadow-sm border">
+    <!-- Modern Sidebar-like Navigation Tabs (Segmented Control) -->
+    <div class="sticky top-[64px] z-20 bg-white/80 backdrop-blur-md border-b border-slate-200/60 px-6 py-4">
+      <div class="max-w-[1400px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex p-1 bg-slate-100 rounded-2xl w-full md:w-auto self-start">
           <button
             @click="activeTab = 'overview'"
             :class="[
-              'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm',
+              'flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300',
               activeTab === 'overview'
-                ? 'bg-[#00126D] text-white shadow-md'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
             ]"
           >
-            📊 Overview General
+            <LayoutDashboard class="w-4 h-4" />
+            <span>Overview</span>
           </button>
           <button
             @click="activeTab = 'pendientes'"
             :class="[
-              'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm flex items-center justify-center gap-2',
+              'flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300 relative',
               activeTab === 'pendientes'
-                ? 'bg-[#00126D] text-white shadow-md'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
             ]"
           >
-            <span>💳 Pendientes de Pago</span>
-            <span v-if="pedidosPendientes.length > 0" :class="[
-              'px-2 py-1 rounded-full text-xs font-bold',
-              activeTab === 'pendientes' ? 'bg-white text-[#00126D]' : 'bg-red-500 text-white'
-            ]">
+            <CreditCard class="w-4 h-4" />
+            <span>Cuentas</span>
+            <span v-if="pedidosPendientes.length > 0" 
+              class="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-black ring-2 ring-white">
               {{ pedidosPendientes.length }}
             </span>
           </button>
           <button
             @click="activeTab = 'propinas'"
             :class="[
-              'flex-1 px-4 py-2 rounded-md font-medium transition-all text-sm',
+              'flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all duration-300',
               activeTab === 'propinas'
-                ? 'bg-[#00126D] text-white shadow-md'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
             ]"
           >
-            📅 Reporte del dia
+            <History class="w-4 h-4" />
+            <span>Historial</span>
+          </button>
+        </div>
+
+        <!-- Quick Stats / Actions -->
+        <div class="flex items-center gap-3">
+          <div class="hidden sm:flex items-center gap-4 mr-2 py-1 px-4 bg-blue-50 border border-blue-100 rounded-2xl">
+            <div class="flex flex-col">
+              <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest">Pendiente</span>
+              <span class="text-sm font-black text-blue-700">${{ totalPendientesPago.toFixed(2) }}</span>
+            </div>
+            <div class="w-px h-6 bg-blue-200"></div>
+            <div class="flex flex-col text-right">
+              <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest">Hoy</span>
+              <span class="text-sm font-black text-blue-700">${{ totalVentasDia.toFixed(2) }}</span>
+            </div>
+          </div>
+          
+          <button 
+            @click="manejarClickTurno"
+            :class="[
+              'px-4 py-2.5 rounded-xl text-sm font-black transition-all shadow-lg flex items-center gap-2',
+              tieneTurnoActivo 
+                ? 'bg-red-50 text-red-600 hover:bg-red-100 shadow-red-200/50 border border-red-200' 
+                : 'bg-green-600 text-white hover:bg-green-700 shadow-green-900/40'
+            ]"
+          >
+            <Clock class="w-4 h-4" />
+            {{ tieneTurnoActivo ? 'Cerrar Turno' : 'Abrir Turno' }}
           </button>
         </div>
       </div>
     </div>
+
 
     <!-- Main Content -->
     <main class="flex-1 p-6 pt-0">
@@ -1626,429 +1738,719 @@ const handleGastoSaved = async () => {
           </div>
 
       <!-- Tab Overview General -->
-      <div v-else-if="activeTab === 'overview'" class="space-y-6">
-        <!-- Header unificado Blanco -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <h3 class="text-xl font-bold text-[#00126D]">Pedidos Activos</h3>
-            
-            <!-- Métrica de 1/4 (Resumen rápido) -->
-            <div class="hidden lg:flex items-center gap-3 px-4 py-2 bg-yellow-50 rounded-xl border border-yellow-100">
-              <span class="text-xs font-black text-yellow-600 uppercase tracking-wider">Por Cobrar:</span>
-              <span class="text-lg font-black text-yellow-700">${{ totalPendientesPago.toFixed(2) }}</span>
+      <div v-else-if="activeTab === 'overview'" class="space-y-8 mt-6">
+        <!-- Header Unificado -->
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+              <LayoutDashboard class="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 class="text-2xl font-black text-slate-800 tracking-tight">Pedidos Activos</h3>
+              <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">En preparación y servicio</p>
             </div>
           </div>
 
-          <div class="flex items-center gap-4">
-            <!-- Indicador Tiempo Real -->
-            <div v-if="pedidosStore.wsConnected" class="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200 text-xs font-bold shadow-sm">
+          <div class="flex items-center gap-3">
+            <div v-if="pedidosStore.wsConnected" class="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-600 rounded-2xl border border-green-100 text-[10px] font-black uppercase tracking-widest shadow-sm">
               <span class="relative flex h-2 w-2">
                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
               </span>
-              TIEMPO REAL ACTIVO
+              Sincronizado
             </div>
-            <div v-else class="flex items-center gap-2 px-3 py-1.5 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-200 text-xs font-bold shadow-sm">
-              <span class="animate-pulse">🟡</span>
-              ACTUALIZACIÓN CADA 5S
+            <div v-else class="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-2xl border border-amber-100 text-[10px] font-black uppercase tracking-widest shadow-sm">
+              <AlertCircle class="w-3 h-3 animate-pulse" />
+              Reconectando...
             </div>
           </div>
         </div>
 
-        <!-- Lista de pedidos activos (Restaurada) -->
-        <div>
-          <div v-if="pedidosActivos.length === 0" class="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-            <div class="text-4xl mb-4">🎉</div>
-            <p class="text-gray-500 font-medium">No hay pedidos activos en este momento</p>
+        <!-- Lista de pedidos activos -->
+        <div v-if="pedidosActivos.length === 0" class="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 shadow-sm">
+          <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+            <ChefHat class="w-10 h-10 text-slate-300" />
           </div>
-          <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            <div
-              v-for="pedido in pedidosActivos"
-              :key="pedido.id"
-              @click="showPedidoDetails(pedido)"
-              class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-[#FDB700] hover:scale-105"
-            >
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
-                  <span v-if="pedido.mesa" class="text-lg font-bold text-[#00126D]">Mesa {{ pedido.mesa }}</span>
-                  <span v-else-if="pedido.nombre_cliente" class="text-lg font-bold text-[#00126D] truncate max-w-[120px]" :title="pedido.nombre_cliente">
-                    {{ pedido.nombre_cliente }}
-                  </span>
-                  <span v-else class="text-lg font-bold text-[#00126D]">#{{ pedido.numero_display }}</span>
+          <h4 class="text-xl font-black text-slate-400">Cocina Despejada</h4>
+          <p class="text-slate-400 text-sm font-medium">No hay pedidos activos en este momento</p>
+        </div>
+
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+          <div
+            v-for="pedido in pedidosActivos"
+            :key="pedido.id"
+            @click="showPedidoDetails(pedido)"
+            class="group bg-white rounded-[2rem] p-5 shadow-xl shadow-slate-200/40 border border-slate-100 hover:border-blue-400 transition-all duration-500 cursor-pointer flex flex-col relative overflow-hidden"
+          >
+            <!-- Decorative Accent -->
+            <div :class="['absolute top-0 left-0 w-full h-1.5', getEstadoAccentColor(pedido.estado)]"></div>
+
+            <div class="flex items-start justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center shadow-inner group-hover:bg-blue-50 transition-colors">
+                  <span class="text-2xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
                 </div>
-                <!-- Botón de estado con menú desplegable -->
-                <button
-                  v-if="canManualChangeEstado"
-                  @click.stop="toggleEstadoMenu(pedido, $event)"
-                  :disabled="estadoMenuLoading && showEstadoMenuPedidoId === pedido.id"
-                  :class="[
-                    getEstadoColor(pedido.estado),
-                    'text-white px-2 py-1 rounded-xl text-[10px] font-bold shadow-sm uppercase flex items-center gap-1 hover:opacity-90 transition-all disabled:opacity-60'
-                  ]"
-                >
-                  {{ getEstadoTexto(pedido.estado) }}
-                  <span class="text-[10px]">▼</span>
-                </button>
-                <div 
-                  v-else
-                  :class="[getEstadoColor(pedido.estado), 'text-white px-2 py-1 rounded-xl text-[10px] font-bold shadow-sm uppercase']"
-                >
-                  {{ getEstadoTexto(pedido.estado) }}
+                <div>
+                  <h4 class="text-lg font-black text-slate-800 leading-tight">
+                    <span v-if="pedido.mesa">Mesa {{ pedido.mesa }}</span>
+                    <span v-else-if="pedido.nombre_cliente" class="truncate block max-w-[120px]">{{ pedido.nombre_cliente }}</span>
+                    <span v-else>#{{ pedido.numero_display }}</span>
+                  </h4>
+                  <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pedido #{{ pedido.numero_display }}</span>
                 </div>
               </div>
 
-              <div class="text-sm">
-                <div class="text-blue-700 font-semibold mb-1">📄 Pedido #{{ pedido.numero_display }}</div>
-                <div class="text-[#FDB700] font-black text-xl">$ {{ Number(pedido.total).toFixed(2) }}</div>
+              <!-- Status Dropdown Trigger -->
+              <button
+                v-if="canManualChangeEstado"
+                @click.stop="toggleEstadoMenu(pedido, $event)"
+                :disabled="estadoMenuLoading && showEstadoMenuPedidoId === pedido.id"
+                :class="[
+                  getEstadoButtonColor(pedido.estado),
+                  'p-2 rounded-xl border transition-all duration-300 hover:scale-110 flex items-center justify-center'
+                ]"
+              >
+                <div :class="['w-2 h-2 rounded-full mr-2', getEstadoBadgeColor(pedido.estado)]"></div>
+                <span class="text-[10px] font-black uppercase tracking-tighter">{{ getEstadoTexto(pedido.estado) }}</span>
+              </button>
+              <div v-else :class="[getEstadoBadgeClasses(pedido.estado)]">
+                {{ getEstadoTexto(pedido.estado) }}
               </div>
+            </div>
 
-              <div class="mt-3 pt-3 border-t border-gray-100 flex justify-between items-center">
-                <div class="text-[10px] text-gray-400 font-bold flex items-center gap-1">
-                  ⏰ {{ formatTime(pedido.fecha_creacion) }}
-                </div>
-                <button
-                  v-if="pedido.estado === 'entregado'"
-                  @click.stop="solicitarCuenta(pedido)"
-                  class="text-[10px] font-black text-purple-600 hover:text-purple-800 uppercase tracking-tighter bg-purple-50 px-2 py-1 rounded border border-purple-100 transition-colors"
-                >
-                  Solicitar Cuenta →
-                </button>
+            <div class="flex-1 flex flex-col justify-center">
+              <div class="flex items-baseline gap-1">
+                <span class="text-sm font-black text-slate-400">$</span>
+                <span class="text-3xl font-black text-slate-800 tracking-tighter">{{ Number(pedido.total).toFixed(2) }}</span>
               </div>
+            </div>
+
+            <div class="mt-5 pt-4 border-t border-slate-50 flex items-center justify-between">
+              <div class="flex items-center gap-1.5 text-slate-400">
+                <Clock class="w-3.5 h-3.5" />
+                <span class="text-[10px] font-bold uppercase tracking-wider">{{ formatTime(pedido.fecha_creacion) }}</span>
+              </div>
+              
+              <button
+                v-if="pedido.estado === 'entregado'"
+                @click.stop="solicitarCuenta(pedido)"
+                class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all shadow-md shadow-blue-200"
+              >
+                Cobrar
+                <ArrowRight class="w-3 h-3" />
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Tab Pendientes de Pago -->
-      <div v-else-if="activeTab === 'pendientes'" class="space-y-6">
+
+      <!-- Tab Pendientes de Pago (Modernized Premium) -->
+      <div v-else-if="activeTab === 'pendientes'" class="space-y-8 mt-6">
         <!-- Header con información -->
-        <div class="mb-4 flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-          <h3 class="text-lg font-bold text-gray-700">Cuentas Pendientes</h3>
-          <div class="text-sm text-gray-500 font-medium">
-            {{ pedidosPendientes.length }} cuentas esperando pago
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-4">
+            <div class="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+              <CreditCard class="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h3 class="text-2xl font-black text-slate-800 tracking-tight">Cuentas Pendientes</h3>
+              <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">{{ pedidosPendientes.length }} cuentas esperando pago</p>
+            </div>
           </div>
         </div>
 
-        <div v-if="pedidosPendientes.length === 0" class="text-center py-16 bg-white rounded-xl border border-dashed border-gray-300">
-          <div class="text-6xl mb-4">💳</div>
-          <h2 class="text-2xl font-bold text-gray-600 mb-2">Sin pedidos pendientes</h2>
-          <p class="text-gray-500">Todos los pedidos están pagados en este momento</p>
+        <div v-if="pedidosPendientes.length === 0" class="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 shadow-sm">
+          <div class="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mb-6">
+            <CheckCircle class="w-10 h-10 text-green-400" />
+          </div>
+          <h4 class="text-xl font-black text-slate-400">Todo Pagado</h4>
+          <p class="text-slate-400 text-sm font-medium">No hay cuentas pendientes en este momento</p>
         </div>
 
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
           <div
             v-for="pedido in pedidosPendientes"
             :key="pedido.id"
             @click="selectPedido(pedido)"
-            class="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-[#FDB700] cursor-pointer transition-all hover:scale-105 group"
+            class="group bg-white rounded-[2.2rem] p-6 shadow-xl shadow-slate-200/40 border border-slate-100 hover:border-blue-400 transition-all duration-500 cursor-pointer flex flex-col relative overflow-hidden"
           >
-             <!-- Header del pedido: Mesa/Cliente arriba, Pedido abajo -->
-             <div class="flex items-center justify-center mb-4">
-               <div class="flex items-center gap-3">
-                 <div class="text-3xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</div>
-                 <div class="text-2xl font-black text-[#00126D]">
-                   <span v-if="pedido.mesa">Mesa {{ pedido.mesa }}</span>
-                   <span v-else-if="pedido.nombre_cliente" class="truncate max-w-[220px]" :title="pedido.nombre_cliente">{{ pedido.nombre_cliente }}</span>
-                   <span v-else>Pedido #{{ pedido.numero_display }}</span>
-                 </div>
-               </div>
-             </div>
+            <!-- Decorative Accent -->
+            <div class="absolute top-0 left-0 w-full h-1.5 bg-amber-400"></div>
 
-             <div class="mb-4 text-center">
-               <div class="text-sm text-blue-700 font-semibold">📄 Pedido #{{ pedido.numero_display }}</div>
-             </div>
-
-            <!-- Total -->
-            <div class="border-t pt-4">
-              <div class="text-center">
-                <div class="text-sm text-gray-600 mb-1">Total a cobrar</div>
-                <div class="text-3xl font-black text-[#FDB700]">$ {{ Number(pedido.total).toFixed(2) }}</div>
+            <div class="flex items-start justify-between mb-6">
+              <div class="flex items-center gap-4">
+                <div class="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center shadow-inner group-hover:bg-blue-50 transition-colors">
+                  <span class="text-2xl">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
+                </div>
+                <div>
+                  <h4 class="text-xl font-black text-[#00126D] tracking-tight leading-tight">
+                    <span v-if="pedido.mesa">Mesa {{ pedido.mesa }}</span>
+                    <span v-else-if="pedido.nombre_cliente" class="truncate block max-w-[150px]">{{ pedido.nombre_cliente }}</span>
+                    <span v-else>Pedido #{{ pedido.numero_display }}</span>
+                  </h4>
+                  <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest">PEDIDO #{{ pedido.numero_display }}</span>
+                </div>
               </div>
             </div>
 
-            <!-- Botones de acción -->
-            <div class="mt-3 pt-3 border-t border-gray-200 space-y-2">
+            <div class="flex-1 flex flex-col justify-center mb-6">
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total a cobrar</div>
+              <div class="flex items-baseline gap-1">
+                <span class="text-lg font-black text-amber-500">$</span>
+                <span class="text-4xl font-black text-slate-800 tracking-tighter">{{ Number(pedido.total).toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <div class="space-y-2">
               <button
                 @click.stop="imprimirTicketSeparado(pedido)"
-                class="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+                class="w-full flex items-center justify-center gap-2 bg-[#00126D] hover:bg-blue-900 text-white px-4 py-3 rounded-2xl text-xs font-black uppercase transition-all shadow-lg shadow-blue-200"
               >
-                🖨️ Imprimir Ticket
+                <Printer class="w-4 h-4" />
+                Imprimir Ticket
               </button>
 
               <button
                 @click.stop="selectPedido(pedido)"
-                class="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg transition-all hover:scale-105 shadow-sm hover:shadow-md flex items-center justify-center gap-2"
+                class="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-2xl text-xs font-black uppercase transition-all shadow-lg shadow-emerald-100"
               >
-                💰 Cobrar
+                <Banknote class="w-4 h-4" />
+                Cobrar Cuenta
               </button>
             </div>
 
-            <!-- Información adicional de tiempo -->
-            <div class="mt-3 text-center text-xs text-gray-500 space-y-1">
-              <div>
-                ⏰ {{ formatTime(pedido.fecha_creacion) }}
-                ({{ getMinutesElapsed(pedido.fecha_creacion) }} min)
-              </div>
-              <div class="group-hover:text-[#00126D] transition font-medium">
-                👆 Clic para procesar pago
+            <div class="mt-5 pt-4 border-t border-slate-50 flex items-center justify-center">
+              <div class="flex items-center gap-1.5 text-slate-400">
+                <Clock class="w-3.5 h-3.5" />
+                <span class="text-[10px] font-bold uppercase tracking-wider">
+                  {{ formatTime(pedido.fecha_creacion) }}
+                  ({{ getMinutesElapsed(pedido.fecha_creacion) }} min)
+                </span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Tab Reporte del Dia (Renovado) -->
-      <div v-else-if="activeTab === 'propinas'" class="space-y-6">
+      <!-- Tab Reporte del Dia (Modernized Premium) -->
+      <div v-else-if="activeTab === 'propinas'" class="space-y-8 mt-6">
         
-        <!-- Sección de Control de Turno -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div class="p-6">
-            <div class="flex items-center justify-between mb-6">
-              <div>
-                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                  🛡️ Control de Turno
-                  <span v-if="turnoActivo" class="text-sm font-normal text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
-                    Activo desde {{ formatTime(turnoActivo.fecha_apertura) }}
-                  </span>
-                  <span v-else class="text-sm font-normal text-red-600 bg-red-50 px-2 py-1 rounded-full border border-red-200">
-                    🔴 Turno Cerrado
-                  </span>
-                </h2>
-                <p class="text-sm text-gray-500 mt-1">Cálculos en tiempo real basados en los tickets cobrados durante este turno.</p>
-              </div>
-              
-              <!-- Botón de Acción de Turno -->
-              <div class="flex items-center gap-3">
-                <button
-                  v-if="tieneTurnoActivo"
-                  @click="showGastoModal = true"
-                  class="px-4 py-2.5 bg-amber-500 text-white rounded-lg font-bold shadow-sm hover:bg-amber-600 transition-all flex items-center gap-2"
-                >
-                  <span>💸</span>
-                  Registrar Gasto
-                </button>
+        <!-- SUB-TABS (Segmented Control) -->
+        <div class="flex p-1 bg-slate-100 rounded-2xl w-fit mb-4">
+          <button
+            @click="subTabReporteDia = 'reporte'"
+            :class="[
+              'flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-500',
+              subTabReporteDia === 'reporte'
+                ? 'bg-[#00126D] text-white shadow-lg shadow-blue-900/20'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+            ]"
+          >
+            <PieChart class="w-3.5 h-3.5" />
+            <span>Resumen del Día</span>
+          </button>
+          <button
+            @click="subTabReporteDia = 'tickets'"
+            :class="[
+              'flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all duration-500',
+              subTabReporteDia === 'tickets'
+                ? 'bg-[#00126D] text-white shadow-lg shadow-blue-900/20'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+            ]"
+          >
+            <Receipt class="w-3.5 h-3.5" />
+            <span>Auditoría & Turno</span>
+          </button>
+        </div>
 
+        <!-- Vista 1: Dashboard de Analíticas -->
+        <div v-if="subTabReporteDia === 'reporte'" class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          
+          <!-- Header del Dashboard -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <div class="p-3 bg-[#00126D] rounded-2xl shadow-xl shadow-blue-200">
+                <TrendingUp class="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h3 class="text-2xl font-black text-slate-800 tracking-tight">Analíticas de Venta</h3>
+                <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Resumen total acumulado hoy</p>
+              </div>
+            </div>
+            <button 
+              @click="cargarAnalyticsDia" 
+              class="p-3 bg-white text-slate-400 hover:text-[#00126D] hover:rotate-180 transition-all duration-500 rounded-2xl shadow-sm border border-slate-100"
+              :class="{ 'animate-spin': loadingAnalyticsDia }"
+            >
+              <RefreshCcw class="w-5 h-5" />
+            </button>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="!analyticsDia && loadingAnalyticsDia" class="py-24 text-center bg-white rounded-[2.5rem] border border-slate-100 shadow-sm">
+            <div class="w-16 h-16 border-4 border-slate-100 border-t-[#00126D] rounded-full animate-spin mx-auto mb-6"></div>
+            <h4 class="text-xl font-black text-slate-300">Generando Reporte...</h4>
+            <p class="text-slate-400 text-sm font-medium">Calculando métricas y ventas por hora</p>
+          </div>
+
+          <div v-else-if="analyticsDia" class="space-y-8">
+            <!-- Grid de Métricas Principales -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <!-- Ventas Totales -->
+              <div class="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+                <div class="absolute -right-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl group-hover:bg-emerald-100 transition-colors"></div>
+                <div class="flex items-center gap-3 mb-6 relative z-10">
+                  <div class="p-2.5 bg-emerald-50 rounded-2xl text-emerald-600 shadow-inner">
+                    <DollarSign class="w-5 h-5" />
+                  </div>
+                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Ingresos Totales</span>
+                </div>
+                <div class="text-4xl font-black text-slate-800 tracking-tighter mb-2 relative z-10">
+                  <span class="text-emerald-500 text-xl mr-1 font-black">$</span>{{ Number(analyticsDia.ingresos.total).toFixed(2) }}
+                </div>
+                <div class="flex items-center gap-2 text-[10px] font-black text-emerald-600 uppercase tracking-tight bg-emerald-50 w-fit px-3 py-1 rounded-full">
+                  <TrendingUp class="w-3 h-3" />
+                  Sincronizado
+                </div>
+              </div>
+
+              <!-- Ticket Promedio -->
+              <div class="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+                <div class="absolute -right-4 -top-4 w-20 h-20 bg-blue-50 rounded-full blur-2xl group-hover:bg-blue-100 transition-colors"></div>
+                <div class="flex items-center gap-3 mb-6 relative z-10">
+                  <div class="p-2.5 bg-blue-50 rounded-2xl text-blue-600 shadow-inner">
+                    <History class="w-5 h-5" />
+                  </div>
+                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Ticket Promedio</span>
+                </div>
+                <div class="text-4xl font-black text-slate-800 tracking-tighter mb-2 relative z-10">
+                  <span class="text-blue-500 text-xl mr-1 font-black">$</span>{{ Number(analyticsDia.promedio_ticket).toFixed(2) }}
+                </div>
+                <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Basado en {{ analyticsDia.total_pedidos }} pedidos</div>
+              </div>
+
+              <!-- Propinas -->
+              <div class="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+                <div class="absolute -right-4 -top-4 w-20 h-20 bg-amber-50 rounded-full blur-2xl group-hover:bg-amber-100 transition-colors"></div>
+                <div class="flex items-center gap-3 mb-6 relative z-10">
+                  <div class="p-2.5 bg-amber-50 rounded-2xl text-amber-600 shadow-inner">
+                    <CircleDollarSign class="w-5 h-5" />
+                  </div>
+                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Propinas Acum.</span>
+                </div>
+                <div class="text-4xl font-black text-slate-800 tracking-tighter mb-2 relative z-10">
+                  <span class="text-amber-500 text-xl mr-1 font-black">$</span>{{ Number(analyticsDia.propinas.total).toFixed(2) }}
+                </div>
+                <div class="flex gap-4">
+                  <div class="flex flex-col">
+                    <span class="text-[8px] font-black text-slate-400 uppercase">Efec</span>
+                    <span class="text-[10px] font-black text-slate-700">${{ analyticsDia.propinas.efectivo }}</span>
+                  </div>
+                  <div class="flex flex-col border-l border-slate-100 pl-4">
+                    <span class="text-[8px] font-black text-slate-400 uppercase">Tarj</span>
+                    <span class="text-[10px] font-black text-slate-700">${{ analyticsDia.propinas.tarjeta }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Mix de Pagos -->
+              <div class="bg-white p-7 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 relative overflow-hidden group">
+                <div class="absolute -right-4 -top-4 w-20 h-20 bg-purple-50 rounded-full blur-2xl group-hover:bg-purple-100 transition-colors"></div>
+                <div class="flex items-center gap-3 mb-4 relative z-10">
+                  <div class="p-2.5 bg-purple-50 rounded-2xl text-purple-600 shadow-inner">
+                    <CreditCard class="w-5 h-5" />
+                  </div>
+                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Mix de Cobro</span>
+                </div>
+                <div class="space-y-2 relative z-10">
+                  <div v-for="(monto, m) in { efec: analyticsDia.ingresos.efectivo, tarj: analyticsDia.ingresos.tarjeta, transf: analyticsDia.ingresos.transferencia }" :key="m" class="flex justify-between items-center group/row">
+                    <span class="text-[10px] font-black text-slate-400 uppercase tracking-tighter group-hover/row:text-slate-600 transition-colors">{{ m }}</span>
+                    <span class="text-xs font-black text-slate-800">${{ Number(monto).toFixed(2) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gráficos y Listas -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              
+              <!-- Más Vendidos -->
+              <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 p-8 flex flex-col">
+                <div class="flex items-center justify-between mb-8">
+                  <div class="flex items-center gap-4">
+                    <div class="p-3 bg-blue-50 rounded-2xl text-blue-600">
+                      <ShoppingBag class="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 class="text-xl font-black text-slate-800 tracking-tight">Productos Top</h4>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lo más pedido hoy</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex-1 space-y-4">
+                  <div v-if="analyticsDia.productos_mas_vendidos.length === 0" class="py-12 text-center text-slate-300 font-bold italic">
+                    Sin datos de venta suficientes
+                  </div>
+                  <div 
+                    v-for="(prod, idx) in analyticsDia.productos_mas_vendidos.slice(0, 6)" 
+                    :key="prod.nombre"
+                    class="group flex items-center justify-between p-4 rounded-2xl bg-slate-50/50 border border-slate-100 hover:bg-white hover:shadow-lg hover:border-blue-100 transition-all duration-500"
+                  >
+                    <div class="flex items-center gap-4">
+                      <div class="w-8 h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center text-xs font-black text-slate-400 group-hover:bg-[#00126D] group-hover:text-white transition-all shadow-sm">
+                        {{ idx + 1 }}
+                      </div>
+                      <span class="font-bold text-slate-700 tracking-tight group-hover:translate-x-1 transition-transform">{{ prod.nombre }}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-[10px] font-black text-slate-400 uppercase">Vendidos:</span>
+                      <span class="px-4 py-1 bg-white border border-slate-100 rounded-xl text-xs font-black text-[#00126D] shadow-sm transform group-hover:scale-110 transition-transform">
+                        {{ prod.cantidad }} pzas
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Gráfico de Ventas por Hora -->
+              <div class="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/40 p-8 flex flex-col">
+                <div class="flex items-center justify-between mb-8">
+                  <div class="flex items-center gap-4">
+                    <div class="p-3 bg-indigo-50 rounded-2xl text-indigo-600">
+                      <Clock class="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 class="text-xl font-black text-slate-800 tracking-tight">Flujo de Ventas</h4>
+                      <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actividad horaria acumulada</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="flex-1 flex flex-col justify-end">
+                  <div class="h-64 flex items-end justify-between items-stretch gap-2 pb-2">
+                    <div 
+                      v-for="hora in [12,13,14,15,16,17,18,19,20,21,22]" 
+                      :key="hora"
+                      class="flex-1 flex flex-col justify-end items-center gap-3 group relative"
+                    >
+                      <!-- Tooltip -->
+                      <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-[#00126D] text-white text-[10px] font-black px-3 py-1.5 rounded-xl opacity-0 group-hover:opacity-100 transition-all pointer-events-none shadow-xl z-20 whitespace-nowrap">
+                        <div class="flex flex-col items-center">
+                          <span>{{ getAnalyticsDataHora(hora).cantidad }} pedidos</span>
+                          <span class="text-blue-200 font-bold">${{ Number(getAnalyticsDataHora(hora).total).toFixed(0) }}</span>
+                        </div>
+                        <!-- Arrow -->
+                        <div class="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-[#00126D]"></div>
+                      </div>
+
+                      <!-- Bar -->
+                      <div 
+                        class="w-full bg-slate-100 rounded-t-xl group-hover:bg-[#00126D] transition-all duration-700 overflow-hidden relative"
+                        :style="{ height: `${Math.max(getAnalyticsPorcentajeHora(hora) * 1.5, 4)}px` }"
+                      >
+                        <div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      </div>
+
+                      <!-- Label -->
+                      <span class="text-[9px] font-black text-slate-400 tracking-tighter transition-colors group-hover:text-slate-800">
+                        {{ hora }}:00
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Vista 2: Auditoría y Control de Turno -->
+        <div v-else-if="subTabReporteDia === 'tickets'" class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          
+          <!-- Sección de Control de Turno -->
+          <div class="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+            <div class="p-8">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                <div class="flex items-center gap-4">
+                  <div class="p-3 bg-slate-100 rounded-2xl text-slate-600">
+                    <ShieldCheck class="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 class="text-xl font-black text-slate-800 flex items-center gap-2">
+                      Control de Turno
+                      <span v-if="turnoActivo" class="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 uppercase tracking-widest">
+                        Activo desde {{ formatTime(turnoActivo.fecha_apertura) }}
+                      </span>
+                      <span v-else class="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100 uppercase tracking-widest">
+                        Turno Cerrado
+                      </span>
+                    </h2>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Sincronización de caja en tiempo real</p>
+                  </div>
+                </div>
+                
+                <!-- Botones de Acción de Turno -->
+                <div class="flex items-center gap-3">
+                  <button
+                    v-if="tieneTurnoActivo"
+                    @click="showGastoModal = true"
+                    class="px-5 py-3 bg-slate-100 text-slate-700 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <TrendingDown class="w-4 h-4 text-rose-500" />
+                    Registrar Gasto
+                  </button>
+
+                  <button
+                    @click="manejarClickTurno"
+                    :class="[
+                      'px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all flex items-center gap-2',
+                      tieneTurnoActivo 
+                        ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 shadow-rose-100' 
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                    ]"
+                  >
+                    <component :is="tieneTurnoActivo ? Lock : Unlock" class="w-4 h-4" />
+                    {{ botonTurnoTexto }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Si NO hay turno activo -->
+              <div v-if="!turnoActivo" class="py-16 text-center bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                <div class="w-20 h-20 bg-white rounded-full shadow-inner flex items-center justify-center mx-auto mb-6 text-slate-300">
+                  <Lock class="w-10 h-10" />
+                </div>
+                <h3 class="text-2xl font-black text-slate-400 mb-2 tracking-tight">Turno Cerrado</h3>
+                <p class="text-slate-400 text-sm font-medium max-w-md mx-auto mb-8">
+                  Para comenzar a cobrar y registrar movimientos de caja, debes iniciar un nuevo turno contando el fondo inicial.
+                </p>
                 <button
                   @click="manejarClickTurno"
-                  :class="[
-                    'px-6 py-2.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-2',
-                    tieneTurnoActivo 
-                      ? 'bg-white border-2 border-red-500 text-red-600 hover:bg-red-50' 
-                      : 'bg-[#00126D] text-white hover:bg-blue-900 hover:shadow-md transform hover:-translate-y-0.5'
-                  ]"
+                  class="px-10 py-4 bg-[#00126D] text-white rounded-[1.5rem] font-black text-sm uppercase tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-900 transition-all hover:-translate-y-1"
                 >
-                  <span class="text-xl">{{ tieneTurnoActivo ? '🔒' : '🔓' }}</span>
-                  {{ botonTurnoTexto }}
+                  Abrir Turno
+                </button>
+              </div>
+
+              <!-- Si HAY turno activo: Dashboard de Métricas -->
+              <div v-else-if="turnoMetrics" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                <!-- Tarjeta Principal: Arqueo Esperado -->
+                <div class="lg:col-span-4 bg-[#00126D] rounded-[2rem] p-8 text-white shadow-2xl shadow-blue-900/20 relative overflow-hidden group border border-white/5">
+                  <!-- Decorative Elements -->
+                  <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
+                  <div class="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/10 rounded-full translate-y-1/2 -translate-x-1/2 blur-xl"></div>
+                  
+                  <div class="relative z-10">
+                    <div class="flex items-center gap-2 text-blue-200/80 mb-2">
+                      <Banknote class="w-4 h-4" />
+                      <span class="text-[10px] font-black uppercase tracking-widest">Efectivo Esperado</span>
+                    </div>
+                    <div class="text-5xl font-black mb-8 tracking-tighter">
+                      <span class="text-blue-300/40 font-black text-2xl mr-1">$</span>{{ turnoMetrics.efectivoEsperado.toFixed(2) }}
+                    </div>
+
+                    <div class="space-y-4 text-xs pt-6 border-t border-white/10">
+                      <div class="flex justify-between items-center text-blue-100/60 font-bold uppercase tracking-wider">
+                        <span>Fondo Inicial:</span>
+                        <span class="text-white">+${{ turnoMetrics.fondoInicial.toFixed(2) }}</span>
+                      </div>
+                      <div class="flex justify-between items-center text-blue-100/60 font-bold uppercase tracking-wider">
+                        <span>Ventas Efectivo:</span>
+                        <span class="text-white">+${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</span>
+                      </div>
+                      <div class="flex justify-between items-center text-blue-100/60 font-bold uppercase tracking-wider">
+                        <span>Propinas Efectivo:</span>
+                        <span class="text-white">+${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</span>
+                      </div>
+                      <div class="flex justify-between items-center bg-rose-500/20 p-3 rounded-2xl text-rose-200 font-black uppercase tracking-widest border border-rose-500/10">
+                        <span>Gastos Turno:</span>
+                        <span>-${{ turnoMetrics.gastosTurno.toFixed(2) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Tarjetas Secundarias: Desglose -->
+                <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-2 gap-4">
+                  <!-- Venta Efectivo -->
+                  <div class="bg-emerald-50 border border-emerald-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-emerald-100 transition-colors">
+                    <div class="flex items-center gap-2 text-emerald-400 mb-2">
+                      <Banknote class="w-4 h-4" />
+                      <span class="text-[10px] font-black uppercase tracking-widest">Venta Efectivo</span>
+                    </div>
+                    <div class="text-3xl font-black text-emerald-800 tracking-tighter">${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</div>
+                  </div>
+
+                  <!-- Venta Tarjeta -->
+                  <div class="bg-blue-50 border border-blue-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-blue-100 transition-colors">
+                    <div class="flex items-center gap-2 text-blue-400 mb-2">
+                      <CreditCard class="w-4 h-4" />
+                      <span class="text-[10px] font-black uppercase tracking-widest">Venta Tarjeta</span>
+                    </div>
+                    <div class="text-3xl font-black text-blue-800 tracking-tighter">${{ turnoMetrics.ventasTarjeta.toFixed(2) }}</div>
+                  </div>
+
+                  <!-- Propinas Efectivo -->
+                  <div class="bg-amber-50 border border-amber-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-amber-100 transition-colors">
+                    <div class="flex items-center gap-2 text-amber-500 mb-2">
+                      <CircleDollarSign class="w-4 h-4" />
+                      <span class="text-[10px] font-black uppercase tracking-widest">Propina Efectivo</span>
+                    </div>
+                    <div class="text-3xl font-black text-amber-700 tracking-tighter">${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</div>
+                  </div>
+
+                  <!-- Propinas Tarjeta -->
+                  <div class="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-indigo-100 transition-colors">
+                    <div class="flex items-center gap-2 text-indigo-400 mb-2">
+                      <Contact2 class="w-4 h-4" />
+                      <span class="text-[10px] font-black uppercase tracking-widest">Propina Tarjeta</span>
+                    </div>
+                    <div class="text-3xl font-black text-indigo-800 tracking-tighter">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabla de Tickets del Día (Modernized) -->
+          <div class="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+            <div class="px-8 py-6 border-b border-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50">
+              <h3 class="text-xl font-black text-slate-800 flex items-center gap-3">
+                <ScrollText class="w-6 h-6 text-[#00126D]" />
+                Auditoría de Comandas
+                <span class="text-[10px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-widest ml-2">{{ filteredSummary?.count || 0 }} tickets</span>
+              </h3>
+              
+              <!-- Filtros de la tabla -->
+              <div class="flex items-center gap-2">
+                <select 
+                  v-model="selectedPaymentMethod" 
+                  class="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wider outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                >
+                  <option value="todos">Todos los pagos</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="tarjeta">Tarjeta</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
+                <button 
+                  @click="sortDescending = !sortDescending"
+                  class="p-2 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-[#00126D] transition-colors"
+                >
+                  <TrendingUp v-if="!sortDescending" class="w-4 h-4" />
+                  <TrendingDown v-else class="w-4 h-4" />
                 </button>
               </div>
             </div>
-
-            <!-- Si NO hay turno activo -->
-            <div v-if="!turnoActivo" class="py-12 text-center bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-              <div class="text-6xl mb-4 opacity-50">🔐</div>
-              <h3 class="text-xl font-bold text-gray-700 mb-2">Turno Cerrado</h3>
-              <p class="text-gray-500 max-w-md mx-auto mb-6">
-                Para comenzar a cobrar y registrar movimientos de caja, debes iniciar un nuevo turno contando el fondo inicial.
-              </p>
-              <button
-                @click="manejarClickTurno"
-                class="px-8 py-3 bg-[#00126D] text-white rounded-xl font-bold shadow-lg hover:bg-blue-900 transition-all text-lg"
-              >
-                Iniciar Turno Ahora
-              </button>
-            </div>
-
-            <!-- Si HAY turno activo: Dashboard de Métricas -->
-            <div v-else-if="turnoMetrics" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              <!-- Tarjeta Principal: Arqueo Esperado -->
-              <div class="lg:col-span-1 bg-gradient-to-br from-[#00126D] to-[#001E96] rounded-xl p-6 text-white shadow-lg relative overflow-hidden group">
-                <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                  <span class="text-8xl">💵</span>
-                </div>
-                
-                <h3 class="text-blue-100 font-medium mb-1 uppercase tracking-wider text-sm">Efectivo Esperado en Caja</h3>
-                <div class="text-4xl font-bold mb-4 tracking-tight">
-                  ${{ turnoMetrics.efectivoEsperado.toFixed(2) }}
-                </div>
-
-                <div class="space-y-2 text-sm border-t border-blue-800/50 pt-3">
-                  <div class="flex justify-between text-blue-200">
-                    <span>Fondo Inicial:</span>
-                    <span class="font-mono font-medium">+${{ turnoMetrics.fondoInicial.toFixed(2) }}</span>
-                  </div>
-                  <div class="flex justify-between text-blue-200">
-                    <span>Ventas Efectivo:</span>
-                    <span class="font-mono font-medium">+${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</span>
-                  </div>
-                  <div class="flex justify-between text-blue-200">
-                    <span>Propinas Efectivo:</span>
-                    <span class="font-mono font-medium">+${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</span>
-                  </div>
-                  <div class="flex justify-between text-red-200 font-bold bg-red-900/20 px-1 rounded">
-                    <span>Gastos en Efectivo:</span>
-                    <span class="font-mono font-medium">-${{ turnoMetrics.gastosTurno.toFixed(2) }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Tarjetas Secundarias: Desglose -->
-              <div class="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                
-                <!-- Venta Efectivo -->
-                <div class="bg-green-50 border border-green-100 rounded-xl p-4 flex flex-col justify-between">
-                  <div class="text-green-600 mb-1 font-medium text-xs uppercase">Venta Efectivo</div>
-                  <div class="text-2xl font-bold text-green-800">${{ turnoMetrics.ventasEfectivo.toFixed(2) }}</div>
-                </div>
-
-                <!-- Venta Tarjeta -->
-                <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col justify-between">
-                  <div class="text-blue-600 mb-1 font-medium text-xs uppercase">Venta Tarjeta</div>
-                  <div class="text-2xl font-bold text-blue-800">${{ turnoMetrics.ventasTarjeta.toFixed(2) }}</div>
-                </div>
-
-                <!-- Propinas Efectivo -->
-                <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 flex flex-col justify-between">
-                  <div class="text-yellow-600 mb-1 font-medium text-xs uppercase">Propina Efectivo</div>
-                  <div class="text-2xl font-bold text-yellow-800">${{ turnoMetrics.propinasEfectivo.toFixed(2) }}</div>
-                </div>
-
-                <!-- Propinas Tarjeta -->
-                <div class="bg-purple-50 border border-purple-100 rounded-xl p-4 flex flex-col justify-between">
-                  <div class="text-purple-600 mb-1 font-medium text-xs uppercase">Propina Tarjeta</div>
-                  <div class="text-2xl font-bold text-purple-800">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
-                </div>
-
-                <!-- Gastos Efectivo -->
-                <div class="bg-red-50 border border-red-100 rounded-xl p-4 flex flex-col justify-between">
-                  <div class="text-red-600 mb-1 font-medium text-xs uppercase">Gastos Caja (Efe)</div>
-                  <div class="text-2xl font-bold text-red-800">${{ turnoMetrics.gastosTurno.toFixed(2) }}</div>
-                </div>
-
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tabla de Tickets del Día (Histórico Auditable) -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h3 class="font-bold text-gray-800">
-              🧾 Comandas del Día
-              <span class="text-sm font-normal text-gray-500 ml-2">({{ filteredSummary?.count || 0 }} tickets)</span>
-            </h3>
             
-            <div class="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
-              <button 
-                v-for="method in ['todos', 'efectivo', 'tarjeta']" 
-                :key="method"
-                @click="selectedPaymentMethod = method as any"
-                :class="[
-                  'px-3 py-1 text-xs font-medium rounded-md transition-all capitalize',
-                  selectedPaymentMethod === method ? 'bg-white shadow text-gray-800' : 'text-gray-500 hover:text-gray-700'
-                ]"
-              >
-                {{ method }}
-              </button>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse">
+                <thead>
+                  <tr class="bg-white text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100">
+                    <th class="px-8 py-5">Ticket</th>
+                    <th class="px-8 py-5">Referencia / Usuario</th>
+                    <th class="px-8 py-5">Hora Pago</th>
+                    <th class="px-8 py-5 text-center">Método</th>
+                    <th class="px-8 py-5 text-right">Monto</th>
+                    <th class="px-8 py-5 text-right">Propina</th>
+                    <th class="px-8 py-5 text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                  <tr 
+                    v-for="pedido in filteredPedidosDelDia" 
+                    :key="pedido.id"
+                    class="group hover:bg-slate-50/80 transition-all duration-300"
+                  >
+                    <td class="px-8 py-5">
+                      <div class="font-black text-slate-800 tracking-tight">#{{ pedido.numero_display }}</div>
+                    </td>
+                    <td class="px-8 py-5">
+                      <div class="flex flex-col">
+                        <div class="flex items-center gap-2">
+                          <span class="text-base">{{ getTipoOrdenEmoji(pedido.tipo_orden) }}</span>
+                          <span class="font-bold text-slate-700">
+                            {{ pedido.mesa ? 'Mesa ' + pedido.mesa : (pedido.nombre_cliente || 'Sin Nombre') }}
+                          </span>
+                        </div>
+                        <div class="flex items-center gap-1.5 mt-1">
+                          <Users class="w-3 h-3 text-slate-300" />
+                          <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest">{{ pedido.mesero_nombre || 'S/N' }}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-8 py-5">
+                      <div class="text-xs font-bold text-slate-400 uppercase">{{ formatTime(pedido.fecha_pago || pedido.fecha_modificacion) }}</div>
+                    </td>
+                    <td class="px-8 py-5 text-center">
+                      <span :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
+                        {{ getPaymentMethodIcon(pedido.metodo_pago) }}
+                        <span class="ml-1.5">{{ pedido.metodo_pago || '---' }}</span>
+                      </span>
+                    </td>
+                    <td class="px-8 py-5 text-right">
+                      <div class="font-black text-slate-800 tracking-tight">${{ Number(pedido.total).toFixed(2) }}</div>
+                    </td>
+                    <td class="px-8 py-5 text-right">
+                       <div v-if="Number(pedido.propina_total) > 0" class="font-black text-emerald-600">
+                         +${{ Number(pedido.propina_total).toFixed(2) }}
+                       </div>
+                       <div v-else class="text-slate-200">---</div>
+                    </td>
+                    <td class="px-8 py-5 text-center">
+                      <div class="flex justify-center gap-2">
+                        <button 
+                          @click="reimprimirTicketDesdeHistorial(pedido)"
+                          class="p-2.5 text-slate-400 hover:text-[#00126D] hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-xl transition-all"
+                          title="Reimprimir Ticket"
+                        >
+                          <Printer class="w-4 h-4" />
+                        </button>
+                        <button 
+                          @click="abrirEditarPropina(pedido)"
+                          class="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-xl transition-all"
+                          title="Editar Propina"
+                        >
+                          <CircleDollarSign class="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot v-if="filteredSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
+                  <tr class="text-xs uppercase tracking-widest">
+                    <td colspan="4" class="px-8 py-6 text-right text-slate-400">Total Filtro</td>
+                    <td class="px-8 py-6 text-right text-lg tracking-tighter">${{ filteredSummary.total.toFixed(2) }}</td>
+                    <td class="px-8 py-6 text-right text-emerald-600 text-lg tracking-tighter">+${{ filteredSummary.propina_total.toFixed(2) }}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
           </div>
 
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm text-left">
-              <thead class="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
-                <tr>
-                  <th class="px-6 py-3">Hora</th>
-                  <th class="px-6 py-3">Ticket</th>
-                  <th class="px-6 py-3">Mesa/Cliente</th>
-                  <th class="px-6 py-3">Mesero</th>
-                  <th class="px-6 py-3 text-center">Método</th>
-                  <th class="px-6 py-3 text-right">Total</th>
-                  <th class="px-6 py-3 text-right">Propina</th>
-                  <th class="px-6 py-3 text-center">Acciones</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100">
-                <tr v-if="loadingTicketsDelDia" class="animate-pulse">
-                  <td colspan="8" class="px-6 py-8 text-center text-gray-400">Cargando tickets...</td>
-                </tr>
-                <tr v-else-if="filteredPedidosDelDia.length === 0">
-                  <td colspan="8" class="px-6 py-8 text-center text-gray-400">No hay tickets registrados hoy con este filtro.</td>
-                </tr>
-                <tr 
-                  v-for="pedido in filteredPedidosDelDia" 
-                  :key="pedido.id"
-                  class="hover:bg-gray-50 transition-colors"
-                >
-                  <td class="px-6 py-3 text-gray-500 font-mono text-xs">
-                    {{ pedido.fecha_pago ? formatTime(pedido.fecha_pago) : '--:--' }}
-                  </td>
-                  <td class="px-6 py-3 font-medium text-gray-900">#{{ pedido.numero_display }}</td>
-                  <td class="px-6 py-3 text-gray-600 truncate max-w-[150px]" :title="getMesaClienteDisplay(pedido)">
-                    {{ getMesaClienteDisplay(pedido) }}
-                  </td>
-                  <td class="px-6 py-3 text-gray-500">{{ pedido.mesero_nombre || '-' }}</td>
-                  <td class="px-6 py-3 text-center">
-                    <span :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', getPaymentMethodColor(pedido.metodo_pago)]">
-                      <span class="mr-1">{{ getPaymentMethodIcon(pedido.metodo_pago) }}</span>
-                      {{ pedido.metodo_pago || 'Sin pago' }}
-                    </span>
-                  </td>
-                  <td class="px-6 py-3 text-right font-medium text-gray-900">
-                    ${{ Number(pedido.total).toFixed(2) }}
-                  </td>
-                  <td class="px-6 py-3 text-right text-gray-500">
-                     <span v-if="Number(pedido.propina_total) > 0" class="text-green-600 font-medium">
-                       +${{ Number(pedido.propina_total).toFixed(2) }}
-                     </span>
-                     <span v-else class="text-gray-300">-</span>
-                  </td>
-                  <td class="px-6 py-3 text-center flex justify-center gap-2">
-                    <button 
-                      @click="reimprimirTicketDesdeHistorial(pedido)"
-                      class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                      title="Reimprimir Ticket"
-                    >
-                      🖨️
-                    </button>
-                    <button 
-                      @click="abrirEditarPropina(pedido)"
-                      class="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
-                      title="Editar Propina"
-                    >
-                      💰
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-              <!-- Footer de Totales de la Tabla -->
-              <tfoot v-if="filteredSummary" class="bg-gray-50 font-medium text-gray-800 border-t border-gray-200">
-                <tr>
-                  <td colspan="5" class="px-6 py-3 text-right">Total Filtro:</td>
-                  <td class="px-6 py-3 text-right">${{ filteredSummary.total.toFixed(2) }}</td>
-                  <td class="px-6 py-3 text-right text-green-700">+${{ filteredSummary.propina_total.toFixed(2) }}</td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
         </div>
-
       </div>
         </div>
 
-        <!-- Panel lateral de mesas -->
-        <div class="w-64 bg-white rounded-lg border border-gray-200 p-4 h-fit sticky top-6">
-          <div class="mb-3">
-            <h3 class="text-sm font-bold text-[#00126D] flex items-center gap-2">
-              🗺️ Estado de Mesas
-            </h3>
-            <p class="text-xs text-gray-500 mt-1">Clic en mesa para buscar</p>
+        <!-- Panel lateral de mesas (Modernized Premium) -->
+        <div class="w-80 bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 p-8 h-fit sticky top-[152px]">
+          <div class="mb-8">
+            <div class="flex items-center gap-3 mb-2">
+              <div class="p-2 bg-blue-50 rounded-xl">
+                <Map class="w-5 h-5 text-[#00126D]" />
+              </div>
+              <h3 class="text-xl font-black text-slate-800 tracking-tight">Estado de Mesas</h3>
+            </div>
+            <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Clic en mesa ocupada para buscar</p>
           </div>
 
           <!-- Layout de mesas -->
-          <div class="space-y-3">
-            <div class="grid grid-cols-3 gap-2">
+          <div class="space-y-4">
+            <div class="grid grid-cols-3 gap-3">
               <div v-for="(fila, index) in mesasLayout" :key="index" class="contents">
                 <button
                   v-for="numeroMesa in fila"
@@ -2056,45 +2458,50 @@ const handleGastoSaved = async () => {
                   @click="handleMesaClick(numeroMesa)"
                   :disabled="getMesaEstado(numeroMesa) === 'libre'"
                   :class="[
-                    'w-12 h-10 rounded border text-sm font-bold transition-all',
+                    'w-full aspect-[1/0.8] rounded-2xl flex items-center justify-center text-sm font-black transition-all duration-300 relative group overflow-hidden',
                     getMesaEstado(numeroMesa) === 'libre'
-                      ? 'cursor-not-allowed opacity-60'
-                      : 'hover:scale-105 cursor-pointer',
+                      ? 'bg-slate-50 text-slate-300 border-2 border-slate-100'
+                      : 'hover:scale-110 shadow-lg shadow-slate-200/50 cursor-pointer border-2 ring-4 ring-transparent hover:ring-blue-50',
                     getMesaClase(numeroMesa)
                   ]"
-                  :title="`Mesa ${numeroMesa} - ${getMesaEstado(numeroMesa).toUpperCase()}${getMesaEstado(numeroMesa) === 'libre' ? ' (Sin pedidos)' : ' (Clic para ver)'}`"
                 >
-                  {{ numeroMesa }}
+                  <!-- Status Indicator -->
+                  <div v-if="getMesaEstado(numeroMesa) !== 'libre'" class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full border border-white shadow-sm" :class="getEstadoBadgeColor(getMesaEstado(numeroMesa))"></div>
+                  
+                  <span class="z-10">{{ numeroMesa }}</span>
+                  
+                  <!-- Hover Overlay -->
+                  <div class="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Resumen de Estados (Lista Estética) - Movido a la derecha -->
-          <div class="mt-8 pt-6 border-t border-gray-100">
-            <h4 class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <span class="w-1.5 h-1.5 bg-[#00126D] rounded-full"></span>
-              Resumen de Estados
+          <!-- Resumen de Estados Premium -->
+          <div class="mt-10 pt-8 border-t border-slate-50">
+            <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+              <span class="w-2 h-2 bg-[#00126D] rounded-full"></span>
+              Distribución actual
             </h4>
-            <div class="space-y-1.5">
+            <div class="space-y-3">
               <div 
                 v-for="estado in ['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada']" 
                 :key="estado"
-                class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors group border border-transparent hover:border-gray-100"
+                class="flex items-center justify-between px-4 py-3 rounded-2xl hover:bg-slate-50 transition-all duration-300 group border border-transparent hover:border-slate-100"
               >
-                <div class="flex items-center gap-2.5">
-                  <div :class="[getEstadoColor(estado), 'w-2.5 h-2.5 rounded-full shadow-sm group-hover:scale-125 transition-transform']"></div>
-                  <span class="text-xs font-bold text-gray-600 group-hover:text-gray-900 transition-colors">{{ getEstadoTexto(estado) }}</span>
+                <div class="flex items-center gap-3">
+                  <div :class="[getEstadoBadgeColor(estado), 'w-3 h-3 rounded-full shadow-lg ring-4 ring-white']"></div>
+                  <span class="text-xs font-black text-slate-600 group-hover:text-[#00126D] transition-colors uppercase tracking-widest">{{ getEstadoTexto(estado) }}</span>
                 </div>
-                <div class="bg-gray-100 px-2 py-0.5 rounded text-[10px] font-black text-gray-500 group-hover:bg-[#00126D] group-hover:text-white transition-all">
-                  {{ estadisticasOverview[estado as keyof typeof estadisticasOverview] }}
+                <div class="bg-slate-100 px-3 py-1 rounded-xl text-[10px] font-black text-slate-500 group-hover:bg-[#00126D] group-hover:text-white transition-all shadow-inner">
+                  {{ estadisticasOverview[estado as keyof typeof estadisticasOverview] || 0 }}
                 </div>
               </div>
             </div>
           </div>
         </div>
-    </div>
-  </main>
+        </div>
+      </main>
 
     <!-- Modal: Editar propina (solo pagados) (Renovado Premium) -->
     <div
@@ -2200,115 +2607,157 @@ const handleGastoSaved = async () => {
       </div>
     </div>
 
-    <!-- Modal de procesamiento de pago - Minimalista -->
+    <!-- Modal de procesamiento de pago - Premium -->
     <div
       v-if="selectedPedido"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-lg max-w-md w-full shadow-lg border border-gray-200">
-        <!-- Header simple -->
-        <div class="px-6 py-4 border-b border-gray-200">
+      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-300">
+        <!-- Header Premium -->
+        <div class="px-8 py-5 border-b border-slate-100 bg-[#00126D]">
           <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-gray-800">
-              Procesar Pago - Pedido #{{ selectedPedido.numero_display }}
-            </h2>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
+                <CreditCard class="w-5 h-5" />
+              </div>
+              <div>
+                <h2 class="text-lg font-bold text-white leading-tight">
+                  Procesar Pago
+                </h2>
+                <p class="text-xs text-blue-100/70">Pedido #{{ selectedPedido.numero_display }}</p>
+              </div>
+            </div>
             <button
               @click="closeModal"
-              class="text-gray-400 hover:text-gray-600 text-xl"
+              class="w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
             >
-              ×
+              <X class="w-5 h-5" />
             </button>
           </div>
         </div>
 
         <!-- Contenido del modal -->
-        <div class="p-6">
-          <!-- Info básica -->
-          <div class="mb-4">
-            <div v-if="selectedPedido.mesa" class="text-center bg-blue-100 text-blue-800 px-3 py-2 rounded-lg mb-3 font-medium">
-              🪑 Mesa {{ selectedPedido.mesa }}
+        <div class="p-8">
+          <!-- Info básica con badges modernos -->
+          <div class="flex flex-wrap gap-2 mb-6">
+            <div v-if="selectedPedido.mesa" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold ring-1 ring-inset ring-blue-700/10">
+              <span class="text-sm">🪑</span> Mesa {{ selectedPedido.mesa }}
             </div>
-            <div v-if="selectedPedido.nombre_cliente && selectedPedido.tipo_orden === 'llevar'" class="text-center bg-green-100 text-green-800 px-3 py-2 rounded-lg mb-3 font-medium">
-              📦 {{ selectedPedido.nombre_cliente }}
+            <div v-if="selectedPedido.nombre_cliente && selectedPedido.tipo_orden === 'llevar'" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold ring-1 ring-inset ring-emerald-700/10">
+              <span class="text-sm">📦</span> {{ selectedPedido.nombre_cliente }}
+            </div>
+            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold">
+              <Clock class="w-3.5 h-3.5" /> {{ formatTime(selectedPedido.fecha_creacion) }}
             </div>
           </div>
 
-          <!-- Lista de artículos simple -->
-          <div v-if="selectedPedido.articulos_pedido && selectedPedido.articulos_pedido.length > 0" class="mb-4">
-            <h4 class="text-sm font-medium text-gray-700 mb-2">Artículos:</h4>
-            <div class="bg-gray-50 rounded-lg p-3 max-h-40 overflow-y-auto">
+          <!-- Lista de artículos refinada -->
+          <div v-if="selectedPedido.articulos_pedido && selectedPedido.articulos_pedido.length > 0" class="mb-6">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Resumen de Cuenta</h4>
+              <span class="text-xs text-slate-400">{{ selectedPedido.articulos_pedido.length }} ítems</span>
+            </div>
+            <div class="bg-slate-50/50 rounded-xl p-4 max-h-48 overflow-y-auto border border-slate-100 custom-scrollbar">
               <div
                 v-for="articulo in selectedPedido.articulos_pedido"
                 :key="articulo.id"
-                class="flex justify-between items-start py-1 text-sm"
+                class="flex justify-between items-center py-2.5 group first:pt-0 last:pb-0 border-b border-slate-100 last:border-0"
               >
-                <div class="flex-1">
-                  <div class="font-medium">{{ articulo.platillo?.nombre || 'Producto' }}</div>
-                  <div v-if="articulo.modificaciones" class="text-gray-500 text-xs">
-                    {{ articulo.modificaciones }}
+                <div class="flex-1 min-w-0 pr-4">
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-xs font-bold text-slate-400">x{{ articulo.cantidad }}</span>
+                    <h5 class="text-sm font-semibold text-slate-800 truncate">{{ articulo.platillo?.nombre || 'Producto' }}</h5>
                   </div>
+                  <p v-if="articulo.modificaciones" class="text-[10px] text-slate-500 mt-0.5 italic">
+                    {{ articulo.modificaciones }}
+                  </p>
                 </div>
-                <div class="text-center px-2">
-                  <span class="text-gray-600">x{{ articulo.cantidad }}</span>
-                </div>
-                <div class="text-right text-orange-600 font-medium">
+                <div class="text-sm font-bold text-slate-900 tabular-nums">
                   ${{ Number(articulo.precio_cobrado).toFixed(2) }}
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Total -->
-          <div class="text-center bg-orange-100 text-orange-800 px-4 py-3 rounded-lg mb-4">
-            <div class="text-sm">Total a cobrar</div>
-            <div class="text-2xl font-bold">$ {{ Number(selectedPedido.total).toFixed(2) }}</div>
+          <!-- Total Impactante -->
+          <div class="relative overflow-hidden bg-slate-900 rounded-2xl p-6 mb-8 text-white shadow-lg shadow-slate-200">
+            <!-- Círculos decorativos -->
+            <div class="absolute -right-4 -top-4 w-20 h-20 bg-white/5 rounded-full blur-2xl"></div>
+            <div class="absolute -left-4 -bottom-4 w-16 h-16 bg-blue-500/10 rounded-full blur-xl"></div>
+            
+            <div class="relative flex items-center justify-between">
+              <div>
+                <p class="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Total Final</p>
+                <div class="flex items-baseline gap-1">
+                  <span class="text-lg font-medium text-slate-400">$</span>
+                  <span class="text-4xl font-black text-white tracking-tight tabular-nums">
+                    {{ Number(selectedPedido.total).toFixed(2) }}
+                  </span>
+                </div>
+              </div>
+              <div class="p-3 bg-white/10 rounded-xl border border-white/10">
+                <Receipt class="w-6 h-6 text-blue-400" />
+              </div>
+            </div>
           </div>
 
+          <!-- Botón dividir cuenta (Elegante) -->
+          <button
+            v-if="canSplitSelectedPedido"
+            @click="openSplitModalForPedido(selectedPedido)"
+            :disabled="processingPayment"
+            class="w-full mb-6 py-3 px-4 flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl border border-amber-200/50 transition-all active:scale-[0.98] disabled:opacity-50"
+          >
+            <Scissors class="w-4 h-4" />
+            Dividir Cuenta
+          </button>
 
-
-           <!-- Boton dividir cuenta (solo admin) -->
-           <button
-             v-if="canSplitSelectedPedido"
-             @click="openSplitModalForPedido(selectedPedido)"
-             :disabled="processingPayment"
-             class="w-full mb-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded-lg transition-all disabled:opacity-50"
-           >
-             ✂️ Dividir cuenta
-           </button>
-
-           <!-- Botones de pago simples -->
-           <div class="space-y-2">
+          <!-- Métodos de Pago Premium -->
+          <div class="grid grid-cols-1 gap-3">
             <button
               @click="procesarPago(selectedPedido, 'efectivo')"
               :disabled="processingPayment"
-              class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-all disabled:opacity-50"
+              class="group relative flex items-center justify-between p-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-md shadow-emerald-200 active:scale-[0.98] disabled:opacity-50 overflow-hidden"
             >
-              {{ processingPayment ? 'Procesando...' : '💵 Efectivo' }}
+              <div class="flex items-center gap-3 z-10">
+                <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Banknote class="w-6 h-6" />
+                </div>
+                <span class="font-bold tracking-wide">EFECTIVO</span>
+              </div>
+              <ChevronRight class="w-5 h-5 opacity-50 z-10" />
+              <div class="absolute right-0 bottom-0 w-24 h-24 bg-white/10 rounded-full translate-x-12 translate-y-12 blur-3xl"></div>
             </button>
-            <button
-              @click="procesarPago(selectedPedido, 'tarjeta')"
-              :disabled="processingPayment"
-              class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-all disabled:opacity-50"
-            >
-              {{ processingPayment ? 'Procesando...' : '💳 Tarjeta' }}
-            </button>
-            <button
-              @click="procesarPago(selectedPedido, 'transferencia')"
-              :disabled="processingPayment"
-              class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-all disabled:opacity-50"
-            >
-              {{ processingPayment ? 'Procesando...' : '📱 Transferencia' }}
-            </button>
+
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                @click="procesarPago(selectedPedido, 'tarjeta')"
+                :disabled="processingPayment"
+                class="group flex flex-col items-center justify-center gap-2 p-4 bg-[#00126D] hover:bg-[#000E5A] text-white rounded-xl transition-all shadow-md shadow-blue-200 active:scale-[0.98] disabled:opacity-50"
+              >
+                <CreditCard class="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span class="text-xs font-bold tracking-widest">TARJETA</span>
+              </button>
+              
+              <button
+                @click="procesarPago(selectedPedido, 'transferencia')"
+                :disabled="processingPayment"
+                class="group flex flex-col items-center justify-center gap-2 p-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all shadow-md shadow-purple-200 active:scale-[0.98] disabled:opacity-50"
+              >
+                <Smartphone class="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span class="text-xs font-bold tracking-widest">TRANSFER</span>
+              </button>
+            </div>
           </div>
 
-          <!-- Botón cancelar simple -->
+          <!-- Botón cerrar refinado -->
           <button
             @click="closeModal"
             :disabled="processingPayment"
-            class="w-full mt-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+            class="w-full mt-8 py-3 text-slate-400 hover:text-slate-600 text-sm font-bold transition-colors"
           >
-            Cancelar
+            Volver a la caja
           </button>
         </div>
       </div>
@@ -2585,152 +3034,202 @@ const handleGastoSaved = async () => {
     </div>
 
     <!-- Modal de detalles del pedido -->
+    <!-- Modal de Detalles del Pedido - Premium Refined -->
     <div
       v-if="showDetailsModal && selectedPedidoDetails"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeDetailsModal"
     >
-      <div class="bg-white rounded-lg max-w-md w-full shadow-xl border border-gray-200">
+      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-300">
         <!-- Header -->
-        <div class="px-6 py-4 border-b border-gray-200 bg-[#00126D] rounded-t-lg">
-          <div class="flex items-center justify-between text-white">
-             <h2 class="text-lg font-semibold flex items-center gap-2">
-               Pedido #{{ selectedPedidoDetails.numero_display }}
-             </h2>
+        <div class="px-8 py-6 border-b border-white/10 bg-[#00126D]">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
+                <LayoutDashboard class="w-5 h-5" />
+              </div>
+              <div>
+                <h2 class="text-xl font-black text-white tracking-tight leading-tight">
+                  Pedido #{{ selectedPedidoDetails.numero_display }}
+                </h2>
+                <div class="flex items-center gap-2 mt-0.5">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <p class="text-[10px] text-blue-100/70 uppercase tracking-widest font-bold">Detalles en tiempo real</p>
+                </div>
+              </div>
+            </div>
             <div class="flex items-center gap-2">
               <button
                 @click="openEditPedido(selectedPedidoDetails)"
-                class="bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-lg border border-white/30 transition-all flex items-center gap-2 text-sm font-bold"
+                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all active:scale-90"
+                title="Editar pedido"
               >
-                <span>✏️</span>
-                Editar
+                <Edit3 class="w-4 h-4" />
               </button>
               <button
                 @click="closeDetailsModal"
-                class="text-white hover:text-gray-200 text-xl"
+                class="w-10 h-10 flex items-center justify-center rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-colors"
               >
-                ×
+                <X class="w-6 h-6" />
               </button>
             </div>
           </div>
         </div>
 
         <!-- Contenido -->
-        <div class="p-6">
-          <!-- Estado y información básica -->
-          <div class="mb-4">
-            <div class="flex items-center justify-between mb-3">
-              <div :class="[getEstadoColor(selectedPedidoDetails.estado), 'text-white px-3 py-1 rounded-full text-sm font-bold']">
+        <div class="p-8">
+          <!-- Status Ribbon -->
+          <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
+            <div class="flex flex-col gap-1">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado Actual</span>
+              <div :class="[getEstadoColor(selectedPedidoDetails.estado), 'px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider text-white shadow-sm ring-2 ring-white']">
                 {{ getEstadoTexto(selectedPedidoDetails.estado) }}
               </div>
-              <div class="text-sm text-gray-500">
+            </div>
+            <div class="flex flex-col items-end gap-1">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Hora de Apertura</span>
+              <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 text-slate-600 font-bold text-xs border border-slate-100">
+                <Clock class="w-3.5 h-3.5" />
                 {{ formatTime(selectedPedidoDetails.fecha_creacion) }}
               </div>
             </div>
+          </div>
 
-            <div v-if="selectedPedidoDetails.mesa" class="bg-blue-100 text-blue-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
-              🪑 Mesa {{ selectedPedidoDetails.mesa }}
+          <!-- Cards de Identificación -->
+          <div class="grid grid-cols-2 gap-3 mb-8">
+            <div v-if="selectedPedidoDetails.mesa" class="flex flex-col gap-2 p-4 rounded-2xl bg-blue-50/50 border border-blue-100 group hover:bg-blue-50 transition-colors">
+              <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
+                <UtensilsCrossed class="w-4 h-4" />
+              </div>
+              <div>
+                <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Ubicación</p>
+                <p class="text-sm font-black text-blue-900">MESA {{ selectedPedidoDetails.mesa }}</p>
+              </div>
             </div>
 
-            <div v-if="selectedPedidoDetails.nombre_cliente" class="bg-green-100 text-green-800 px-3 py-2 rounded-lg mb-3 text-center font-medium">
-              👤 {{ selectedPedidoDetails.nombre_cliente }}
+            <div v-if="selectedPedidoDetails.nombre_cliente" class="flex flex-col gap-2 p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 group hover:bg-emerald-50 transition-colors">
+              <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform">
+                <User class="w-4 h-4" />
+              </div>
+              <div>
+                <p class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Cliente</p>
+                <p class="text-sm font-black text-emerald-900 truncate">{{ selectedPedidoDetails.nombre_cliente }}</p>
+              </div>
             </div>
           </div>
 
-          <!-- Lista de artículos -->
-          <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-4">
-            <h4 class="text-sm font-bold text-gray-700 mb-3">📋 Artículos del pedido:</h4>
-            <div class="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
+          <!-- Items List Refined -->
+          <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-8">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Composición del Pedido</h4>
+              <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-bold">{{ selectedPedidoDetails.articulos_pedido.length }} platillos</span>
+            </div>
+            <div class="bg-slate-50/50 rounded-2xl p-2 border border-slate-100 max-h-64 overflow-y-auto custom-scrollbar">
               <div
                 v-for="articulo in selectedPedidoDetails.articulos_pedido"
                 :key="articulo.id"
-                class="flex justify-between items-start py-2 border-b border-gray-200 last:border-b-0"
+                class="flex justify-between items-center p-3 hover:bg-white rounded-xl transition-all border border-transparent hover:border-slate-100 hover:shadow-sm mb-1 last:mb-0 group"
               >
-                <div class="flex-1">
-                  <div class="font-medium text-gray-800">{{ articulo.platillo?.nombre || 'Producto' }}</div>
-                  <div v-if="articulo.modificaciones" class="text-gray-500 text-xs mt-1">
-                    💬 {{ articulo.modificaciones }}
+                <div class="flex-1 min-w-0 pr-4">
+                  <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 flex items-center justify-center rounded-md bg-slate-200/50 text-[10px] font-black text-slate-600">
+                      {{ articulo.cantidad }}
+                    </span>
+                    <h5 class="text-sm font-bold text-slate-800 truncate group-hover:text-[#00126D] transition-colors">{{ articulo.platillo?.nombre || 'Producto' }}</h5>
                   </div>
-                   <div class="text-xs text-gray-400 mt-1">
-                     Estado:
-                     <span :class="getArticuloEstadoClass(articulo.estado_item)">
-                       {{ getArticuloEstadoLabel(articulo.estado_item) }}
-                     </span>
-                   </div>
+                  <div class="flex items-center gap-3 mt-1.5 ml-8">
+                    <span :class="[getArticuloEstadoClass(articulo.estado_item), 'text-[9px] font-black uppercase tracking-tighter px-2 py-0.5 rounded-md']">
+                      {{ getArticuloEstadoLabel(articulo.estado_item) }}
+                    </span>
+                    <span v-if="articulo.modificaciones" class="text-[10px] text-slate-400 italic font-medium truncate">
+                      "{{ articulo.modificaciones }}"
+                    </span>
+                  </div>
                 </div>
-                <div class="text-center px-3">
-                  <span class="text-gray-600 font-medium">x{{ articulo.cantidad }}</span>
-                </div>
-                <div class="text-right text-[#FDB700] font-bold">
+                <div class="text-sm font-black text-slate-900 tabular-nums">
                   ${{ Number(articulo.precio_cobrado).toFixed(2) }}
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Total -->
-          <div class="text-center bg-[#FDB700] text-white px-4 py-3 rounded-lg mb-6">
-            <div class="text-sm">Total del pedido</div>
-            <div class="text-2xl font-bold">$ {{ Number(selectedPedidoDetails.total).toFixed(2) }}</div>
+          <!-- Total Footer -->
+          <div class="relative overflow-hidden bg-[#FDB700] p-6 rounded-2xl mb-8 group">
+            <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full group-hover:scale-125 transition-transform duration-700"></div>
+            <div class="relative flex items-center justify-between text-white">
+              <div class="flex flex-col">
+                <span class="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">Subtotal del Pedido</span>
+                <span class="text-3xl font-black tabular-nums tracking-tight tracking-tighter">
+                  ${{ Number(selectedPedidoDetails.total).toFixed(2) }}
+                </span>
+              </div>
+              <div class="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-md border border-white/30">
+                <ReceiptText class="w-7 h-7" />
+              </div>
+            </div>
           </div>
 
-            <!-- Boton dividir cuenta (solo admin) -->
-          <button
-            v-if="canSplitDetailsPedido"
-            @click="openSplitModalForPedido(selectedPedidoDetails); closeDetailsModal()"
-            class="w-full py-3 bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold rounded-lg transition-all"
-          >
-            ✂️ Dividir cuenta
-          </button>
+          <!-- Quick Actions Grid -->
+          <div class="grid grid-cols-1 gap-3">
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                v-if="canSplitDetailsPedido"
+                @click="openSplitModalForPedido(selectedPedidoDetails); closeDetailsModal()"
+                class="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-2xl border border-slate-200 transition-all active:scale-95 group"
+              >
+                <Scissors class="w-5 h-5 mb-1 group-hover:rotate-12 transition-transform" />
+                <span class="text-[10px] font-black uppercase tracking-widest">Dividir</span>
+              </button>
 
-          <!-- Botones de acción según el estado -->
-          <div class="space-y-2">
-            <!-- Si está listo para entregar -->
+              <button
+                v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
+                @click="imprimirPedidoAdelantado(selectedPedidoDetails)"
+                :disabled="isPrintingTicket"
+                class="flex flex-col items-center justify-center p-4 bg-slate-900 hover:bg-black text-white rounded-2xl transition-all active:scale-95 group disabled:opacity-50"
+              >
+                <Printer class="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" />
+                <span class="text-[10px] font-black uppercase tracking-widest">
+                  {{ isPrintingTicket ? 'Espere...' : 'Imprimir' }}
+                </span>
+              </button>
+            </div>
+
+            <!-- Primary Action Call -->
             <button
               v-if="selectedPedidoDetails.estado === 'entregado'"
               @click="solicitarCuenta(selectedPedidoDetails); closeDetailsModal()"
-              class="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-all"
+              class="w-full py-4 bg-[#00126D] hover:bg-[#000E5A] text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
-              💳 Solicitar Cuenta
+              <CreditCard class="w-5 h-5" />
+              SOLICITAR CUENTA
             </button>
 
-            <!-- Si es cuenta solicitada -->
             <button
               v-if="selectedPedidoDetails.estado === 'cuenta_solicitada'"
               @click="selectedPedido = selectedPedidoDetails; closeDetailsModal()"
-              class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-all"
+              class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
-              💰 Cobrar Ahora
+              <Wallet class="w-5 h-5" />
+              COBRAR AHORA
             </button>
 
-            <!-- Botón imprimir ticket adelantado -->
+            <!-- Dangerous Action -->
             <button
               v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
-              @click="imprimirPedidoAdelantado(selectedPedidoDetails)"
-              :disabled="isPrintingTicket"
-              class="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm"
+              @click="mostrarConfirmacionCancelacion(selectedPedidoDetails)"
+              class="group flex items-center justify-center gap-2 py-3 text-red-400 hover:text-red-500 font-bold text-xs transition-colors"
             >
-              <span>🖨️</span>
-              {{ isPrintingTicket ? 'Imprimiendo...' : 'Imprimir Ticket' }}
-            </button>
-
-            <!-- Botón cancelar discreto (más pequeño) -->
-             <button
-               v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
-               @click="mostrarConfirmacionCancelacion(selectedPedidoDetails)"
-              class="w-full py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-md transition-all opacity-80 hover:opacity-100"
-            >
-              🗑️ Cancelar Pedido
-            </button>
-
-            <!-- Botón cerrar -->
-            <button
-              @click="closeDetailsModal"
-              class="w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all"
-            >
-              Cerrar
+              <Trash2 class="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
+              CANCELAR PEDIDO
             </button>
           </div>
+
+          <button
+            @click="closeDetailsModal"
+            class="w-full mt-6 py-2 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors"
+          >
+            Regresar
+          </button>
         </div>
       </div>
     </div>

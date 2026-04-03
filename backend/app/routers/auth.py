@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -46,3 +47,8 @@ async def login_simple(
 async def read_users_me(current_user: Usuario = Depends(get_current_active_user)):
     """Obtiene información del usuario actual"""
     return current_user
+
+@router.get("/users", response_model=List[UsuarioResponse])
+async def list_public_users(db: Session = Depends(get_db)):
+    """Lista usuarios activos de forma pública para el selector de login"""
+    return db.query(Usuario).filter(Usuario.activo == True).all()

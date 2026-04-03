@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { 
+  ref, 
+  onMounted, 
+  onUnmounted, 
+  computed, 
+  watch, 
+  nextTick 
+} from 'vue'
 import { useRouter } from 'vue-router'
 import { formatTime } from '@/utils/dateUtils'
 import { useAuthStore } from '../stores/auth'
@@ -8,10 +15,44 @@ import { api } from '../api/client'
 import type { PlatilloResponse, PedidoCreate, ArticuloPedidoCreate } from '../types'
 import PozoleVariantModal from '../components/PozoleVariantModal.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import { 
+  Search, 
+  ShoppingBag, 
+  User, 
+  ChevronRight, 
+  X, 
+  Plus, 
+  Minus, 
+  Check, 
+  Clock, 
+  Trash2,
+  ChevronDown,
+  Info,
+  CreditCard,
+  ChefHat,
+  ArrowLeft,
+  Filter,
+  MoreVertical,
+  LayoutGrid,
+  Package,
+  Truck,
+  ListOrdered,
+  XCircle,
+  PlusSquare,
+  Eye,
+  Save,
+  CheckCircle,
+  ArrowRight,
+  Edit3
+} from 'lucide-vue-next'
 
 const router = useRouter()
 const auth = useAuthStore()
 const pedidosStore = usePedidosStore()
+
+// Búsqueda y filtrado
+const searchQuery = ref('')
+const activeCategory = ref('Todos')
 
 // Referencias reactivas
   const platillos = ref<PlatilloResponse[]>([])
@@ -249,24 +290,35 @@ const categorias = computed(() => {
     .map(p => p.categoria))]
   
   // Ordenamiento personalizado: Postres penúltimo, Bebidas último
-  return cats.sort((a, b) => {
-    // Si uno es Bebidas, va al final
+  const sortedCats = cats.sort((a, b) => {
     if (a === 'Bebidas') return 1
     if (b === 'Bebidas') return -1
-    
-    // Si uno es Postres, va después de todo excepto Bebidas
     if (a === 'Postres') return 1
     if (b === 'Postres') return -1
-    
-    // Resto en orden alfabético
     return a.localeCompare(b)
+  })
+
+  return ['Todos', ...sortedCats]
+})
+
+// Platillos filtrados por búsqueda y categoría
+const filteredPlatillos = computed(() => {
+  return platillos.value.filter(p => {
+    const matchesSearch = !searchQuery.value || 
+      p.nombre.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      (p.kds_name && p.kds_name.toLowerCase().includes(searchQuery.value.toLowerCase()))
+    
+    const matchesCategory = activeCategory.value === 'Todos' || p.categoria === activeCategory.value
+    
+    return p.estado === 'disponible' && matchesSearch && matchesCategory
   })
 })
 
-// Platillos por categoría (excluyendo Pozoles)
+// Agrupar por categoría para el scroll (opcional para la nueva vista)
 const platillosPorCategoria = computed(() => {
   return categorias.value.reduce((acc, cat) => {
-    acc[cat] = platillos.value.filter(p => p.categoria === cat && p.estado === 'disponible')
+    if (cat === 'Todos') return acc
+    acc[cat] = filteredPlatillos.value.filter(p => p.categoria === cat)
     return acc
   }, {} as Record<string, PlatilloResponse[]>)
 })
@@ -326,6 +378,19 @@ const totalCarrito = computed(() => {
   return carrito.value.reduce((sum, item) => sum + (item.platillo.precio * item.cantidad), 0)
 })
 
+// Etiqueta del pedido actual
+const currentOrderLabel = computed(() => {
+  if (!pedidoConfigurado.value) return 'Nuevo Pedido'
+  if (tipoOrden.value === 'aqui') return `Mesa ${mesa.value}`
+  if (tipoOrden.value === 'llevar') return `📦 ${nombreCliente.value || 'Para Llevar'}`
+  if (tipoOrden.value === 'uber_eats') return `🚗 ${nombreCliente.value || 'Uber Eats'}`
+  return 'Pedido'
+})
+
+const currentOrderItemsCount = computed(() => {
+  return carrito.value.reduce((sum, item) => sum + item.cantidad, 0)
+})
+
 // Colores por categoría (mismo esquema que POS)
 const getCategoryColor = (category: string) => {
   const colors: Record<string, string> = {
@@ -336,6 +401,26 @@ const getCategoryColor = (category: string) => {
     'Extras': 'bg-purple-500 hover:bg-purple-600'
   }
   return colors[category] || 'bg-gray-500 hover:bg-gray-600'
+}
+
+// Mapeo de iconos por categoría
+const getCategoryIcon = (categoria: string) => {
+  const map: Record<string, string> = {
+    'Pozole': '🍲',
+    'Bebidas': '🥤',
+    'Antojitos': '🌮',
+    'Postres': '🍰',
+    'Extras': '🍽️',
+    'Enchiladas': '🥘',
+    'Flautas': '🌯',
+    'Sopes': '🫓',
+    'Tacos': '🌮',
+    'Tostadas': '🥪',
+    'Especialidades': '✨',
+    'Guarniciones': '🥗',
+    'Entradas': '🥗'
+  }
+  return map[categoria] || '🍴'
 }
 
 
@@ -767,7 +852,7 @@ const seleccionarMesa = (numeroMesa: string) => {
   if (mesasOcupadasReactivo.value.has(numeroMesa)) {
     // Mesa ocupada - redirigir a Pedidos Actuales
     showMesaModal.value = false
-    showNotificationMessage('Mesa ocupada. Ve a "Pedidos Actuales" para modificar el pedido existente.', 'info')
+    showErrorNotification('Mesa ocupada. Ve a "Pedidos Actuales" para modificar el pedido existente.')
     showTipoOrdenModal.value = true
     return
   }
@@ -1089,250 +1174,401 @@ const guardarCambiosPedido = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex flex-col bg-gradient-to-br from-[#F8FAFC] to-[#EEF2F5]">
+  <div class="min-h-screen flex flex-col bg-slate-50/50 selection:bg-blue-100 italic-shadows">
     <!-- Header -->
     <AppHeader title="Mesero" />
 
-    <main class="flex-1 p-6 pb-24 lg:pb-6">
+    <main class="flex-1 p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative">
+      <!-- Background Decorative Elements -->
+      <div class="fixed top-20 right-0 w-96 h-96 bg-blue-100/30 blur-[120px] rounded-full -z-10 pointer-events-none"></div>
+      <div class="fixed bottom-0 left-0 w-80 h-80 bg-yellow-100/20 blur-[100px] rounded-full -z-10 pointer-events-none"></div>
+
       <!-- Layout responsive: móvil = solo menú, desktop = grid -->
-      <div class="lg:grid lg:grid-cols-3 lg:gap-6">
-        <!-- Menu -->
-        <section class="lg:col-span-2 space-y-6">
-        <!-- Solo mostrar el menú después de configurar el pedido -->
-        <div v-if="!pedidoConfigurado" class="p-8 text-center text-gray-600 font-medium">
-          <div class="text-6xl mb-4">🍽️</div>
-          <h2 class="text-xl font-bold text-[#00126D] mb-2">Configurando pedido...</h2>
-          <p>Selecciona el tipo de orden para continuar</p>
-        </div>
-
-        <div v-else-if="loading" class="p-4 text-center text-gray-600 font-medium">Cargando platillos...</div>
-
-        <div v-else-if="pedidoConfigurado">
-          <!-- Pozoles Section (responsive grid) -->
-          <div class="mx-auto w-full max-w-6xl px-1" v-if="hasAnyPozole">
-            
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <button
-                @click="abrirPozoleModal"
-                class="w-full col-span-1 sm:col-span-2 lg:col-span-2 xl:col-span-4 my-4 bg-gradient-to-br from-green-800 to-green-950 border-2 border-green-900 rounded-lg text-center font-bold text-white flex items-center justify-center h-[50px] p-[5px]"
-              >
-                <span class="text-2xl">🍲</span>
-                <span class="text-lg ml-2">Pozoles</span>
-              </button>
+      <div class="lg:grid lg:grid-cols-12 lg:gap-8 items-start">
+        
+        <!-- Menu Section -->
+        <section class="lg:col-span-8 xl:col-span-9 space-y-8">
+          <!-- Solo mostrar el menú después de configurar el pedido -->
+          <div v-if="!pedidoConfigurado" class="flex flex-col items-center justify-center min-h-[60vh] text-center p-12 bg-white/40 backdrop-blur-md rounded-[2.5rem] border border-white/60 shadow-sm">
+            <div class="w-24 h-24 bg-blue-50 rounded-3xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-blue-100/50">
+              <ChefHat class="w-12 h-12 text-blue-600 opacity-80" />
             </div>
+            <h2 class="text-3xl font-black text-slate-800 mb-3 tracking-tight">Creación de Pedido</h2>
+            <p class="text-slate-500 max-w-sm mx-auto font-medium leading-relaxed italic">Inicia una nueva experiencia gastronómica configurando el tipo de orden.</p>
           </div>
 
-          <!-- Otras Categorías -->
-          <div v-for="categoria in categorias" :key="categoria" class="mb-6">
-            <!-- Header de categoría clickeable -->
-            <button 
-              @click="toggleCategoria(categoria)"
-              class="w-full text-xl font-bold mb-4 px-4 py-3 rounded-lg border-2 text-white bg-gradient-to-r from-[#00126D] to-[#001a4d] hover:from-[#001a4d] hover:to-[#002866] transition-all duration-300 flex items-center justify-between group"
-            >
-              <span>{{ categoria }}</span>
-              <span class="text-2xl transition-transform duration-300" :class="{ 'rotate-180': isCategoriaAbierta(categoria) }">
-                ▼
-              </span>
-            </button>
-            
-            <!-- Contenido de la categoría (colapsable) -->
-            <div 
-              v-if="isCategoriaAbierta(categoria)"
-              class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 animate-in slide-in-from-top duration-300"
-            >
-              <button
-                v-for="platillo in platillosPorCategoria[categoria]"
-                :key="platillo.id"
-                @click="abrirEspecificaciones(platillo)"
-                :class="[
-                  'relative bg-white border-2 rounded-xl p-4 text-left hover:shadow-lg hover:border-[#FDB700] hover:scale-105 group transition-all active:scale-95',
-                  platilloEnCarrito(platillo.id) 
-                    ? 'border-[#FDB700] shadow-lg bg-yellow-50' 
-                    : 'border-gray-200'
-                ]"
-              >
-                <!-- Badge de cantidad -->
-                <div 
-                  v-if="platilloEnCarrito(platillo.id)"
-                  class="absolute -top-2 -right-2 bg-[#FDB700] text-[#00126D] text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-md"
-                >
-                  {{ getCantidadEnCarrito(platillo.id) }}
-                </div>
-                
-                <!-- Precio movido a esquina inferior derecha para lectura rápida -->
-                <div class="absolute bottom-2 right-3 text-[#FDB700] font-semibold text-sm">$ {{ Number(platillo.precio).toFixed(2) }}</div>
-                <div class="font-bold text-[#00126D] group-hover:text-[#3AAD08] text-sm">{{ platillo.kds_name || platillo.nombre }}</div>
-                <!-- Descripción eliminada para MVP -->
-                
-                <!-- Distinción de orden: Ord de 2/4 cuando aplica -->
-                <div v-if="platillo.defaultPortion === 2 || platillo.defaultPortion === 4" class="text-xs text-gray-600 mt-1">
-                  Ord de {{ platillo.defaultPortion }}
-                </div>
-              </button>
-            </div>
+          <div v-else-if="loading" class="flex flex-col items-center justify-center min-h-[40vh] gap-4">
+            <div class="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin"></div>
+            <p class="text-slate-400 font-black text-[10px] uppercase tracking-widest">Preparando Menú...</p>
           </div>
-        </div>
-      </section>
 
-        <!-- Carrito Desktop -->
-        <aside class="hidden lg:block bg-gradient-to-b from-white to-blue-50 border-2 border-gray-200 rounded-2xl p-6 flex flex-col gap-5 h-screen sticky top-0 shadow-xl">
-        <div class="text-center border-b pb-4">
-          <h2 class="text-lg font-bold text-[#00126D] flex items-center justify-center gap-2">
-            <span v-if="tipoOrden === 'aqui'">🪑 Mesa {{ mesa }}</span>
-            <span v-else-if="tipoOrden === 'llevar'">📦 {{ nombreCliente }}</span>
-            <span v-else-if="tipoOrden === 'uber_eats'">🚗 {{ nombreCliente }}</span>
-          </h2>
-        </div>
-
-        <!-- Items del carrito -->
-        <div class="flex-1 flex flex-col">
-          <div class="text-xs font-semibold text-gray-600 mb-3">🛒 CARRITO ({{ carrito.length }} items)</div>
-          <div class="space-y-2 flex-1 overflow-auto">
-            <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-4">Sin artículos</div>
-            <div v-for="(item, index) in carrito" :key="index" class="bg-white border-2 border-gray-100 rounded-lg p-3 hover:shadow-md transition">
-              <div class="flex items-center justify-between mb-2">
-                <div class="flex-1">
-                  <div class="font-bold text-[#00126D] text-sm">{{ item.platillo.kds_name || item.platillo.nombre }}</div>
-                  <div class="text-xs text-[#FDB700] font-semibold">$ {{ Number(item.platillo.precio).toFixed(2) }}</div>
+          <div v-else-if="pedidoConfigurado" class="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <!-- Order Context Bar (Mobile only, Desktop has Sidebar) -->
+            <div v-if="isMobile" class="flex items-center justify-between mb-6 px-2">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+                  <User v-if="tipoOrden === 'aqui'" class="w-5 h-5 text-white" />
+                  <Truck v-else class="w-5 h-5 text-white" />
                 </div>
-                <div class="flex items-center gap-3">
-                  <!-- Controles de cantidad -->
-                  <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
-                    <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
-                    <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
-                  </div>
-                  <!-- Botón eliminar separado -->
-                  <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm border border-red-200" @click="eliminarDelCarrito(index)">🗑️</button>
+                <div>
+                  <h3 class="font-black text-slate-800 leading-none mb-1">{{ currentOrderLabel }}</h3>
+                  <p class="text-[9px] font-bold text-blue-500 uppercase tracking-widest">{{ tipoOrden.replace('_', ' ') }}</p>
                 </div>
               </div>
-              <input v-model="item.modificaciones" placeholder="Notas (opcional)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#FDB700]" />
+              <button @click="showTipoOrdenModal = true" class="p-2 rounded-xl bg-slate-100 text-slate-400 hover:bg-slate-200 transition-colors">
+                <Edit3 class="w-5 h-5" />
+              </button>
             </div>
-          </div>
-        </div>
 
-        <!-- Total y Acciones -->
-        <div class="space-y-3">
-          <!-- Botón cancelar (separado del total) -->
-          <button 
-            @click="cancelarPedidoDesktop" 
-            class="w-full py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all text-sm font-medium"
-          >
-            🗑️ Cancelar Pedido
-          </button>
-          
-          <!-- Total -->
-          <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] rounded-xl p-4 text-white">
-            <div class="flex items-center justify-between mb-3">
-              <span class="font-bold text-lg">💰 TOTAL</span>
-              <span class="text-2xl font-black">$ {{ totalCarrito.toFixed(2) }}</span>
+            <!-- Pozoles Section (Premium Hero Card) -->
+            <div class="mb-10 px-1" v-if="hasAnyPozole">
+              <div class="relative overflow-hidden group">
+                <button
+                  @click="abrirPozoleModal"
+                  class="w-full relative z-10 bg-slate-900 border border-slate-800 rounded-[2rem] p-8 text-left transition-all duration-500 hover:scale-[1.01] hover:shadow-2xl hover:shadow-blue-900/20 active:scale-95 group overflow-hidden"
+                >
+                  <!-- Decorative circle backdrop -->
+                  <div class="absolute -right-20 -top-20 w-80 h-80 bg-blue-600/20 blur-[80px] group-hover:bg-blue-500/30 transition-colors duration-700 rounded-full"></div>
+                  
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                    <div class="flex items-center gap-6">
+                      <div class="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center border border-white/10 group-hover:rotate-6 transition-transform duration-500 transform-gpu">
+                        <span class="text-3xl">🍲</span>
+                      </div>
+                      <div>
+                        <h2 class="text-2xl font-black text-white tracking-tight mb-1">Pozoles</h2>
+                        <p class="text-blue-200/60 font-medium text-sm">Personaliza cada ingrediente al gusto</p>
+                      </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-4">
+                      <div class="flex -space-x-2">
+                        <div v-for="c in ['Verde', 'Blanco', 'Rojo']" :key="c" :class="`w-8 h-8 rounded-full border-2 border-slate-900 ${c === 'Verde' ? 'bg-emerald-500' : c === 'Blanco' ? 'bg-slate-100' : 'bg-red-500'}`"></div>
+                      </div>
+                      <div class="bg-blue-600 text-white p-3 rounded-full flex items-center justify-center group-hover:translate-x-2 transition-transform duration-500">
+                        <ArrowRight class="w-5 h-5" />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </div>
             </div>
-            <div class="text-xs text-blue-200 mb-3 text-center">
-              💳 Pago se procesará en caja
+
+            <!-- Search & Filters -->
+            <div class="mb-8 flex flex-col sm:flex-row gap-4 px-1">
+              <div class="relative flex-1 group">
+                <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
+                <input 
+                  v-model="searchQuery" 
+                  type="text" 
+                  placeholder="¿Qué platillo buscas hoy?" 
+                  class="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border border-slate-200/60 focus:border-blue-600/50 focus:ring-4 focus:ring-blue-600/5 outline-none font-bold text-slate-700 transition-all placeholder:text-slate-300 shadow-sm"
+                />
+              </div>
+              
+              <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                <button 
+                  v-for="cat in categorias" 
+                  :key="cat"
+                  @click="activeCategory = cat"
+                  :class="[
+                    'px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] transition-all whitespace-nowrap border',
+                    activeCategory === cat 
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 translate-y-[-2px]' 
+                      : 'bg-white border-slate-200/60 text-slate-400 hover:border-blue-200 hover:text-blue-600'
+                  ]"
+                >
+                  {{ cat }}
+                </button>
+              </div>
             </div>
-            <button 
-              @click="enviarPedido" 
-              :disabled="loading || carrito.length === 0" 
-              class="w-full py-3 rounded-lg text-[#00126D] bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
-            >
-              {{ loading ? '⏳ Procesando...' : (modoAgregarArticulos ? `➕ Agregar a Mesa ${mesa}` : '🍳 Enviar a Cocina') }}
-            </button>
+
+            <!-- Menú por categorías -->
+            <div class="space-y-12">
+              <div v-for="categoria in (activeCategory === 'Todos' ? categorias.filter(c => c !== 'Todos') : [activeCategory])" :key="categoria">
+                <div class="flex items-center gap-4 mb-6 px-2">
+                  <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+                    <span class="text-xl opacity-80">{{ getCategoryIcon(categoria) }}</span>
+                  </div>
+                  <h3 class="text-xl font-black text-slate-800 tracking-tight">{{ categoria }}</h3>
+                  <div class="h-px flex-1 bg-gradient-to-r from-slate-200/60 to-transparent"></div>
+                  <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest">{{ platillosPorCategoria[categoria]?.length || 0 }} items</span>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+                  <button
+                    v-for="platillo in platillosPorCategoria[categoria]"
+                    :key="platillo.id"
+                    @click="abrirEspecificaciones(platillo)"
+                    :class="[
+                      'group relative flex flex-col bg-white rounded-3xl p-5 text-left transition-all duration-300 border hover:scale-[1.02] transform-gpu',
+                      platilloEnCarrito(platillo.id) 
+                        ? 'border-blue-600/40 bg-blue-50/20 shadow-xl shadow-blue-600/5 ring-1 ring-blue-600/10' 
+                        : 'border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/60 hover:border-blue-200'
+                    ]"
+                  >
+                    <!-- Quantity Badge -->
+                    <div 
+                      v-if="platilloEnCarrito(platillo.id)"
+                      class="absolute -top-3 -right-3 bg-blue-600 text-white text-[10px] font-black w-8 h-8 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200 ring-2 ring-white animate-in zoom-in-50 duration-300"
+                    >
+                      {{ getCantidadEnCarrito(platillo.id) }}
+                    </div>
+                    
+                    <div class="flex-1 space-y-4">
+                      <div class="flex justify-between items-start">
+                        <div class="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center group-hover:bg-blue-50 group-hover:scale-110 transition-all duration-500">
+                          <span class="text-2xl group-hover:rotate-12 transition-transform duration-500">{{ getCategoryIcon(platillo.categoria) }}</span>
+                        </div>
+                        <div class="text-sm font-black text-blue-600">$ {{ Number(platillo.precio).toFixed(0) }}<span class="text-[10px] opacity-60">.00</span></div>
+                      </div>
+                      
+                      <div>
+                        <h4 class="font-black text-slate-800 text-sm leading-tight mb-1 group-hover:text-blue-600 transition-colors uppercase tracking-tight">{{ platillo.kds_name || platillo.nombre }}</h4>
+                        <!-- Porción context -->
+                        <div v-if="platillo.defaultPortion === 2 || platillo.defaultPortion === 4" class="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-0.5 rounded-full inline-block">
+                          Orden de {{ platillo.defaultPortion }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                      <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest group-hover:text-blue-400">Personalizar</span>
+                      <Plus class="w-4 h-4 text-slate-300 group-hover:text-blue-600 transition-colors" />
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <!-- Dynamic Cart Sidebar - Desktop -->
+        <aside class="hidden lg:block lg:col-span-4 xl:col-span-3 sticky top-24 max-h-[calc(100vh-8rem)]">
+          <div class="bg-white rounded-[2.5rem] border border-slate-200/60 shadow-2xl flex flex-col overflow-hidden h-full">
+            <!-- Sidebar Header -->
+            <div class="p-8 border-b border-slate-50">
+              <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                  <div class="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
+                    <ShoppingBag class="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 class="font-black text-slate-800 tracking-tight leading-none mb-1">Pedido Actual</h2>
+                    <p class="text-[9px] font-bold text-blue-500 uppercase tracking-widest">{{ currentOrderLabel }}</p>
+                  </div>
+                </div>
+                <div v-if="carrito.length > 0" class="w-6 h-6 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-[10px] font-black">
+                  {{ currentOrderItemsCount }}
+                </div>
+              </div>
+            </div>
+
+            <!-- Sidebar Items -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
+              <div v-if="carrito.length === 0" class="flex flex-col items-center justify-center h-full text-center p-8 opacity-40 italic">
+                <Package class="w-12 h-12 mb-3 text-slate-300" />
+                <p class="text-sm font-medium text-slate-400">El lienzo está en blanco.<br>Comienza a agregar platillos.</p>
+              </div>
+
+              <div v-for="(item, index) in carrito" :key="index" class="group bg-slate-50 hover:bg-blue-50/50 rounded-2xl p-4 border border-transparent hover:border-blue-100 transition-all duration-300">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                  <div class="flex-1 min-w-0">
+                    <h5 class="font-black text-slate-800 text-[13px] leading-tight truncate uppercase tracking-tight">{{ item.platillo.kds_name || item.platillo.nombre }}</h5>
+                    <div v-if="item.proteina || item.tamano" class="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-1">
+                      {{ item.proteina }} • {{ item.tamano }}
+                    </div>
+                  </div>
+                  <div class="text-sm font-black text-slate-400">$ {{ (Number(item.platillo.precio) * item.cantidad).toFixed(0) }}</div>
+                </div>
+
+                <div class="flex items-center justify-between gap-4">
+                  <!-- Counter Component (Refined) -->
+                  <div class="flex items-center gap-1 bg-white p-1 rounded-xl shadow-sm border border-slate-100">
+                    <button @click="ajustarCantidad(index, -1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-red-500 transition-colors">
+                      <Minus class="w-3 h-3" />
+                    </button>
+                    <span class="w-6 text-center text-xs font-black text-slate-700">{{ item.cantidad }}</span>
+                    <button @click="ajustarCantidad(index, 1)" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-blue-600 transition-colors">
+                      <Plus class="w-3 h-3" />
+                    </button>
+                  </div>
+                  
+                  <button @click="eliminarDelCarrito(index)" class="p-2 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100">
+                    <Trash2 class="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <div class="mt-3 relative group/note">
+                  <Edit3 class="absolute left-2.5 top-2.5 w-3 h-3 text-slate-300 group-focus-within/note:text-blue-500 transition-colors" />
+                  <input 
+                    v-model="item.modificaciones" 
+                    placeholder="Notas especiales..." 
+                    class="w-full pl-8 pr-3 py-2 bg-white/50 border border-slate-100 rounded-xl text-[10px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all placeholder:text-slate-300 italic"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Sidebar Footer -->
+            <div class="p-8 bg-slate-900 text-white mt-auto">
+              <!-- Total -->
+              <div class="flex items-center justify-between mb-8">
+                <span class="text-[10px] font-black uppercase tracking-[0.3em] text-blue-400">Total Inversión</span>
+                <div class="text-3xl font-black tracking-tighter">
+                  <span class="text-blue-400 text-sm font-black mr-1">$</span>{{ totalCarrito.toFixed(0) }}<span class="text-sm opacity-40">.{{ totalCarrito.toFixed(2).split('.')[1] }}</span>
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="space-y-4">
+                <button 
+                  @click="enviarPedido" 
+                  :disabled="loading || carrito.length === 0" 
+                  class="w-full py-5 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:grayscale transition-all duration-500 shadow-xl shadow-blue-900/40 relative group overflow-hidden"
+                >
+                  <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
+                  <div class="flex items-center justify-center gap-3">
+                    <span v-if="loading" class="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></span>
+                    <ChefHat v-else class="w-5 h-5" />
+                    <span class="font-black text-xs uppercase tracking-widest">{{ modoAgregarArticulos ? `Fusionar con Mesa ${mesa}` : 'Enviar a Cocina' }}</span>
+                  </div>
+                </button>
+
+                <button @click="cancelarPedidoDesktop" class="w-full py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-red-400 transition-colors flex items-center justify-center gap-2">
+                   <span>Limpiar Mesa</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </aside>
       </div>
     </main>
 
-    <!-- Botón flotante móvil -->
-    <button
-      v-if="isMobile"
-      @click="toggleMobileCart"
-      class="fixed bottom-6 right-6 w-20 h-20 bg-[#00126D] text-white rounded-full shadow-lg flex items-center justify-center z-40 hover:scale-110 transition-all"
-    >
-      <div class="text-center">
-        <div class="text-xl">🛒</div>
-        <div v-if="carrito.length > 0" class="absolute -top-2 -right-2 bg-[#FDB700] text-black text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
-          {{ carrito.length }}
+    <!-- Botón flotante móvil (Premium Fab) -->
+    <div v-if="isMobile" class="fixed bottom-6 right-6 z-[110]">
+      <button
+        @click="toggleMobileCart"
+        class="relative w-24 h-24 bg-slate-900 text-white rounded-[2.5rem] shadow-2xl shadow-slate-950/40 flex items-center justify-center active:scale-95 transition-all duration-300 group"
+      >
+        <!-- Inner Glow Container (to keep glow contained if needed, or let it bleed for atmosphere) -->
+        <div v-if="carrito.length > 0" class="absolute inset-0 bg-blue-600/20 blur-2xl animate-pulse rounded-[2.5rem]"></div>
+        
+        <div class="relative flex flex-col items-center gap-1">
+          <ShoppingBag class="w-8 h-8 group-hover:scale-110 transition-transform text-white" />
+          <div v-if="carrito.length > 0 && mesa" class="flex flex-col items-center">
+             <span class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Mesa</span>
+             <span class="text-xl font-black text-white leading-none">{{ mesa }}</span>
+          </div>
         </div>
-      </div>
-    </button>
+        
+        <!-- Counter Badge: Now correctly floating outside -->
+        <div 
+          v-if="carrito.length > 0" 
+          class="absolute -top-1 -right-1 w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center border-4 border-white shadow-xl animate-in zoom-in-50 duration-500 z-20"
+        >
+          <span class="text-xs font-black text-white italic">{{ carrito.reduce((acc, item) => acc + item.cantidad, 0) }}</span>
+        </div>
+      </button>
+    </div>
 
-    <!-- Carrito Móvil (Full Screen) -->
+    <!-- Carrito Móvil (Full Screen Drawer) -->
     <div
       v-if="isMobile && showMobileCart"
-      class="fixed inset-0 z-50"
+      class="fixed inset-0 z-[100] flex flex-col"
     >
       <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black bg-opacity-50"></div>
+      <div @click="closeMobileCart" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity duration-300"></div>
       
       <!-- Carrito Panel -->
-      <div class="carrito-mobile relative w-full h-full bg-white transform transition-transform duration-300 ease-out translate-y-0">
+      <div class="carrito-mobile relative mt-auto w-full max-h-[92vh] bg-white rounded-t-[3rem] shadow-2xl flex flex-col overflow-hidden transform transition-transform duration-500 ease-out translate-y-0">
+        <!-- Handle for drawer feel -->
+        <div class="flex justify-center pt-4 pb-2">
+          <div class="w-12 h-1.5 bg-slate-100 rounded-full"></div>
+        </div>
+
         <!-- Header del carrito móvil -->
-        <div class="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 class="text-lg font-bold text-[#00126D] flex items-center gap-2">
-            <span v-if="tipoOrden === 'aqui'">🪑 Mesa {{ mesa }}</span>
-            <span v-else-if="tipoOrden === 'llevar'">📦 {{ nombreCliente }}</span>
-            <span v-else-if="tipoOrden === 'uber_eats'">🚗 {{ nombreCliente }}</span>
-          </h2>
-          <button @click="closeMobileCart" class="text-gray-400 hover:text-gray-600 text-xl">
-            ←
+        <div class="flex items-center justify-between p-8 pt-4">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center border border-blue-100/50">
+              <ShoppingBag class="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <h2 class="text-xl font-black text-slate-800 leading-none mb-1">Mi Carrito</h2>
+              <p class="text-[10px] font-bold text-blue-500 uppercase tracking-widest">{{ currentOrderLabel }}</p>
+            </div>
+          </div>
+          <button @click="closeMobileCart" class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
+            <X class="w-5 h-5" />
           </button>
         </div>
 
-        <!-- Contenido del carrito móvil - ESTRUCTURA FIJA -->
-        <div class="flex flex-col h-[calc(100vh-80px)]">
-          <!-- Items del carrito - ÁREA SCROLLEABLE -->
-          <div class="flex-1 p-6 pb-0 min-h-0">
-            <div class="text-xs font-semibold text-gray-600 mb-3">🛒 CARRITO ({{ carrito.length }} items)</div>
-            <div class="h-full overflow-y-auto space-y-2 pb-4">
-              <div v-if="carrito.length === 0" class="text-sm text-gray-500 text-center py-8">Sin artículos</div>
-              <div v-for="(item, index) in carrito" :key="index" class="bg-gray-50 border-2 border-gray-100 rounded-lg p-3 hover:shadow-md transition">
-                <div class="flex items-center justify-between mb-2">
+        <!-- Contenido del carrito móvil -->
+        <div class="flex flex-col flex-1 overflow-hidden font-bold">
+          <div class="flex-1 overflow-y-auto px-8 py-2 space-y-4">
+            <div v-if="carrito.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
+              <Package class="w-16 h-16 text-slate-300 mb-4" />
+              <p class="text-slate-500 italic">El carrito está vacío</p>
+            </div>
+
+            <div v-for="(item, index) in carrito" :key="index" class="bg-slate-50 rounded-3xl p-5 border border-transparent shadow-sm">
+                <div class="flex items-center justify-between gap-4 mb-4">
                   <div class="flex-1">
-                    <div class="font-bold text-[#00126D] text-sm">{{ item.platillo.kds_name || item.platillo.nombre }}</div>
-                    <div class="text-xs text-[#FDB700] font-semibold">$ {{ Number(item.platillo.precio).toFixed(2) }}</div>
+                    <h4 class="font-black text-slate-800 text-sm uppercase tracking-tight">{{ item.platillo.kds_name || item.platillo.nombre }}</h4>
+                    <div class="text-[10px] font-black text-blue-500 mt-1">$ {{ Number(item.platillo.precio).toFixed(0) }} c/u</div>
                   </div>
-                  <div class="flex items-center gap-3">
-                    <!-- Controles de cantidad -->
-                    <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                      <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, -1)">−</button>
-                      <div class="w-6 text-center font-bold text-sm">{{ item.cantidad }}</div>
-                      <button class="px-2 py-1 rounded bg-white hover:bg-gray-200 transition font-bold text-sm" @click="ajustarCantidad(index, 1)">+</button>
-                    </div>
-                    <!-- Botón eliminar separado -->
-                    <button class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 transition text-red-600 font-bold text-sm border border-red-200" @click="eliminarDelCarrito(index)">🗑️</button>
+                  
+                  <div class="flex items-center gap-2 bg-white p-1 rounded-2xl shadow-inner ring-1 ring-slate-100">
+                    <button @click="ajustarCantidad(index, -1)" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 bg-slate-50 active:bg-slate-100 transition-colors">
+                      <Minus class="w-4 h-4" />
+                    </button>
+                    <span class="w-8 text-center text-sm font-black text-slate-800">{{ item.cantidad }}</span>
+                    <button @click="ajustarCantidad(index, 1)" class="w-9 h-9 rounded-xl flex items-center justify-center text-white bg-blue-600 active:bg-blue-700 transition-colors shadow-lg shadow-blue-100">
+                      <Plus class="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
-                <input v-model="item.modificaciones" placeholder="Notas (opcional)" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#FDB700]" />
-              </div>
+
+                <div class="flex items-center gap-4">
+                  <div class="flex-1 relative group">
+                    <Edit3 class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 pointer-events-none" />
+                    <input 
+                      v-model="item.modificaciones" 
+                      placeholder="Instrucciones especiales..." 
+                      class="w-full pl-10 pr-4 py-3 bg-white border border-slate-100 rounded-2xl text-[11px] placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all font-medium"
+                    />
+                  </div>
+                  <button @click="eliminarDelCarrito(index)" class="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center active:scale-95 transition-all">
+                    <Trash2 class="w-5 h-5" />
+                  </button>
+                </div>
             </div>
           </div>
           
-          <!-- Total y botones - ANCLADO EN LA PARTE INFERIOR -->
-          <div class="flex-shrink-0 border-t bg-white p-6 space-y-3 shadow-lg">
-            <!-- Botón cancelar móvil -->
-            <button 
-              @click="cancelarPedidoMovil" 
-              class="w-full py-2 text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all text-sm font-medium"
-            >
-              🗑️ Cancelar Pedido
-            </button>
-            
-            <!-- Total -->
-            <div class="bg-gradient-to-r from-[#00126D] to-[#001a4d] rounded-xl p-4 text-white">
-              <div class="flex items-center justify-between mb-3">
-                <span class="font-bold text-lg">💰 TOTAL</span>
-                <span class="text-2xl font-black">$ {{ totalCarrito.toFixed(2) }}</span>
+          <!-- Bottom Action Area -->
+          <div class="p-8 pb-12 bg-white border-t border-slate-100 space-y-6">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Total del pedido</span>
+              <div class="text-3xl font-black text-slate-800 tracking-tighter">
+                <span class="text-blue-600 text-sm align-super mr-1">$</span>{{ totalCarrito.toFixed(0) }}<span class="text-sm opacity-40">.{{ totalCarrito.toFixed(2).split('.')[1] }}</span>
               </div>
-              <div class="text-xs text-blue-200 mb-3 text-center">
-                💳 Pago se procesará en caja
-              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <button 
+                @click="cancelarPedidoMovil" 
+                class="py-5 rounded-2xl bg-slate-100 text-slate-500 text-xs font-black uppercase tracking-widest active:bg-red-50 active:text-red-500 transition-all"
+              >
+                Limpiar
+              </button>
               <button 
                 @click="enviarPedido" 
                 :disabled="loading || carrito.length === 0" 
-                class="w-full py-3 rounded-lg text-[#00126D] bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all shadow-lg hover:shadow-xl active:scale-95"
+                class="py-5 rounded-2xl bg-blue-600 text-white shadow-xl shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                {{ loading ? '⏳ Procesando...' : (modoAgregarArticulos ? `➕ Agregar a Mesa ${mesa}` : '🍳 Enviar a Cocina') }}
+                <ChefHat v-if="!loading" class="w-5 h-5" />
+                <div v-else class="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+                <span class="text-xs font-black uppercase tracking-widest">{{ loading ? 'Enviando...' : 'Pedir Ahora' }}</span>
               </button>
             </div>
           </div>
@@ -1340,182 +1576,234 @@ const guardarCambiosPedido = async () => {
       </div>
     </div>
 
-    <!-- Modal Inicial - Tipo de Orden -->
+    <!-- Modal Inicial - Full Screen Mobile / Modal Desktop -->
     <div
       v-if="showTipoOrdenModal"
-      class="fixed inset-0 z-50 flex items-center justify-center"
+      class="fixed inset-0 z-[150] flex items-center justify-center sm:p-6"
     >
-      <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+      <!-- Backdrop (Only visible on desktop) -->
+      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-500 hidden sm:block"></div>
       
-      <!-- Modal Content -->
-      <div class="relative bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
-        <!-- Header -->
-        <div class="text-center mb-8">
-          <div class="text-6xl mb-4">🍽️</div>
-          <h3 class="text-2xl font-bold text-[#00126D] mb-2">Nuevo Pedido</h3>
-          <p class="text-gray-600">Selecciona el tipo de orden</p>
+      <!-- Modal Content: Full screen on mobile, rounded modal on sm+ -->
+      <div class="relative bg-white sm:rounded-[3rem] w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-xl shadow-2xl overflow-hidden animate-in sm:zoom-in-95 slide-in-from-bottom-10 duration-700 flex flex-col">
+        
+        <!-- Header: More compact to save space -->
+        <div class="px-6 py-4 sm:p-10 text-center border-b border-slate-50 flex-shrink-0 bg-white">
+          <h3 class="text-xl sm:text-3xl font-black text-slate-800 tracking-tight leading-none uppercase mb-1">Nueva Comanda</h3>
+          <p class="text-[9px] sm:text-xs font-black text-blue-500 uppercase tracking-widest opacity-80">Seleccionar Modalidad</p>
         </div>
         
-        <!-- Opciones de tipo de orden -->
-        <div class="space-y-4">
+        <!-- Content Area: Buttons fill 75% of screen -->
+        <div class="p-4 sm:p-10 flex-1 flex flex-col gap-4 overflow-y-auto">
+          
+          <!-- Pedidos Actuales (Approx 20% height) -->
           <button
             @click="mostrarPedidosActuales"
-            class="w-full p-6 bg-white border-2 border-purple-200 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all group text-left"
+            class="w-full group relative p-6 bg-slate-900 text-white rounded-[2rem] overflow-hidden shadow-xl hover:shadow-blue-900/20 transition-all duration-500 active:scale-95 flex-1 min-h-[120px] flex items-center"
           >
-            <div class="flex items-center gap-4">
-              <div class="text-4xl">📋</div>
+            <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-blue-600 blur-[60px] opacity-40 group-hover:opacity-60 transition-opacity"></div>
+            <div class="flex items-center gap-6 relative z-10 text-left w-full">
+              <div class="w-14 h-14 sm:w-16 sm:h-16 bg-white/10 backdrop-blur-xl rounded-2xl border border-white/10 flex items-center justify-center group-hover:rotate-6 transition-transform flex-shrink-0">
+                <ListOrdered class="w-8 h-8 text-blue-400" />
+              </div>
               <div>
-                <div class="text-lg font-bold text-[#00126D] group-hover:text-purple-600">Pedidos Actuales</div>
-                <div class="text-sm text-gray-600">Ver y modificar pedidos en progreso</div>
+                <div class="text-xl sm:text-2xl font-black tracking-tight mb-0.5 leading-none">Ver Mesas Activas</div>
+                <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest opacity-80 italic">Comandas en Curso</div>
               </div>
             </div>
           </button>
-          
-          <button
-            @click="configurarTipoOrden('aqui')"
-            class="w-full p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-[#FDB700] hover:bg-yellow-50 transition-all group text-left"
-          >
-            <div class="flex items-center gap-4">
-              <div class="text-4xl">🪑</div>
-              <div>
-                <div class="text-lg font-bold text-[#00126D] group-hover:text-[#FDB700]">Para aquí</div>
-                <div class="text-sm text-gray-600">Consumo en el restaurante</div>
+
+          <!-- Middle Options Grid (Approx 40% height) -->
+          <div class="grid grid-cols-2 gap-4 flex-[2.5] min-h-[280px]">
+            <!-- Servicio Mesa -->
+            <button
+              @click="configurarTipoOrden('aqui')"
+              class="group p-8 bg-white border-2 border-slate-100 rounded-[2.5rem] hover:border-blue-600/30 hover:bg-blue-50/50 transition-all duration-300 active:scale-95 text-left relative overflow-hidden flex flex-col justify-between"
+            >
+              <div class="w-14 h-14 sm:w-16 sm:h-16 bg-blue-50 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 transition-colors">
+                <Search class="w-8 h-8 text-blue-600 group-hover:text-white" />
               </div>
-            </div>
-          </button>
-          
-          <button
-            @click="configurarTipoOrden('llevar')"
-            class="w-full p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-[#FDB700] hover:bg-yellow-50 transition-all group text-left"
-          >
-            <div class="flex items-center gap-4">
-              <div class="text-4xl">📦</div>
               <div>
-                <div class="text-lg font-bold text-[#00126D] group-hover:text-[#FDB700]">Para llevar</div>
-                <div class="text-sm text-gray-600">Cliente recoge su orden</div>
+                <h4 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight uppercase">Comer<br>Aquí</h4>
+                <div class="w-10 h-1.5 bg-blue-600 mt-3 rounded-full"></div>
               </div>
-            </div>
-          </button>
+            </button>
+            
+            <!-- Para Llevar -->
+            <button
+              @click="configurarTipoOrden('llevar')"
+              class="group p-8 bg-white border-2 border-slate-100 rounded-[2.5rem] hover:border-blue-600/30 hover:bg-blue-50/50 transition-all duration-300 active:scale-95 text-left relative overflow-hidden flex flex-col justify-between"
+            >
+              <div class="w-14 h-14 sm:w-16 sm:h-16 bg-blue-50 rounded-2xl flex items-center justify-center group-hover:bg-blue-600 transition-colors">
+                <Truck class="w-8 h-8 text-blue-600 group-hover:text-white" />
+              </div>
+              <div>
+                <h4 class="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-tight uppercase">Para<br>Llevar</h4>
+                <div class="w-10 h-1.5 bg-blue-600 mt-3 rounded-full"></div>
+              </div>
+            </button>
+          </div>
           
+          <!-- Food Delivery (Approx 15% height) -->
           <button
             @click="configurarTipoOrden('uber_eats')"
-            class="w-full p-6 bg-white border-2 border-gray-200 rounded-xl hover:border-[#FDB700] hover:bg-yellow-50 transition-all group text-left"
+            class="w-full group p-6 bg-slate-50 border-2 border-slate-100 rounded-[2rem] hover:border-blue-600/30 hover:bg-blue-50 transition-all duration-300 active:scale-95 flex items-center justify-between flex-1 min-h-[100px]"
           >
-            <div class="flex items-center gap-4">
-              <div class="text-4xl">🚗</div>
-              <div>
-                <div class="text-lg font-bold text-[#00126D] group-hover:text-[#FDB700]">Uber Eats</div>
-                <div class="text-sm text-gray-600">Entrega a domicilio</div>
+            <div class="flex items-center gap-6 text-left">
+              <div class="w-14 h-14 bg-white rounded-2xl flex items-center justify-center border border-slate-100 group-hover:rotate-6 transition-transform shadow-sm flex-shrink-0">
+                <CheckCircle class="w-8 h-8 text-emerald-500" />
               </div>
+              <div>
+                <div class="text-lg sm:text-xl font-black text-slate-800 tracking-tight leading-none mb-1 uppercase">Food Delivery</div>
+                <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-80">Uber Eats / APP</div>
+              </div>
+            </div>
+            <div class="w-10 h-10 bg-white rounded-full flex items-center justify-center border border-slate-100 text-slate-300 group-hover:text-blue-600 group-hover:border-blue-200 transition-all">
+              <Plus class="w-5 h-5" />
             </div>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Modal de Nombre de Cliente -->
+    <!-- Modal de Nombre de Cliente (Elevated Design) -->
     <div
       v-if="showNombreClienteModal"
-      class="fixed inset-0 z-50 flex items-center justify-center"
+      class="fixed inset-0 z-[120] flex items-center justify-center p-4 lg:p-8"
     >
       <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md"></div>
       
       <!-- Modal Content -->
-      <div class="relative bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+      <div class="relative bg-white rounded-[3rem] p-12 max-w-xl w-full mx-auto shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500">
+        <!-- Accent Decoration -->
+        <div class="absolute top-0 right-0 w-48 h-48 bg-blue-50 blur-[80px] -z-10 rounded-full"></div>
+
         <!-- Header -->
-        <div class="text-center mb-8">
-          <div class="text-6xl mb-4">{{ tipoOrden === 'uber_eats' ? '🚗' : '📦' }}</div>
-          <h3 class="text-2xl font-bold text-[#00126D] mb-2">
-            {{ tipoOrden === 'uber_eats' ? 'Pedido Uber Eats' : 'Pedido Para Llevar' }}
-          </h3>
-          <p class="text-gray-600">Ingresa el nombre del cliente</p>
+        <div class="text-center mb-10">
+          <div class="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-blue-100 shadow-sm">
+            <span class="text-4xl text-blue-600">{{ tipoOrden === 'uber_eats' ? '🚗' : '📦' }}</span>
+          </div>
+          <h3 class="text-3xl font-black text-slate-800 tracking-tight mb-2 uppercase">Identificador</h3>
+          <p class="text-slate-400 font-medium text-sm">¿A nombre de quién registramos el pedido?</p>
         </div>
         
-        <!-- Campo de nombre -->
-        <div class="mb-6">
-          <label class="block text-sm font-bold text-[#00126D] mb-3">
-            👤 Nombre del Cliente
+        <!-- Campo de nombre (Refined Input) -->
+        <div class="mb-10 group">
+          <label class="block text-[10px] font-black text-blue-600 mb-3 uppercase tracking-widest px-1">
+             Nombre del Cliente
           </label>
-          <input
-            v-model="nombreCliente"
-            type="text"
-            placeholder="Nombre completo del cliente"
-            class="w-full p-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-[#FDB700] focus:border-[#FDB700] transition bg-white text-lg"
-            @keyup.enter="confirmarNombreCliente"
-            autofocus
-          />
+          <div class="relative">
+            <User class="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-blue-500 transition-colors" />
+            <input
+              v-model="nombreCliente"
+              type="text"
+              placeholder="Ej. Juan Pérez"
+              class="w-full pl-16 pr-6 py-5 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-4 focus:ring-blue-100 focus:bg-white focus:border-blue-200 transition-all text-xl font-bold text-slate-800 placeholder:text-slate-300"
+              @keyup.enter="confirmarNombreCliente"
+              autofocus
+            />
+          </div>
         </div>
         
-        <!-- Botones -->
-        <div class="flex gap-3">
+        <!-- Botones (Premium Palette) -->
+        <div class="flex gap-4">
           <button
             @click="cerrarNombreClienteModal"
-            class="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-[#00126D] rounded-lg transition-all"
+            class="flex-[0.4] py-5 bg-slate-100 hover:bg-slate-200 text-slate-500 font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2"
           >
-            ← Atrás
+            Atrás
           </button>
           <button
             @click="confirmarNombreCliente"
             :disabled="!nombreCliente.trim()"
-            class="flex-1 px-4 py-3 bg-[#FDB700] hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed text-[#00126D] font-bold rounded-lg transition-all"
+            class="flex-1 py-5 bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:grayscale text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all active:scale-95 shadow-xl shadow-blue-100 flex items-center justify-center gap-2"
           >
-            Continuar →
+            Continuar  <ChevronRight class="w-4 h-4" />
           </button>
         </div>
       </div>
     </div>
 
-    <!-- Modal de Pedidos Actuales -->
+    <!-- Modal de Pedidos Actuales (Modern Dashboard Style) -->
     <div
       v-if="showPedidosActualesModal"
-      class="fixed inset-0 z-50 flex items-center justify-center"
+      class="fixed inset-0 z-[130] flex items-center justify-center p-4 md:p-8"
     >
       <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md"></div>
       
       <!-- Modal Content -->
-      <div class="relative bg-white rounded-2xl p-6 max-w-4xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="relative bg-white rounded-[3.5rem] w-full max-w-5xl shadow-2xl flex flex-col overflow-hidden h-[85vh] animate-in slide-in-from-bottom-10 duration-700">
         <!-- Header -->
-        <div class="text-center mb-6">
-          <div class="text-4xl mb-2">📋</div>
-          <h3 class="text-2xl font-bold text-[#00126D] mb-2">Pedidos Actuales</h3>
-          <p class="text-gray-600">Ver y modificar pedidos en progreso</p>
-          <div class="mt-2 flex justify-center items-center gap-2">
-            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span class="text-xs text-green-600 font-medium">Actualizándose en tiempo real</span>
+        <div class="p-10 border-b border-slate-50 flex items-center justify-between bg-slate-50/30">
+          <div class="flex items-center gap-6">
+            <div class="w-16 h-16 bg-blue-600 rounded-[1.5rem] flex items-center justify-center shadow-2xl shadow-blue-200">
+               <ListOrdered class="w-8 h-8 text-white" />
+            </div>
+            <div>
+              <h3 class="text-3xl font-black text-slate-800 tracking-tight uppercase leading-none mb-2">Monitor Mesas</h3>
+              <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-100">
+                   <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                   <span class="text-[9px] font-black text-emerald-600 uppercase tracking-widest">En Vivo</span>
+                </div>
+                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ pedidosParaAqui.length + pedidosParaLlevar.length }} Pedidos Activos</p>
+              </div>
+            </div>
           </div>
+          <button @click="cerrarPedidosActualesModal" class="w-12 h-12 rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-slate-800 transition-all active:scale-90 flex items-center justify-center">
+            <X class="w-6 h-6" />
+          </button>
         </div>
 
-        <!-- Contenido -->
-        <div class="space-y-6">
+        <!-- Contenido (Scrollable Grid) -->
+        <div class="flex-1 overflow-y-auto p-10 space-y-12">
           <!-- Para Aquí -->
           <div v-if="pedidosParaAqui.length > 0">
-            <h4 class="text-lg font-bold text-[#00126D] mb-4 flex items-center gap-2">
-              🪑 Para Aquí
-            </h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center gap-4 mb-6">
+               <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center border border-blue-100">
+                  <span class="text-xl">🪑</span>
+               </div>
+               <h4 class="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">Comensales en Mesa</h4>
+               <div class="flex-1 h-[1px] bg-slate-100"></div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <div
                 v-for="pedido in pedidosParaAqui"
                 :key="pedido.id"
-                class="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-[#FDB700] transition-all cursor-pointer"
+                class="group bg-white border border-slate-100 rounded-3xl p-6 hover:border-blue-600 shadow-sm hover:shadow-2xl hover:shadow-blue-900/5 transition-all duration-500 cursor-pointer relative overflow-hidden"
                 @click="verPedidoDesdeActuales(pedido)"
               >
-                <div class="flex justify-between items-start mb-2">
-                  <div>
-                    <div class="text-lg font-bold text-[#00126D]">Mesa {{ pedido.mesa }}</div>
-                    <div class="text-sm text-gray-600">#{{ pedido.numero_display }}</div>
+                <div class="flex justify-between items-start mb-6">
+                  <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 bg-slate-50 group-hover:bg-blue-600 transition-colors rounded-2xl flex items-center justify-center">
+                      <span class="text-lg font-black group-hover:text-white transition-colors">{{ pedido.mesa }}</span>
+                    </div>
+                    <div>
+                      <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Mesa</div>
+                      <div class="text-sm font-black text-slate-800 uppercase tracking-tight">#{{ pedido.numero_display }}</div>
+                    </div>
                   </div>
-                  <span :class="getEstadoColor(pedido.estado)" class="px-2 py-1 rounded-lg text-xs font-medium">
+                  <div class="text-right">
+                    <div class="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none mb-1">Total</div>
+                    <div class="text-lg font-black text-slate-800">$ {{ Number(pedido.total).toFixed(0) }}</div>
+                  </div>
+                </div>
+                
+                <div class="flex items-center justify-between mb-4">
+                  <span :class="getEstadoColor(pedido.estado)" class="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
                     {{ pedido.estado }}
                   </span>
+                  <div class="text-[10px] font-bold text-slate-300">
+                    {{ formatTime(pedido.fecha_creacion) }}
+                  </div>
                 </div>
-                <div class="text-sm text-gray-600 mb-2">
-                  Total: ${{ Number(pedido.total).toFixed(2) }}
-                </div>
-                <div class="text-xs text-gray-500">
-                  {{ formatTime(pedido.fecha_creacion) }}
+
+                <div class="pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  <span>Modificar Mesa</span>
+                  <ChevronRight class="w-4 h-4 text-slate-200 group-hover:text-blue-600 transition-colors" />
                 </div>
               </div>
             </div>
@@ -1523,53 +1811,58 @@ const guardarCambiosPedido = async () => {
 
           <!-- Para Llevar/Uber Eats -->
           <div v-if="pedidosParaLlevar.length > 0">
-            <h4 class="text-lg font-bold text-[#00126D] mb-4 flex items-center gap-2">
-              📦 Para Llevar / 🚗 Uber Eats
-            </h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="flex items-center gap-4 mb-6">
+               <div class="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100">
+                  <span class="text-xl">🥡</span>
+               </div>
+               <h4 class="text-xs font-black text-slate-800 uppercase tracking-[0.2em]">Externos / Llevar</h4>
+               <div class="flex-1 h-[1px] bg-slate-100"></div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <div
                 v-for="pedido in pedidosParaLlevar"
                 :key="pedido.id"
-                class="bg-white border-2 border-gray-200 rounded-xl p-4 hover:border-[#FDB700] transition-all cursor-pointer"
+                class="group bg-white border border-slate-100 rounded-3xl p-6 hover:border-blue-600 shadow-sm hover:shadow-2xl hover:shadow-blue-900/5 transition-all duration-500 cursor-pointer relative overflow-hidden"
                 @click="verPedidoDesdeActuales(pedido)"
               >
-                <div class="flex justify-between items-start mb-2">
-                  <div>
-                    <div class="text-lg font-bold text-[#00126D]">{{ pedido.nombre_cliente }}</div>
-                    <div class="text-sm text-gray-600">
-                      {{ pedido.tipo_orden === 'uber_eats' ? '🚗 Uber Eats' : '📦 Para llevar' }} 
-                      #{{ pedido.numero_display }}
+                 <div class="flex justify-between items-start mb-6">
+                    <div class="flex-1 min-w-0 pr-4">
+                      <div class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Cliente</div>
+                      <h5 class="text-sm font-black text-slate-800 uppercase truncate tracking-tight">{{ pedido.nombre_cliente }}</h5>
+                      <div class="text-[9px] font-bold text-blue-500 uppercase tracking-widest mt-1">
+                        {{ pedido.tipo_orden === 'uber_eats' ? '🚗 Digital App' : '📦 Eco-Llevar' }}
+                      </div>
                     </div>
-                  </div>
-                  <span :class="getEstadoColor(pedido.estado)" class="px-2 py-1 rounded-lg text-xs font-medium">
-                    {{ pedido.estado }}
-                  </span>
-                </div>
-                <div class="text-sm text-gray-600 mb-2">
-                  Total: ${{ Number(pedido.total).toFixed(2) }}
-                </div>
-                <div class="text-xs text-gray-500">
-                  {{ formatTime(pedido.fecha_creacion) }}
+                    <div class="text-right">
+                      <div class="text-[9px] font-black text-emerald-600 uppercase tracking-widest leading-none mb-1">Total</div>
+                      <div class="text-lg font-black text-slate-800">$ {{ Number(pedido.total).toFixed(0) }}</div>
+                    </div>
+                 </div>
+
+                 <div class="flex items-center justify-between mb-4">
+                   <span :class="getEstadoColor(pedido.estado)" class="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest">
+                     {{ pedido.estado }}
+                   </span>
+                   <div class="text-[10px] font-bold text-slate-300">
+                     #{{ pedido.numero_display }}
+                   </div>
+                 </div>
+
+                 <div class="pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                  <span>Abrir Pedido</span>
+                  <ChevronRight class="w-4 h-4 text-slate-200 group-hover:text-blue-600 transition-colors" />
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Sin pedidos -->
-          <div v-if="pedidosParaAqui.length === 0 && pedidosParaLlevar.length === 0" class="text-center py-8">
-            <div class="text-4xl mb-4">🎉</div>
-            <p class="text-gray-600">No hay pedidos en progreso</p>
+          <!-- Empty State -->
+          <div v-if="pedidosParaAqui.length === 0 && pedidosParaLlevar.length === 0" class="py-24 text-center flex flex-col items-center justify-center opacity-40">
+             <Package class="w-24 h-24 text-slate-200 mb-8" />
+             <p class="text-2xl font-black text-slate-400 uppercase tracking-[0.2em]">Todo en Orden</p>
+             <p class="text-sm font-medium text-slate-300 mt-2">No hay pedidos pendientes en la red.</p>
           </div>
-        </div>
-
-        <!-- Botones -->
-        <div class="mt-6">
-          <button
-            @click="cerrarPedidosActualesModal"
-            class="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-all"
-          >
-            ← Cerrar
-          </button>
         </div>
       </div>
     </div>
@@ -1590,62 +1883,69 @@ const guardarCambiosPedido = async () => {
       </div>
     </div>
 
-    <!-- Modal de Selección de Mesas -->
+    <!-- Modal de Selección de Mesas (Grid Map Responsive) -->
     <div
       v-if="showMesaModal"
-      class="fixed inset-0 z-50 flex items-center justify-center"
+      class="fixed inset-0 z-[150] flex items-center justify-center p-4 lg:p-12"
       @click.self="closeMesaModal"
     >
       <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black bg-opacity-50"></div>
+      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-md"></div>
       
       <!-- Modal Content -->
-      <div class="relative bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+      <div class="relative bg-white rounded-[3.5rem] w-full max-w-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-500 max-h-[85vh]">
+        
         <!-- Header -->
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-bold text-[#00126D] flex items-center gap-2">
-            🪑 Selecciona Mesa
-          </h3>
-          <button @click="closeMesaModal" class="text-gray-400 hover:text-gray-600 text-xl">
-            ←
+        <div class="p-8 sm:p-10 pb-6 flex items-center justify-between border-b border-slate-50">
+          <div class="flex items-center gap-4">
+            <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center border border-blue-100/50 flex-shrink-0">
+               <span class="text-2xl">🪑</span>
+            </div>
+            <div>
+              <h3 class="text-2xl font-black text-slate-800 tracking-tight uppercase leading-none mb-1">Mesa</h3>
+              <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest">Seleccionar Ubicación</p>
+            </div>
+          </div>
+          <button @click="closeMesaModal" class="p-3 rounded-2xl bg-slate-50 text-slate-400 hover:text-slate-800 transition-all active:scale-95">
+            <X class="w-5 h-5" />
           </button>
         </div>
         
         <!-- Layout de Mesas -->
-        <div class="mb-6">
-          
-          <div class="grid grid-cols-3 gap-3">
+        <div class="flex-1 overflow-y-auto p-8 sm:p-10">
+          <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
             <div v-for="(fila, index) in mesasLayout" :key="index" class="contents">
               <button
                 v-for="numeroMesa in fila"
                 :key="numeroMesa"
                 @click="seleccionarMesa(numeroMesa)"
                 :class="[
-                  'aspect-square rounded-lg border-2 font-bold text-lg transition-all relative',
+                  'group relative aspect-square rounded-3xl flex flex-col items-center justify-center transition-all duration-300 border-2',
                   mesasOcupadasReactivo.has(numeroMesa)
-                    ? 'bg-red-100 border-red-300 text-red-600 hover:bg-red-200 cursor-pointer'
-                    : 'bg-white border-gray-200 text-[#00126D] hover:border-[#FDB700] hover:bg-yellow-50'
+                    ? 'bg-blue-50 border-blue-200 text-blue-600 shadow-md'
+                    : 'bg-white border-slate-100 text-slate-800 hover:border-blue-600 hover:scale-[1.05] hover:shadow-xl hover:shadow-blue-900/10'
                 ]"
               >
-                {{ numeroMesa }}
-                <span v-if="mesasOcupadasReactivo.has(numeroMesa)" class="absolute top-0 right-0 text-xs">🔴</span>
+                <span class="text-xl sm:text-2xl font-black tracking-tighter relative z-10">{{ numeroMesa }}</span>
+                <div v-if="mesasOcupadasReactivo.has(numeroMesa)" class="absolute top-2 right-2 flex items-center gap-1">
+                   <div class="w-1.5 h-1.5 bg-blue-600 rounded-full animate-pulse"></div>
+                </div>
               </button>
             </div>
           </div>
           
-          <!-- Leyenda -->
-          <div class="mt-4 flex justify-center gap-4 text-xs">
-            <div class="flex items-center gap-1">
-              <div class="w-3 h-3 bg-white border border-gray-200 rounded"></div>
-              <span class="text-gray-600">Disponible</span>
+          <!-- Modernized Legend -->
+          <div class="mt-8 flex justify-center gap-6 pt-6 border-t border-slate-50">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 bg-white border border-slate-100 rounded-md"></div>
+              <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Libre</span>
             </div>
-            <div class="flex items-center gap-1">
-              <div class="w-3 h-3 bg-red-100 border border-red-300 rounded"></div>
-              <span class="text-gray-600">Ocupada</span>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 bg-blue-600 rounded-md shadow-sm shadow-blue-200"></div>
+              <span class="text-[9px] font-black text-blue-600 uppercase tracking-widest leading-none italic">En Servicio</span>
             </div>
           </div>
         </div>
-        
       </div>
     </div>
 
@@ -2114,36 +2414,92 @@ const guardarCambiosPedido = async () => {
   }
 }
 
+
+/* Digital Design System */
+.bg-glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.bg-glass-dark {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.shadow-premium {
+  box-shadow: 
+    0 10px 40px -10px rgba(0, 18, 109, 0.08),
+    0 20px 60px -15px rgba(0, 0, 0, 0.04);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Custom Scrollbar for a cleaner look */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Animations */
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes zoomFade {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-slide-down { animation: slideDownFade 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-slide-up { animation: slideUpFade 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-zoom { animation: zoomFade 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
 .animate-in {
-  animation: slideInFromTop 0.3s ease-out;
+  animation: slideUpFade 0.4s ease-out;
 }
 
 .fade-in {
   animation: fadeIn 0.3s ease-out;
 }
 
-.slide-in-from-top {
-  animation: slideDown 0.4s ease-out;
-}
-
-.slide-in-from-top-5 {
-  animation: slideInFromTop 0.3s ease-out;
-}
-
-/* Transiciones suaves para los iconos */
+/* Lucide Transiciones */
 .rotate-180 {
   transform: rotate(180deg);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Hover effects mejorados */
-.group:hover .text-2xl {
-  transform: scale(1.1);
-}
-
-/* Animación de entrada para categorías */
-.duration-300 {
-  transition-duration: 300ms;
-}
-/* Pozole tile height adjustment: 5px less height for alignment with dropdowns */
+/* Pozole tile height adjustment */
 .pozole-tile { height: calc(15rem - 5px); }
+
+/* Touch Optimization */
+@media (mousedown: false) {
+  .btn-touch-active:active {
+    transform: scale(0.96);
+    opacity: 0.9;
+  }
+}
 </style>

@@ -6,12 +6,19 @@
  * Parsea una cadena de fecha de forma segura, manejando formatos ISO con espacios
  * Ej: "2026-02-05 22:10:23.245896+00" -> Date object
  */
-export const parseSafeDate = (dateStr: string | null | undefined): Date | null => {
+export const parseSafeDate = (dateStr: any): Date | null => {
   if (!dateStr) return null;
   
   try {
     // Si la fecha ya es un objeto Date
     if (dateStr instanceof Date) return dateStr;
+
+    // Si es una cadena en formato YYYY-MM-DD (solo fecha), parsear localmente
+    // para evitar el desplazamiento de zona horaria (UTC vs Local)
+    if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
 
     // Normalizar formato: reemplazar espacio entre fecha y hora por 'T' si no lo tiene
     // Esto asegura compatibilidad con estándares ISO en todos los navegadores

@@ -248,6 +248,68 @@ def get_analytics_advanced(
      .group_by(Usuario.id, Usuario.nombre)\
      .order_by(func.sum(Pedido.total).desc()).all()
 
+    # 1. Ventas por Hora (Tendencia intradía)
+    ventas_por_hora = db.query(
+        extract('hour', Pedido.fecha_creacion).label('hora'),
+        func.count(Pedido.id).label('cantidad'),
+        func.sum(Pedido.total).label('total')
+    ).filter(and_(*ventas_filters))\
+     .group_by(extract('hour', Pedido.fecha_creacion))\
+     .order_by(extract('hour', Pedido.fecha_creacion)).all()
+
+    # 2. Distribución por Tipo de Orden (Canales)
+    tipos_orden = db.query(
+        Pedido.tipo_orden,
+        func.count(Pedido.id).label('cantidad'),
+        func.sum(Pedido.total).label('total')
+    ).filter(and_(*ventas_filters))\
+     .group_by(Pedido.tipo_orden).all()
+
+    # 3. Desglose de Métodos de Pago
+    metodos_pago = db.query(
+        Pedido.metodo_pago,
+        func.count(Pedido.id).label('cantidad'),
+        func.sum(Pedido.total).label('total')
+    ).filter(and_(*ventas_filters))\
+     .group_by(Pedido.metodo_pago).all()
+
+    # 4. Eficiencia Operativa (Promedio de tiempos)
+    # Nota: Usamos fecha_pago - fecha_creacion como proxy de tiempo de servicio total
+    eficiencia = db.query(
+        func.avg(extract('epoch', Pedido.fecha_pago - Pedido.fecha_creacion)).label('avg_service_time')
+    ).filter(and_(*ventas_filters, Pedido.fecha_pago != None)).first()
+
+    # 5. Estructura de Gastos Detallada
+    gastos_filters = [
+        func.date(Gasto.fecha_gasto) >= start_date,
+        func.date(Gasto.fecha_gasto) <= end_date,
+        Gasto.sucursal_id == current_user.sucursal_id
+    ]
+    
+    gastos_por_tipo = db.query(
+        Gasto.tipo_gasto,
+        func.sum(Gasto.total).label('total')
+    ).filter(and_(*gastos_filters))\
+     .group_by(Gasto.tipo_gasto).all()
+
+    # 6. Rendimiento de Personal Adicional (Venta por pedido promedio por mesero)
+    # Ya tenemos top_meseros, pero podemos añadir métricas de eficiencia si fuera necesario.
+
+    # 7. Tasa de Cancelaciones
+    cancelados_filters = [
+        func.date(Pedido.fecha_creacion) >= start_date,
+        func.date(Pedido.fecha_creacion) <= end_date,
+        Pedido.estado == "cancelado",
+        Pedido.sucursal_id == current_user.sucursal_id
+    ]
+    total_pedidos = db.query(func.count(Pedido.id)).filter(
+        func.date(Pedido.fecha_creacion) >= start_date,
+        func.date(Pedido.fecha_creacion) <= end_date,
+        Pedido.sucursal_id == current_user.sucursal_id
+    ).scalar() or 1 # Evitar división por cero
+
+    total_cancelados = db.query(func.count(Pedido.id)).filter(and_(*cancelados_filters)).scalar() or 0
+
     return {
         "top_platillos": [
             {
@@ -263,7 +325,74 @@ def get_analytics_advanced(
         "top_meseros": [
             {"nombre": m.nombre, "pedidos": m.pedidos, "total": float(m.total_vendido or 0)}
             for m in top_meseros
-        ]
+        ],
+        "ventas_por_hora": [
+            {"hora": int(v.hora), "cantidad": int(v.cantidad), "total": float(v.total or 0)}
+            for v in ventas_por_hora
+        ],
+        "tipos_orden": [
+            {"tipo": t.tipo_orden, "cantidad": int(t.cantidad), "total": float(t.total or 0)}
+            for t in tipos_orden
+        ],
+        "metodos_pago_detalle": [
+            {"metodo": m.metodo_pago, "cantidad": int(m.cantidad), "total": float(m.total or 0)}
+            for m in metodos_pago
+        ],
+        "eficiencia_operativa": {
+            "avg_service_time_mins": round(float(eficiencia.avg_service_time or 0) / 60, 2)
+        },
+        "estructura_gastos": [
+            {"tipo": g.tipo_gasto, "total": float(g.total or 0)}
+            for g in gastos_por_tipo
+        ],
+        "metricas_cancelacion": {
+            "total_cancelados": total_cancelados,
+            "total_pedidos": total_pedidos,
+            "tasa_cancelacion": round((total_cancelados / total_pedidos) * 100, 2)
+        },
+        "proyeccion_ia": _get_predictive_sales(current_user.sucursal_id, db)
+    }
+
+def _get_predictive_sales(sucursal_id: int, db: Session) -> Dict[str, Any]:
+    """
+    Calcula una proyección de ventas para la PRÓXIMA SEMANA HIDROCALIDA (Martes a Domingo)
+    basada en el promedio de los mismos días en las últimas 4 semanas.
+    """
+    hoy = date.today()
+    # Encontrar el próximo martes (dia 1 de la semana hidrocalida)
+    # weekday(): 0=Mon, 1=Tue, ..., 5=Sat, 6=Sun
+    days_until_tuesday = (1 - hoy.weekday() + 7) % 7
+    if days_until_tuesday == 0: # Si hoy es martes, proyectar desde el próximo martes
+        days_until_tuesday = 7
+        
+    proximo_martes = hoy + timedelta(days=days_until_tuesday)
+    
+    proyecciones = []
+    # Proyectar de Martes a Domingo (6 días de operación)
+    for i in range(6):
+        dia_proyectado = proximo_martes + timedelta(days=i)
+        
+        # Promedio de los últimos 4 días iguales (ej. últimos 4 martes)
+        fechas_pasadas = [dia_proyectado - timedelta(weeks=w) for w in range(1, 5)]
+        
+        ventas_pasadas = db.query(func.sum(Pedido.total)).filter(
+            func.date(Pedido.fecha_creacion).in_(fechas_pasadas),
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == sucursal_id
+        ).scalar() or 0
+        
+        proyecciones.append({
+            "fecha": dia_proyectado.isoformat(),
+            "dia": dia_proyectado.strftime("%A"),
+            "esperado": float(ventas_pasadas / 4) if ventas_pasadas else 0.0
+        })
+        
+    total_proyectado = sum(p["esperado"] for p in proyecciones)
+    
+    return {
+        "proximos_7_dias": proyecciones,
+        "total_semana_esperado": total_proyectado,
+        "confianza": "Baja (Datos históricos limitados)" if any(p["esperado"] == 0 for p in proyecciones) else "Alta (Consistencia en 4 semanas)"
     }
 
 

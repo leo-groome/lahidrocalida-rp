@@ -27,6 +27,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Para servidor de desarrollo Vite local
+        "http://localhost:5174",  # Puerto alternativo si 5173 está ocupado
         "https://lahidrocalida.vercel.app",
         # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
     ],
@@ -64,10 +65,14 @@ def check_database_connection(db: Session = Depends(get_db)):
         result = db.execute(text("SELECT 5 as test"))
         test_value = result.fetchone()
 
+        # Obtener el host para depuración (seguro, sin credenciales)
+        db_host = str(engine.url).split('@')[-1] if engine.url else "unknown"
+
         return {
             "status": "success",
             "message": "Conexión a la base de datos exitosa",
             "database": "PostgreSQL (Neon)",
+            "host": db_host,
             "test_query": "SELECT 5",
             "result": test_value[0] if test_value else None,
         }

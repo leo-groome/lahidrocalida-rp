@@ -36,13 +36,14 @@ export interface PlatilloResponse {
   categoria: string;
   estado: "disponible" | "no_disponible";
   kds_name?: string;
+  defaultPortion?: number;
 }
 
 export interface PedidoCreate {
-  nombre_cliente: string;
-  mesa?: string;
+  nombre_cliente: string | null;
+  mesa: string | null;
   tipo_orden: "aqui" | "llevar" | "uber_eats";
-  metodo_pago?: string; // Agregar metodo_pago opcional
+  metodo_pago?: string;
   articulos: Array<{
     platillo_id: number;
     cantidad: number;
@@ -76,7 +77,7 @@ export interface PedidoResponse {
   sucursal_id: number;
   usuario_id: number;
   fecha_creacion: string;
-  created_at?: string; // Alias para fecha_creacion
+  created_at?: string;
   articulos_pedido?: ArticuloPedidoResponse[];
 }
 

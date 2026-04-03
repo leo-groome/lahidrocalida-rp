@@ -1,135 +1,237 @@
 <template>
-  <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-4 md:p-8 animate-in fade-in duration-300">
+    <div class="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
+      
       <!-- Header -->
-      <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-        <h2 class="text-xl font-semibold text-gray-900">
-          {{ isEditing ? 'Editar Gasto' : 'Nuevo Gasto' }}
-        </h2>
-        <button @click="$emit('close')" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+      <div class="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div class="space-y-1">
+          <p class="text-[10px] font-black tracking-[0.3em] text-indigo-400 uppercase">Registro Contable</p>
+          <h2 class="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+            {{ isEditing ? 'EDITAR' : 'NUEVO' }} <span class="text-indigo-600">GASTO</span>
+          </h2>
+        </div>
+        <button 
+          @click="$emit('close')" 
+          class="w-12 h-12 flex items-center justify-center rounded-2xl bg-slate-100 text-slate-400 hover:bg-slate-900 hover:text-white transition-all duration-300 group"
+        >
+          <X class="w-6 h-6 group-hover:rotate-90 transition-transform duration-500" />
+        </button>
       </div>
       
       <!-- Body Scrollable -->
-      <div class="p-6 overflow-y-auto flex-1">
-        <form @submit.prevent="submitForm" id="gastoForm" class="space-y-6">
+      <div class="p-10 overflow-y-auto flex-1 custom-scrollbar space-y-10">
+        <form @submit.prevent="submitForm" id="gastoForm" class="space-y-10">
           
-          <!-- Fila 1: Fecha y Proveedor -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-               <label class="block text-sm font-medium text-gray-700 mb-1">Fecha del Gasto</label>
-               <input 
-                 type="datetime-local" 
-                 v-model="form.fecha_gasto"
-                 class="w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                 required
-               >
-               <p class="text-xs text-gray-500 mt-1">Si es pasado, ajusta la fecha aquí.</p>
+          <!-- Section Heading: General Info -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+            <div class="space-y-4">
+              <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1 flex items-center gap-2">
+                <Calendar class="w-3 h-3" /> Fecha y Hora
+              </label>
+              <div class="relative group">
+                <input 
+                  type="datetime-local" 
+                  v-model="form.fecha_gasto"
+                  class="w-full bg-slate-50 border-0 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+                  required
+                >
+              </div>
             </div>
             
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Proveedor</label>
+            <div class="space-y-4">
+              <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1 flex items-center gap-2">
+                <Truck class="w-3 h-3" /> Proveedor Responsable
+              </label>
               <SearchableSelect 
                  v-model="form.proveedor_id" 
                  :options="proveedores"
-                 placeholder="Buscar proveedor..."
+                 placeholder="Selecciona el proveedor..."
                  class="w-full"
               />
             </div>
           </div>
 
-          <!-- Fila 2: Tipo, Método, Folio -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-             <div>
-               <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-               <select v-model="form.tipo_gasto" class="w-full border-gray-300 rounded-md shadow-sm">
+          <!-- Section Heading: Details -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <div class="space-y-4">
+               <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Tipo de Gasto</label>
+               <select v-model="form.tipo_gasto" class="w-full bg-slate-50 border-0 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none cursor-pointer">
                  <option value="directo">Directo (Insumos)</option>
                  <option value="indirecto">Indirecto (Servicios)</option>
                  <option value="nomina">Nómina</option>
                </select>
              </div>
-             <div>
-               <label class="block text-sm font-medium text-gray-700 mb-1">Método Pago</label>
+             <div class="space-y-4">
+               <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Método de Pago</label>
                <select 
                  v-model="form.metodo_pago" 
-                 class="w-full border-gray-300 rounded-md shadow-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
+                 class="w-full bg-slate-50 border-0 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none cursor-pointer disabled:opacity-50"
                  :disabled="pagadoDesdeCaja"
                >
-                 <option value="efectivo">Efectivo</option>
-                 <option value="tarjeta">Tarjeta</option>
+                 <option value="efectivo">Efectivo 💵</option>
+                 <option value="tarjeta">Tarjeta 💳</option>
                </select>
              </div>
-             <div>
-               <label class="block text-sm font-medium text-gray-700 mb-1">Folio / Factura</label>
-               <input v-model="form.folio" type="text" class="w-full border-gray-300 rounded-md shadow-sm" placeholder="Opcional">
+             <div class="space-y-4">
+               <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1 flex items-center gap-2">
+                <Hash class="w-3 h-3" /> Folio / Factura
+               </label>
+               <input v-model="form.folio" type="text" class="w-full bg-slate-50 border-0 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none" placeholder="Opcional">
              </div>
           </div>
 
-          <!-- Opción de Caja -->
-          <div v-if="turnoId" class="bg-blue-50 p-3 rounded-lg border border-blue-200">
-            <label class="flex items-center gap-3 cursor-pointer">
+          <!-- Opción de Caja - High Visibility -->
+          <div v-if="turnoId || isEditing" class="p-1">
+            <label :class="[
+              'relative flex items-center gap-6 p-6 rounded-[2rem] border-2 transition-all cursor-pointer group',
+              pagadoDesdeCaja ? 'bg-indigo-600 border-indigo-600 shadow-xl shadow-indigo-100' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'
+            ]">
+              <div :class="[
+                'w-8 h-8 rounded-full flex items-center justify-center transition-all',
+                pagadoDesdeCaja ? 'bg-white text-indigo-600' : 'bg-slate-200 text-slate-400'
+              ]">
+                <Check v-if="pagadoDesdeCaja" class="w-5 h-5" />
+                <div v-else class="w-3 h-3 bg-white rounded-full"></div>
+              </div>
+              
               <input 
                 v-model="pagadoDesdeCaja"
                 type="checkbox"
-                class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                class="hidden"
               />
-              <div>
-                <span class="block text-sm font-bold text-blue-900">¿Pagado con efectivo de caja actual?</span>
-                <span class="block text-xs text-blue-700">Se descontará del arqueo del turno #{{ turnoId }}</span>
+              
+              <div class="flex-1">
+                <span :class="['block text-sm font-black tracking-tight', pagadoDesdeCaja ? 'text-white' : 'text-slate-900']">
+                  ¿Pagar con efectivo de caja actual?
+                </span>
+                <span :class="['block text-[11px] font-bold opacity-70 uppercase tracking-widest', pagadoDesdeCaja ? 'text-white/80' : 'text-slate-500']">
+                  Se descontará del arqueo del turno #{{ turnoId }}
+                </span>
+              </div>
+
+              <div :class="[
+                'w-12 h-12 rounded-2xl flex items-center justify-center transition-all',
+                pagadoDesdeCaja ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'
+              ]">
+                <Banknote class="w-6 h-6" />
               </div>
             </label>
           </div>
           
           <!-- Descripción -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Descripción / Notas</label>
-            <textarea v-model="form.descripcion" rows="2" class="w-full border-gray-300 rounded-md shadow-sm"></textarea>
+          <div class="space-y-4">
+            <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Observaciones / Notas adicionales</label>
+            <textarea v-model="form.descripcion" rows="3" class="w-full bg-slate-50 border-0 rounded-[1.5rem] px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none resize-none" placeholder="Escribe aquí cualquier detalle extra del gasto..."></textarea>
           </div>
 
           <!-- SECCIÓN DETALLES (Si no es nómina) -->
-          <div v-if="form.tipo_gasto !== 'nomina'" class="border-t border-gray-200 pt-4">
-             <div class="flex justify-between items-center mb-2">
-               <h3 class="text-sm font-medium text-gray-900">Detalle de Artículos</h3>
-               <button type="button" @click="addDetalle" class="text-sm text-blue-600 hover:text-blue-800 font-medium">+ Agregar Línea</button>
+          <div v-if="form.tipo_gasto !== 'nomina'" class="space-y-6">
+             <div class="flex justify-between items-center px-2">
+               <div class="space-y-1">
+                 <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Desglose de Artículos</h3>
+                 <p class="text-[10px] text-slate-300 font-bold">Listado detallado de insumos adquiridos</p>
+               </div>
+               <button 
+                type="button" 
+                @click="addDetalle" 
+                class="px-5 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-2"
+               >
+                 <Plus class="w-3.5 h-3.5" /> Agregar Artículo
+               </button>
              </div>
              
-             <div class="space-y-2">
-                <div v-for="(detalle, idx) in form.detalles" :key="idx" class="flex flex-wrap md:flex-nowrap gap-2 items-start bg-gray-50 p-2 rounded">
-                   <div class="flex-1 min-w-[200px]">
-                      <SearchableSelect 
-                        v-model="detalle.articulo_id" 
-                        :options="articulos" 
-                        placeholder="Buscar artículo..."
-                        class="w-full"
-                      />
+             <div class="bg-slate-50/50 rounded-[2.5rem] border border-slate-100 overflow-hidden">
+                <div class="p-2 space-y-2">
+                   <div v-for="(detalle, idx) in form.detalles" :key="idx" class="flex items-center gap-3 bg-white p-3 rounded-[1.5rem] shadow-sm animate-in zoom-in-95">
+                      <div class="flex-1 min-w-[240px]">
+                         <SearchableSelect 
+                           v-model="detalle.articulo_id" 
+                           :options="articulos" 
+                           placeholder="Buscar artículo..."
+                           class="w-full"
+                         />
+                      </div>
+                      <div class="w-28 space-y-1">
+                         <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1">Cantidad</label>
+                         <input type="number" step="0.01" v-model.number="detalle.cantidad" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-2 text-sm font-black text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-center">
+                      </div>
+                      <div class="w-32 space-y-1">
+                         <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1">P. Unitario</label>
+                         <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">$</span>
+                            <input type="number" step="0.01" v-model.number="detalle.precio_unitario" class="w-full bg-slate-50 border-0 rounded-xl pl-6 pr-4 py-2 text-sm font-black text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-right">
+                         </div>
+                      </div>
+                      <div class="w-36 text-right px-4 space-y-0.5">
+                         <p class="text-[8px] font-black text-slate-300 uppercase tracking-widest">Subtotal</p>
+                         <p class="text-sm font-black text-slate-900 tracking-tighter">
+                            ${{ formatCurrency(detalle.cantidad * detalle.precio_unitario) }}
+                         </p>
+                      </div>
+                      <button 
+                        type="button" 
+                        @click="removeDetalle(idx)" 
+                        class="w-10 h-10 flex items-center justify-center rounded-xl text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-all"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </button>
                    </div>
-                   <div class="w-24">
-                      <input type="number" step="0.01" v-model.number="detalle.cantidad" placeholder="Cant" class="w-full border-gray-300 rounded text-sm">
-                   </div>
-                   <div class="w-28">
-                      <input type="number" step="0.01" v-model.number="detalle.precio_unitario" placeholder="Precio" class="w-full border-gray-300 rounded text-sm">
-                   </div>
-                   <div class="w-28 pt-2 text-right font-medium text-sm text-gray-700">
-                      ${{ (detalle.cantidad * detalle.precio_unitario).toFixed(2) }}
-                   </div>
-                   <button type="button" @click="removeDetalle(idx)" class="text-red-500 hover:text-red-700 px-2 font-bold">&times;</button>
                 </div>
-             </div>
 
-             <div class="mt-4 flex justify-end items-center gap-4">
-                <div class="text-sm text-gray-500">Suma detalles: ${{ sumaDetalles.toFixed(2) }}</div>
-                <div>
-                   <label class="text-xs font-medium text-gray-700 mr-2">Total Manual (Opcional):</label>
-                   <input type="number" step="0.01" v-model.number="form.total_manual" class="w-32 border-gray-300 rounded text-sm font-bold text-right">
+                <!-- Summary Row inside table-like container -->
+                <div class="bg-indigo-50/50 p-6 flex flex-col md:flex-row justify-between items-center gap-6 border-t border-indigo-100">
+                    <div class="flex items-center gap-4">
+                      <div class="p-3 bg-white rounded-2xl shadow-sm text-indigo-600">
+                        <ShoppingBag class="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p class="text-[10px] font-black tracking-widest text-indigo-400 uppercase">Suma de Artículos</p>
+                        <p class="text-lg font-black text-indigo-900 tracking-tighter">${{ formatCurrency(sumaDetalles) }}</p>
+                      </div>
+                    </div>
+
+                    <div class="relative w-full md:w-auto">
+                       <label class="absolute -top-3 left-4 bg-white px-2 text-[8px] font-black text-indigo-400 uppercase tracking-widest rounded-full border border-indigo-100 shadow-sm">Total Manual Ajustado</label>
+                       <div class="flex items-center gap-3">
+                          <span class="text-lg font-black text-slate-300">$</span>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            v-model.number="form.total_manual" 
+                            class="w-48 bg-white border-2 border-indigo-200 rounded-2xl px-6 py-3.5 text-xl font-black text-indigo-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none text-right shadow-lg shadow-indigo-100/50"
+                            placeholder="0.00"
+                          >
+                       </div>
+                       <p class="text-[9px] text-indigo-400 font-bold mt-2 text-right">Dejar en blanco para usar la suma automática</p>
+                    </div>
                 </div>
              </div>
           </div>
 
           <!-- SECCIÓN NOMINA (Solo total manual) -->
-          <div v-else class="border-t border-gray-200 pt-4">
-             <div class="bg-yellow-50 p-4 rounded border border-yellow-200">
-               <label class="block text-sm font-medium text-yellow-800 mb-1">Monto Total Nómina</label>
-               <input type="number" step="0.01" v-model.number="form.total_manual" class="w-full border-yellow-300 rounded text-lg font-bold" required>
-               <p class="text-xs text-yellow-600 mt-1">Ingresa el total a pagar.</p>
+          <div v-else class="animate-in slide-in-from-top-4">
+             <div class="bg-indigo-600 rounded-[2.5rem] p-10 flex flex-col items-center text-center space-y-6 shadow-2xl shadow-indigo-200 relative overflow-hidden">
+               <div class="absolute inset-0 bg-gradient-to-br from-indigo-500 to-indigo-700 opacity-50"></div>
+               <div class="relative z-10 w-20 h-20 bg-white/20 rounded-full flex items-center justify-center text-white mb-2">
+                 <Users class="w-10 h-10" />
+               </div>
+               <div class="relative z-10 space-y-1">
+                 <h3 class="text-xs font-black text-white/70 uppercase tracking-[0.3em]">Nómina de Personal</h3>
+                 <p class="text-2xl font-black text-white tracking-tight">Ingrese el monto total del pago</p>
+               </div>
+               
+               <div class="relative z-10 w-full max-w-sm">
+                  <span class="absolute left-6 top-1/2 -translate-y-1/2 text-3xl font-black text-white/40">$</span>
+                  <input 
+                    type="number" 
+                    step="0.01" 
+                    v-model.number="form.total_manual" 
+                    class="w-full bg-white/10 border-2 border-white/20 rounded-[1.5rem] px-12 py-6 text-4xl font-black text-white placeholder:text-white/20 focus:ring-4 focus:ring-white/20 focus:border-white transition-all outline-none text-center shadow-inner" 
+                    placeholder="0.00"
+                    required
+                  >
+               </div>
+               <p class="relative z-10 text-[10px] text-white/60 font-black tracking-widest uppercase">Este monto será registrado directamente como egreso.</p>
              </div>
           </div>
 
@@ -137,13 +239,35 @@
       </div>
       
       <!-- Footer -->
-      <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
-        <button type="button" @click="$emit('close')" class="px-4 py-2 bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
-          Cancelar
-        </button>
-        <button type="submit" form="gastoForm" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm font-medium">
-          {{ isEditing ? 'Guardar Cambios' : 'Registrar Gasto' }}
-        </button>
+      <div class="px-10 py-8 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm">
+            <Calculator class="w-6 h-6" />
+          </div>
+          <div>
+            <p class="text-[10px] font-black tracking-widest text-slate-400 uppercase mb-0.5">Total Liquidación</p>
+            <p class="text-2xl font-black text-slate-900 tracking-tighter">
+              ${{ formatCurrency(form.total_manual || sumaDetalles) }}
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4 w-full md:w-auto">
+          <button 
+            type="button" 
+            @click="$emit('close')" 
+            class="flex-1 md:flex-none px-8 py-4 bg-white text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 transition-all"
+          >
+            Cancelar
+          </button>
+          <button 
+            type="submit" 
+            form="gastoForm" 
+            class="flex-1 md:flex-none h-[60px] px-12 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-1 transition-all active:translate-y-0"
+          >
+            {{ isEditing ? 'Actualizar Registro' : 'Confirmar Gasto' }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -153,6 +277,10 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import api from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
+import { 
+  X, Plus, Trash2, Calendar, Truck, CreditCard, Banknote, 
+  Hash, ShoppingBag, Calculator, Users, Check
+} from 'lucide-vue-next'
 
 const props = defineProps<{
   initialData?: any
@@ -164,11 +292,16 @@ const emit = defineEmits(['close', 'save'])
 const proveedores = ref<any[]>([])
 const articulos = ref<any[]>([])
 
+const formatCurrency = (val: number) => val.toLocaleString('es-MX', { 
+  minimumFractionDigits: 2, 
+  maximumFractionDigits: 2 
+})
+
 // Form state
 const form = reactive({
   id: null,
   proveedor_id: null,
-  fecha_gasto: new Date().toISOString().slice(0, 16), // YYYY-MM-DDTHH:mm
+  fecha_gasto: new Date().toISOString().slice(0, 16),
   tipo_gasto: 'directo',
   metodo_pago: 'efectivo',
   folio: '',
@@ -196,7 +329,6 @@ const sumaDetalles = computed(() => {
   return form.detalles.reduce((sum, d) => sum + (d.cantidad * d.precio_unitario), 0)
 })
 
-// Loaders
 const loadCatalogos = async () => {
   try {
     const [provs, arts] = await Promise.all([
@@ -208,7 +340,6 @@ const loadCatalogos = async () => {
   } catch (e) { console.error(e) }
 }
 
-// Logic
 const addDetalle = () => {
   form.detalles.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 })
 }
@@ -219,17 +350,13 @@ const removeDetalle = (idx: number) => {
 
 const submitForm = async () => {
   try {
-    // Validar
     if (!form.proveedor_id) return alert('Selecciona un proveedor')
     
-    // Preparar payload
     const payload = {
        ...form,
-       // Asegurar fechas en ISO
        fecha_gasto: form.fecha_gasto ? new Date(form.fecha_gasto).toISOString() : null
     }
 
-    // Limpiar detalles si es nomina
     if (form.tipo_gasto === 'nomina') {
        payload.detalles = []
     }
@@ -246,11 +373,9 @@ const submitForm = async () => {
   }
 }
 
-// Init
 onMounted(() => {
   loadCatalogos()
   if (props.initialData) {
-    // Cargar datos existentes
     const d = props.initialData
     form.id = d.id
     form.proveedor_id = d.proveedor_id
@@ -266,16 +391,13 @@ onMounted(() => {
       pagadoDesdeCaja.value = true
     }
     
-    // Fecha: convertir ISO a datetime-local format (YYYY-MM-DDTHH:mm)
     if (d.fecha_gasto) {
        const dateObj = new Date(d.fecha_gasto)
-       // Ajuste zona horaria local simple
        const tzOffset = dateObj.getTimezoneOffset() * 60000
        const localISOTime = (new Date(dateObj.getTime() - tzOffset)).toISOString().slice(0, 16)
        form.fecha_gasto = localISOTime
     }
     
-    // Detalles
     if (d.detalles) {
        form.detalles = d.detalles.map((det: any) => ({
           articulo_id: det.articulo_id,
@@ -284,8 +406,40 @@ onMounted(() => {
        }))
     }
   } else {
-     addDetalle() // Una linea vacia por defecto
+     addDetalle()
   }
 })
-
 </script>
+
+<style scoped>
+.animate-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23475569' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-position: right 1.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em;
+  padding-right: 3.5rem;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+</style>

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
 
-export type Rol = 'cajero' | 'cocina' | 'administrador' | 'compras'
+export type Rol = 'mesero' | 'cajero' | 'cocina' | 'administrador' | 'compras'
 
 export interface Usuario {
   id: number
