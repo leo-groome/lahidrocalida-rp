@@ -1254,31 +1254,24 @@ const guardarCambiosPedido = async () => {
               </div>
             </div>
 
-            <!-- Search & Filters -->
-            <div class="mb-8 flex flex-col sm:flex-row gap-4 px-1">
-              <div class="relative flex-1 group">
-                <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" />
-                <input 
-                  v-model="searchQuery" 
-                  type="text" 
-                  placeholder="¿Qué platillo buscas hoy?" 
-                  class="w-full pl-12 pr-4 py-4 bg-white rounded-2xl border border-slate-200/60 focus:border-blue-600/50 focus:ring-4 focus:ring-blue-600/5 outline-none font-bold text-slate-700 transition-all placeholder:text-slate-300 shadow-sm"
-                />
-              </div>
-              
-              <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+            <!-- Filters -->
+            <div class="mb-10 flex flex-col gap-6 px-1">
+              <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-none items-center">
                 <button 
                   v-for="cat in categorias" 
                   :key="cat"
                   @click="activeCategory = cat"
                   :class="[
-                    'px-6 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] transition-all whitespace-nowrap border',
+                    'px-10 py-6 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all whitespace-nowrap border shadow-sm',
                     activeCategory === cat 
-                      ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200 translate-y-[-2px]' 
-                      : 'bg-white border-slate-200/60 text-slate-400 hover:border-blue-200 hover:text-blue-600'
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-200 -translate-y-1' 
+                      : 'bg-white border-slate-200/60 text-slate-400 hover:border-blue-300 hover:text-blue-600 hover:shadow-md'
                   ]"
                 >
-                  {{ cat }}
+                  <span class="flex items-center gap-2">
+                    <span v-if="cat !== 'Todos'">{{ getCategoryIcon(cat) }}</span>
+                    {{ cat }}
+                  </span>
                 </button>
               </div>
             </div>
@@ -1913,7 +1906,7 @@ const guardarCambiosPedido = async () => {
         
         <!-- Layout de Mesas -->
         <div class="flex-1 overflow-y-auto p-8 sm:p-10">
-          <div class="grid grid-cols-3 sm:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+          <div class="grid grid-cols-3 gap-3 sm:gap-4 lg:gap-5">
             <div v-for="(fila, index) in mesasLayout" :key="index" class="contents">
               <button
                 v-for="numeroMesa in fila"
