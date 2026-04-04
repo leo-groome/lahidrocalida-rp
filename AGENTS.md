@@ -1,4 +1,4 @@
-# AGENTS.md - Development Guidelines for AI Agents
+# AGENTS.md - Development Guidelines for AI Agents like Gemini, ChatGPT, etc.
 
 ## 🚀 Build, Lint & Test Commands
 
