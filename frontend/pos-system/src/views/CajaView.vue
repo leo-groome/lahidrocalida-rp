@@ -43,7 +43,17 @@ import {
   SearchIcon,
   ChevronDown,
   ArrowBigRightDash,
-  MonitorCheck
+  MonitorCheck,
+  Edit3,
+  X,
+  UtensilsCrossed,
+  User,
+  ReceiptText,
+  Scissors,
+  Wallet,
+  Trash2,
+  ChevronRight,
+  Smartphone
 } from 'lucide-vue-next'
 
 
@@ -2129,7 +2139,7 @@ const handleGastoSaved = async () => {
                 </div>
 
                 <div class="flex-1 flex flex-col justify-end">
-                  <div class="h-64 flex items-end justify-between items-stretch gap-2 pb-2">
+                  <div class="h-64 flex items-end justify-between gap-2 pb-2">
                     <div 
                       v-for="hora in [12,13,14,15,16,17,18,19,20,21,22]" 
                       :key="hora"
@@ -2613,13 +2623,13 @@ const handleGastoSaved = async () => {
       class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in duration-300">
+      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-300">
         <!-- Header Premium -->
-        <div class="px-8 py-5 border-b border-slate-100 bg-[#00126D]">
+        <div class="px-6 py-4 border-b border-slate-100 bg-[#00126D]">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
-                <CreditCard class="w-5 h-5" />
+              <div class="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center text-white">
+                <CreditCard class="w-4 h-4" />
               </div>
               <div>
                 <h2 class="text-lg font-bold text-white leading-tight">
@@ -2638,9 +2648,9 @@ const handleGastoSaved = async () => {
         </div>
 
         <!-- Contenido del modal -->
-        <div class="p-8">
+        <div class="p-4 md:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
           <!-- Info básica con badges modernos -->
-          <div class="flex flex-wrap gap-2 mb-6">
+          <div class="flex flex-wrap gap-2 mb-4">
             <div v-if="selectedPedido.mesa" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold ring-1 ring-inset ring-blue-700/10">
               <span class="text-sm">🪑</span> Mesa {{ selectedPedido.mesa }}
             </div>
@@ -2653,12 +2663,12 @@ const handleGastoSaved = async () => {
           </div>
 
           <!-- Lista de artículos refinada -->
-          <div v-if="selectedPedido.articulos_pedido && selectedPedido.articulos_pedido.length > 0" class="mb-6">
-            <div class="flex items-center justify-between mb-3">
+          <div v-if="selectedPedido.articulos_pedido && selectedPedido.articulos_pedido.length > 0" class="mb-4">
+            <div class="flex items-center justify-between mb-2">
               <h4 class="text-xs font-bold text-slate-400 uppercase tracking-widest">Resumen de Cuenta</h4>
               <span class="text-xs text-slate-400">{{ selectedPedido.articulos_pedido.length }} ítems</span>
             </div>
-            <div class="bg-slate-50/50 rounded-xl p-4 max-h-48 overflow-y-auto border border-slate-100 custom-scrollbar">
+            <div class="bg-slate-50/50 rounded-xl p-3 max-h-32 overflow-y-auto border border-slate-100 custom-scrollbar">
               <div
                 v-for="articulo in selectedPedido.articulos_pedido"
                 :key="articulo.id"
@@ -2681,7 +2691,7 @@ const handleGastoSaved = async () => {
           </div>
 
           <!-- Total Impactante -->
-          <div class="relative overflow-hidden bg-slate-900 rounded-2xl p-6 mb-8 text-white shadow-lg shadow-slate-200">
+          <div class="relative overflow-hidden bg-slate-900 rounded-2xl p-4 mb-4 text-white shadow-lg shadow-slate-200">
             <!-- Círculos decorativos -->
             <div class="absolute -right-4 -top-4 w-20 h-20 bg-white/5 rounded-full blur-2xl"></div>
             <div class="absolute -left-4 -bottom-4 w-16 h-16 bg-blue-500/10 rounded-full blur-xl"></div>
@@ -2707,7 +2717,7 @@ const handleGastoSaved = async () => {
             v-if="canSplitSelectedPedido"
             @click="openSplitModalForPedido(selectedPedido)"
             :disabled="processingPayment"
-            class="w-full mb-6 py-3 px-4 flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl border border-amber-200/50 transition-all active:scale-[0.98] disabled:opacity-50"
+            class="w-full mb-4 py-2.5 px-4 flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl border border-amber-200/50 transition-all active:scale-[0.98] disabled:opacity-50"
           >
             <Scissors class="w-4 h-4" />
             Dividir Cuenta
@@ -2718,7 +2728,7 @@ const handleGastoSaved = async () => {
             <button
               @click="procesarPago(selectedPedido, 'efectivo')"
               :disabled="processingPayment"
-              class="group relative flex items-center justify-between p-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-md shadow-emerald-200 active:scale-[0.98] disabled:opacity-50 overflow-hidden"
+              class="group relative flex items-center justify-between p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-md shadow-emerald-200 active:scale-[0.98] disabled:opacity-50 overflow-hidden"
             >
               <div class="flex items-center gap-3 z-10">
                 <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
@@ -3040,9 +3050,9 @@ const handleGastoSaved = async () => {
       class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeDetailsModal"
     >
-      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in slide-in-from-bottom-8 duration-300">
+      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in slide-in-from-bottom-8 duration-300">
         <!-- Header -->
-        <div class="px-8 py-6 border-b border-white/10 bg-[#00126D]">
+        <div class="px-6 py-4 border-b border-white/10 bg-[#00126D]">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
@@ -3077,9 +3087,9 @@ const handleGastoSaved = async () => {
         </div>
 
         <!-- Contenido -->
-        <div class="p-8">
+        <div class="p-4 md:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
           <!-- Status Ribbon -->
-          <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
+          <div class="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
             <div class="flex flex-col gap-1">
               <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado Actual</span>
               <div :class="[getEstadoColor(selectedPedidoDetails.estado), 'px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider text-white shadow-sm ring-2 ring-white']">
@@ -3096,7 +3106,7 @@ const handleGastoSaved = async () => {
           </div>
 
           <!-- Cards de Identificación -->
-          <div class="grid grid-cols-2 gap-3 mb-8">
+          <div class="grid grid-cols-2 gap-2 mb-4">
             <div v-if="selectedPedidoDetails.mesa" class="flex flex-col gap-2 p-4 rounded-2xl bg-blue-50/50 border border-blue-100 group hover:bg-blue-50 transition-colors">
               <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
                 <UtensilsCrossed class="w-4 h-4" />
@@ -3119,12 +3129,12 @@ const handleGastoSaved = async () => {
           </div>
 
           <!-- Items List Refined -->
-          <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-8">
-            <div class="flex items-center justify-between mb-4">
+          <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-4">
+            <div class="flex items-center justify-between mb-2">
               <h4 class="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Composición del Pedido</h4>
               <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-bold">{{ selectedPedidoDetails.articulos_pedido.length }} platillos</span>
             </div>
-            <div class="bg-slate-50/50 rounded-2xl p-2 border border-slate-100 max-h-64 overflow-y-auto custom-scrollbar">
+            <div class="bg-slate-50/50 rounded-2xl p-2 border border-slate-100 max-h-40 overflow-y-auto custom-scrollbar">
               <div
                 v-for="articulo in selectedPedidoDetails.articulos_pedido"
                 :key="articulo.id"
@@ -3154,12 +3164,12 @@ const handleGastoSaved = async () => {
           </div>
 
           <!-- Total Footer -->
-          <div class="relative overflow-hidden bg-[#FDB700] p-6 rounded-2xl mb-8 group">
+          <div class="relative overflow-hidden bg-[#FDB700] p-4 rounded-xl mb-4 group">
             <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full group-hover:scale-125 transition-transform duration-700"></div>
             <div class="relative flex items-center justify-between text-white">
               <div class="flex flex-col">
                 <span class="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">Subtotal del Pedido</span>
-                <span class="text-3xl font-black tabular-nums tracking-tight tracking-tighter">
+                <span class="text-3xl font-black tabular-nums tracking-tighter">
                   ${{ Number(selectedPedidoDetails.total).toFixed(2) }}
                 </span>
               </div>
@@ -3198,7 +3208,7 @@ const handleGastoSaved = async () => {
             <button
               v-if="selectedPedidoDetails.estado === 'entregado'"
               @click="solicitarCuenta(selectedPedidoDetails); closeDetailsModal()"
-              class="w-full py-4 bg-[#00126D] hover:bg-[#000E5A] text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              class="w-full py-3 bg-[#00126D] hover:bg-[#000E5A] text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
               <CreditCard class="w-5 h-5" />
               SOLICITAR CUENTA
@@ -3207,7 +3217,7 @@ const handleGastoSaved = async () => {
             <button
               v-if="selectedPedidoDetails.estado === 'cuenta_solicitada'"
               @click="selectedPedido = selectedPedidoDetails; closeDetailsModal()"
-              class="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
+              class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
               <Wallet class="w-5 h-5" />
               COBRAR AHORA

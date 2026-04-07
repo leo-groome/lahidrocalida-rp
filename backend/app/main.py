@@ -29,6 +29,7 @@ app.add_middleware(
         "http://localhost:5173",  # Para servidor de desarrollo Vite local
         "http://localhost:5174",  # Puerto alternativo si 5173 está ocupado
         "https://lahidrocalida.vercel.app",
+        "http://192.168.2.69:5173",
         # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
     ],
     allow_credentials=True,
