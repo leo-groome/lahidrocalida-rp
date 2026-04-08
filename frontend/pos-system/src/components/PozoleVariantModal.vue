@@ -83,7 +83,7 @@ function handleClose() {
 </script>
 
 <template>
-  <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[60]">
+  <div v-if="isOpen" class="fixed inset-0 flex items-center justify-center z-[150]">
     <!-- Backdrop -->
     <div class="absolute inset-0 bg-black bg-opacity-75" @click="handleClose"></div>
     

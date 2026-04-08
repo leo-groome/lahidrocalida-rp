@@ -1,5 +1,5 @@
 <template>
-  <header class="sticky top-0 z-[100] bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm">
+  <header class="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200/60 shadow-sm">
     <div class="max-w-[1600px] mx-auto px-6 lg:px-8">
       <div class="flex justify-between items-center h-16">
         <!-- Logo and Title Group -->

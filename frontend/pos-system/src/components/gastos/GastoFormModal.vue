@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[100] p-4 md:p-8 animate-in fade-in duration-300">
+  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[150] p-4 md:p-8 animate-in fade-in duration-300">
     <div class="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
       
       <!-- Header -->

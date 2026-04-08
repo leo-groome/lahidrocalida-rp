@@ -1,6 +1,6 @@
 <template>
   <div
-    class="fixed inset-0 flex items-center justify-center z-[70] p-4 bg-black/60 backdrop-blur-sm transition-opacity"
+    class="fixed inset-0 flex items-center justify-center z-[150] p-4 bg-black/60 backdrop-blur-sm transition-opacity"
     @click.self="$emit('cancelar')"
   >
     <div class="bg-white rounded-2xl max-w-5xl w-full shadow-2xl border border-gray-100 flex flex-col max-h-[90vh] overflow-hidden">
@@ -188,7 +188,7 @@
     </div>
     
     <!-- Confirmación: total $0.00 -->
-    <div v-if="showConfirmCero" class="fixed inset-0 flex items-center justify-center z-[80] p-4 bg-black/60 backdrop-blur-sm" @click.self="showConfirmCero = false">
+    <div v-if="showConfirmCero" class="fixed inset-0 flex items-center justify-center z-[160] p-4 bg-black/60 backdrop-blur-sm" @click.self="showConfirmCero = false">
       <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden border border-rose-100">
         <div class="bg-rose-500 px-6 py-4 flex items-center gap-2">
            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>

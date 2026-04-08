@@ -1411,6 +1411,8 @@ const imprimirTicket = async (pedido: PedidoResponse): Promise<boolean> => {
 
 // Imprimir ticket por separado (para pedidos ya en cuenta_solicitada)
 const imprimirTicketSeparado = async (pedido: PedidoResponse) => {
+  if (isPrintingTicket.value) return
+  isPrintingTicket.value = true
   try {
     console.log('🖨️ Imprimiendo ticket separado para pedido:', pedido.id)
 
@@ -1425,6 +1427,8 @@ const imprimirTicketSeparado = async (pedido: PedidoResponse) => {
 
   } catch (e: any) {
     showErrorNotification('Error al reimprimir ticket')
+  } finally {
+    isPrintingTicket.value = false
   }
 }
 
@@ -2516,7 +2520,7 @@ const handleGastoSaved = async () => {
     <!-- Modal: Editar propina (solo pagados) (Renovado Premium) -->
     <div
       v-if="showEditarPropinaModal && ticketParaPropina"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-sm bg-black/30"
+      class="fixed inset-0 flex items-center justify-center z-[150] p-4 backdrop-blur-sm bg-black/30"
       @click.self="cerrarEditarPropina"
     >
       <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-gray-200 overflow-hidden transform transition-all">
@@ -2620,10 +2624,10 @@ const handleGastoSaved = async () => {
     <!-- Modal de procesamiento de pago - Premium -->
     <div
       v-if="selectedPedido"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
+      class="fixed inset-0 flex items-center justify-center z-[150] p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeModal"
     >
-      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-300">
+      <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-300">
         <!-- Header Premium -->
         <div class="px-6 py-4 border-b border-slate-100 bg-[#00126D]">
           <div class="flex items-center justify-between">
@@ -2776,7 +2780,7 @@ const handleGastoSaved = async () => {
     <!-- Modal Calculadora de Efectivo Profesional -->
     <div
       v-if="showEfectivoCalculator && selectedPedido"
-      class="fixed inset-0 flex items-center justify-center z-[60] p-4"
+      class="fixed inset-0 flex items-center justify-center z-[160] p-4"
       @click.self="cerrarCalculadoraEfectivo"
     >
       <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-gray-300">
@@ -2923,7 +2927,7 @@ const handleGastoSaved = async () => {
     <!-- Modal de Propina para Tarjeta/Transferencia -->
     <div
       v-if="showPropinaTarjetaModal && selectedPedido && metodoPagoSeleccionado"
-      class="fixed inset-0 flex items-center justify-center z-[65] p-4"
+      class="fixed inset-0 flex items-center justify-center z-[165] p-4"
       @click.self="cerrarModalPropina"
     >
       <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-blue-300">
@@ -3047,87 +3051,60 @@ const handleGastoSaved = async () => {
     <!-- Modal de Detalles del Pedido - Premium Refined -->
     <div
       v-if="showDetailsModal && selectedPedidoDetails"
-      class="fixed inset-0 flex items-center justify-center z-50 p-4 bg-slate-900/40 backdrop-blur-sm"
+      class="fixed inset-0 flex items-center justify-center z-[150] p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="closeDetailsModal"
     >
-      <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in slide-in-from-bottom-8 duration-300">
-        <!-- Header -->
+      <div class="bg-white rounded-2xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in slide-in-from-bottom-8 duration-300">
+        <!-- Header - Mesa/Cliente como título principal -->
         <div class="px-6 py-4 border-b border-white/10 bg-[#00126D]">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white">
-                <LayoutDashboard class="w-5 h-5" />
+          <div class="flex items-start justify-between">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white flex-shrink-0">
+                <span v-if="selectedPedidoDetails.mesa" class="text-lg font-black">{{ selectedPedidoDetails.mesa }}</span>
+                <User v-else class="w-5 h-5" />
               </div>
-              <div>
-                <h2 class="text-xl font-black text-white tracking-tight leading-tight">
-                  Pedido #{{ selectedPedidoDetails.numero_display }}
+              <div class="min-w-0 flex-1">
+                <!-- Título principal: Mesa o Cliente -->
+                <h2 class="text-2xl font-black text-white tracking-tight leading-tight truncate">
+                  <span v-if="selectedPedidoDetails.mesa">Mesa {{ selectedPedidoDetails.mesa }}</span>
+                  <span v-else-if="selectedPedidoDetails.nombre_cliente">{{ selectedPedidoDetails.nombre_cliente }}</span>
+                  <span v-else>Pedido #{{ selectedPedidoDetails.numero_display }}</span>
                 </h2>
-                <div class="flex items-center gap-2 mt-0.5">
-                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <p class="text-[10px] text-blue-100/70 uppercase tracking-widest font-bold">Detalles en tiempo real</p>
+                <!-- Subtítulo: número de pedido + estado -->
+                <div class="flex items-center gap-2 mt-1 flex-wrap">
+                  <span class="text-[10px] text-blue-200/70 font-bold uppercase tracking-widest">
+                    #{{ selectedPedidoDetails.numero_display }}
+                  </span>
+                  <span class="text-blue-200/40">·</span>
+                  <span :class="[getEstadoColor(selectedPedidoDetails.estado), 'px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider text-white']">{{ getEstadoTexto(selectedPedidoDetails.estado) }}</span>
+                  <span class="text-blue-200/40">·</span>
+                  <span class="flex items-center gap-1 text-[10px] text-blue-200/70 font-bold">
+                    <Clock class="w-3 h-3" />
+                    {{ formatTime(selectedPedidoDetails.fecha_creacion) }}
+                  </span>
                 </div>
               </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-shrink-0 ml-2">
               <button
                 @click="openEditPedido(selectedPedidoDetails)"
-                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all active:scale-90"
+                class="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 text-white transition-all active:scale-90"
                 title="Editar pedido"
               >
                 <Edit3 class="w-4 h-4" />
               </button>
               <button
                 @click="closeDetailsModal"
-                class="w-10 h-10 flex items-center justify-center rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                class="w-9 h-9 flex items-center justify-center rounded-xl text-white/50 hover:text-white hover:bg-white/10 transition-colors"
               >
-                <X class="w-6 h-6" />
+                <X class="w-5 h-5" />
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Contenido -->
+        <!-- Contenido scrollable -->
         <div class="p-4 md:p-6 overflow-y-auto flex-1 min-h-0 custom-scrollbar">
-          <!-- Status Ribbon -->
-          <div class="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
-            <div class="flex flex-col gap-1">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estado Actual</span>
-              <div :class="[getEstadoColor(selectedPedidoDetails.estado), 'px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider text-white shadow-sm ring-2 ring-white']">
-                {{ getEstadoTexto(selectedPedidoDetails.estado) }}
-              </div>
-            </div>
-            <div class="flex flex-col items-end gap-1">
-              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Hora de Apertura</span>
-              <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 text-slate-600 font-bold text-xs border border-slate-100">
-                <Clock class="w-3.5 h-3.5" />
-                {{ formatTime(selectedPedidoDetails.fecha_creacion) }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Cards de Identificación -->
-          <div class="grid grid-cols-2 gap-2 mb-4">
-            <div v-if="selectedPedidoDetails.mesa" class="flex flex-col gap-2 p-4 rounded-2xl bg-blue-50/50 border border-blue-100 group hover:bg-blue-50 transition-colors">
-              <div class="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform">
-                <UtensilsCrossed class="w-4 h-4" />
-              </div>
-              <div>
-                <p class="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Ubicación</p>
-                <p class="text-sm font-black text-blue-900">MESA {{ selectedPedidoDetails.mesa }}</p>
-              </div>
-            </div>
-
-            <div v-if="selectedPedidoDetails.nombre_cliente" class="flex flex-col gap-2 p-4 rounded-2xl bg-emerald-50/50 border border-emerald-100 group hover:bg-emerald-50 transition-colors">
-              <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-600 group-hover:scale-110 transition-transform">
-                <User class="w-4 h-4" />
-              </div>
-              <div>
-                <p class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Cliente</p>
-                <p class="text-sm font-black text-emerald-900 truncate">{{ selectedPedidoDetails.nombre_cliente }}</p>
-              </div>
-            </div>
-          </div>
-
           <!-- Items List Refined -->
           <div v-if="selectedPedidoDetails.articulos_pedido && selectedPedidoDetails.articulos_pedido.length > 0" class="mb-4">
             <div class="flex items-center justify-between mb-2">
@@ -3193,7 +3170,7 @@ const handleGastoSaved = async () => {
 
               <button
                 v-if="!['pagado', 'cancelado', 'dividido'].includes(selectedPedidoDetails.estado)"
-                @click="imprimirPedidoAdelantado(selectedPedidoDetails)"
+                @click="imprimirTicketSeparado(selectedPedidoDetails)"
                 :disabled="isPrintingTicket"
                 class="flex flex-col items-center justify-center p-4 bg-slate-900 hover:bg-black text-white rounded-2xl transition-all active:scale-95 group disabled:opacity-50"
               >
@@ -3247,7 +3224,7 @@ const handleGastoSaved = async () => {
     <!-- Modal dividir cuenta -->
     <div
       v-if="showSplitModal && splitPedido"
-      class="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      class="fixed inset-0 z-[180] flex items-center justify-center p-4"
       @click.self="closeSplitModal"
     >
       <div class="absolute inset-0 bg-black bg-opacity-60"></div>
@@ -3447,7 +3424,7 @@ const handleGastoSaved = async () => {
     <!-- Modal: Edición de Pedido -->
     <div
       v-if="showEditPedidoModal"
-      class="fixed inset-0 flex items-center justify-center z-[100] p-4 bg-black/60 backdrop-blur-sm"
+      class="fixed inset-0 flex items-center justify-center z-[200] p-4 bg-black/60 backdrop-blur-sm"
       @click.self="showEditPedidoModal = false"
     >
       <div class="bg-white rounded-3xl max-w-lg w-full shadow-2xl border border-gray-200 flex flex-col max-h-[90vh] md:max-h-[85vh]">
@@ -3574,7 +3551,7 @@ const handleGastoSaved = async () => {
     <!-- Modal de Confirmación de Cancelación -->
     <div
       v-if="showCancelConfirmModal && pedidoACancelar"
-      class="fixed inset-0 flex items-center justify-center z-[70] p-4"
+      class="fixed inset-0 flex items-center justify-center z-[170] p-4"
       @click.self="cerrarConfirmacionCancelacion"
     >
       <div class="bg-white rounded-xl max-w-md w-full shadow-2xl border-2 border-red-200">
