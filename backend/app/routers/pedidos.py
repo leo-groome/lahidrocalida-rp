@@ -19,6 +19,7 @@ from app.schemas import (
     AgregarArticulosRequest,
     DividirCuentaRequest,
     DividirCuentaResponse,
+    DividirPorMontoRequest,
 )
 from app.auth import get_current_active_user
 from app.websocket_manager import websocket_manager
@@ -562,6 +563,132 @@ async def dividir_cuenta(
 
     except Exception as e:
         print(f"Error notifying dividir cuenta via WebSocket: {e}")
+
+    return {
+        "pedido_original_id": pedido.id,
+        "cuentas": cuentas_creadas,
+    }
+
+
+@router.post("/{pedido_id}/dividir_por_montos", response_model=DividirCuentaResponse)
+async def dividir_por_montos(
+    pedido_id: int,
+    data: DividirPorMontoRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
+
+    if current_user.rol != "administrador":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden dividir cuentas")
+
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if pedido.estado not in ["entregado", "cuenta_solicitada"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
+        )
+
+    if not data.cuentas or len(data.cuentas) < 2:
+        raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
+
+    for cuenta in data.cuentas:
+        if cuenta.monto <= 0:
+            raise HTTPException(status_code=400, detail="Cada monto debe ser mayor a 0")
+
+    suma_montos = sum(c.monto for c in data.cuentas)
+    if abs(suma_montos - pedido.total) > Decimal("0.05"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"La suma de los montos ({suma_montos}) no coincide con el total del pedido ({pedido.total})",
+        )
+
+    def build_nombre_cliente(nombre_base, i, total):
+        base = (nombre_base or "").strip()
+        label = f"Cuenta {i}/{total}"
+        return f"{base} {label}" if base else label
+
+    old_estado = pedido.estado
+    pedido.estado = "dividido"
+    db.commit()
+    db.refresh(pedido)
+
+    cuentas_creadas: List[Pedido] = []
+    total_cuentas = len(data.cuentas)
+
+    for i, cuenta in enumerate(data.cuentas, start=1):
+        numero_display = generate_numero_display(db, pedido.sucursal_id)
+        nombre_cliente_nuevo = build_nombre_cliente(pedido.nombre_cliente, i, total_cuentas)
+
+        nuevo_pedido = Pedido(
+            numero_display=numero_display,
+            nombre_cliente=nombre_cliente_nuevo,
+            mesa=pedido.mesa,
+            total=cuenta.monto,
+            estado="cuenta_solicitada",
+            metodo_pago=None,
+            tipo_orden=pedido.tipo_orden,
+            sucursal_id=pedido.sucursal_id,
+            usuario_id=pedido.usuario_id,
+        )
+
+        db.add(nuevo_pedido)
+        db.commit()
+        db.refresh(nuevo_pedido)
+        cuentas_creadas.append(nuevo_pedido)
+
+    # Notificar por WebSocket
+    try:
+        pedido_original_data = {
+            "id": pedido.id,
+            "numero_display": pedido.numero_display,
+            "nombre_cliente": pedido.nombre_cliente,
+            "mesa": pedido.mesa,
+            "total": float(pedido.total),
+            "estado": pedido.estado,
+            "tipo_orden": pedido.tipo_orden,
+            "sucursal_id": pedido.sucursal_id,
+            "fecha_creacion": pedido.fecha_creacion.isoformat(),
+            "fecha_pago": pedido.fecha_pago.isoformat() if pedido.fecha_pago else None,
+            "usuario_nombre": pedido.usuario.nombre if pedido.usuario else None,
+            "metodo_pago": pedido.metodo_pago,
+            "propina_efectivo": float(pedido.propina_efectivo),
+            "propina_tarjeta": float(pedido.propina_tarjeta),
+            "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
+            "articulos_pedido": [],
+        }
+
+        if old_estado != pedido.estado:
+            await websocket_manager.notify_pedido_estado_changed(
+                pedido_id=pedido.id,
+                nuevo_estado=pedido.estado,
+                pedido_data=pedido_original_data,
+            )
+
+        for cuenta_pedido in cuentas_creadas:
+            cuenta_data = {
+                "id": cuenta_pedido.id,
+                "numero_display": cuenta_pedido.numero_display,
+                "nombre_cliente": cuenta_pedido.nombre_cliente,
+                "mesa": cuenta_pedido.mesa,
+                "total": float(cuenta_pedido.total),
+                "estado": cuenta_pedido.estado,
+                "tipo_orden": cuenta_pedido.tipo_orden,
+                "sucursal_id": cuenta_pedido.sucursal_id,
+                "fecha_creacion": cuenta_pedido.fecha_creacion.isoformat(),
+                "metodo_pago": cuenta_pedido.metodo_pago,
+                "propina_efectivo": float(cuenta_pedido.propina_efectivo),
+                "propina_tarjeta": float(cuenta_pedido.propina_tarjeta),
+                "propina_total": float(cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta),
+                "articulos_pedido": [],
+            }
+            await websocket_manager.notify_pedido_created(cuenta_data)
+
+    except Exception as e:
+        print(f"Error notifying dividir_por_montos via WebSocket: {e}")
 
     return {
         "pedido_original_id": pedido.id,

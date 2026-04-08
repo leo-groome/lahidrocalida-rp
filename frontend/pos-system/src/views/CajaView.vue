@@ -109,6 +109,7 @@ const getArticuloEstadoClass = (estadoItem: string) => {
 // Estados para dividir cuenta
 const showSplitModal = ref(false)
 const splitPedido = ref<PedidoResponse | null>(null)
+const splitModo = ref<'articulo' | 'equitativo' | 'montos'>('articulo')
 const splitNumCuentas = ref<number>(2)
 const splitAsignaciones = ref<Record<number, number[]>>({})
 const splitProcessing = ref(false)
@@ -116,6 +117,13 @@ const splitPrintPaused = ref(false)
 const splitPrintError = ref<string | null>(null)
 const splitPendingPrints = ref<PedidoResponse[]>([])
 const splitCurrentPrintIndex = ref<number>(0)
+
+// Modo equitativo
+const splitEquitativoN = ref<number>(2)
+
+// Modo por montos
+const splitMontos = ref<{ monto: number }[]>([])
+const splitMontoInput = ref<string>('')
 
 const MAX_SPLIT_CUENTAS = 5
 
@@ -196,6 +204,7 @@ const showGastoModal = ref(false)
 const showEfectivoCalculator = ref(false)
 const efectivoRecibido = ref<string>('')
 const cambioCalculado = ref<number>(0)
+const efectivoInput = ref<HTMLInputElement | null>(null)
 
 // Estados para propinas
 const propinaEfectivo = ref<string>('')
@@ -592,6 +601,18 @@ watch(subTabReporteDia, (newSubTab) => {
   if (activeTab.value === 'propinas') {
     cargarAnalyticsDia()
     cargarTicketsDelDia()
+  }
+})
+
+// Focus automático para calculadora de efectivo
+watch(showEfectivoCalculator, async (val) => {
+  if (val) {
+    await nextTick()
+    setTimeout(() => {
+      efectivoInput.value?.focus()
+      // Seleccionar el texto para que sea fácil borrarlo
+      efectivoInput.value?.select()
+    }, 100)
   }
 })
 
@@ -1179,12 +1200,16 @@ const openSplitModalForPedido = async (pedido: PedidoResponse) => {
 const closeSplitModal = () => {
   showSplitModal.value = false
   splitPedido.value = null
+  splitModo.value = 'articulo'
   splitAsignaciones.value = {}
   splitProcessing.value = false
   splitPrintPaused.value = false
   splitPrintError.value = null
   splitPendingPrints.value = []
   splitCurrentPrintIndex.value = 0
+  splitEquitativoN.value = 2
+  splitMontos.value = []
+  splitMontoInput.value = ''
 }
 
 const splitCuentasVisibles = computed(() => {
@@ -1236,14 +1261,130 @@ const splitIsValid = computed(() => {
   return true
 })
 
+const splitRestantePorArticulo = computed(() => {
+  const pedido = splitPedido.value
+  if (!pedido?.articulos_pedido) return {}
+
+  const restante: Record<number, number> = {}
+  const n = Math.min(Math.max(splitNumCuentas.value, 2), MAX_SPLIT_CUENTAS)
+
+  for (const articulo of pedido.articulos_pedido) {
+    const asign = splitAsignaciones.value[articulo.id] || []
+    let sum = 0
+    for (let i = 0; i < n; i++) {
+      sum += Number(asign[i] || 0)
+    }
+    restante[articulo.id] = articulo.cantidad - sum
+  }
+  return restante
+})
+
 const setSplitCantidad = (articuloId: number, cuentaIndex: number, value: number) => {
   const arr = splitAsignaciones.value[articuloId] || new Array(MAX_SPLIT_CUENTAS).fill(0)
   const safe = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
   arr[cuentaIndex] = safe
-  splitAsignaciones.value[articuloId] = arr
+  splitAsignaciones.value[articuloId] = [...arr]
+}
+
+const incrementarSplitArticulo = (articuloId: number, cuentaIndex: number) => {
+  const restante = splitRestantePorArticulo.value[articuloId] || 0
+  if (restante > 0) {
+    const asign = splitAsignaciones.value[articuloId] || new Array(MAX_SPLIT_CUENTAS).fill(0)
+    setSplitCantidad(articuloId, cuentaIndex, Number(asign[cuentaIndex] || 0) + 1)
+  }
+}
+
+const decrementarSplitArticulo = (articuloId: number, cuentaIndex: number) => {
+  const asign = splitAsignaciones.value[articuloId] || new Array(MAX_SPLIT_CUENTAS).fill(0)
+  const actual = Number(asign[cuentaIndex] || 0)
+  if (actual > 0) {
+    setSplitCantidad(articuloId, cuentaIndex, actual - 1)
+  }
 }
 
 const buildCuentaText = (i: number, total: number) => `Cuenta ${i}/${total}`
+
+// ── Computeds modo equitativo ──────────────────────────────────────────────
+const totalPedidoNum = computed(() => Number(splitPedido.value?.total ?? 0))
+
+const montoEquitativo = computed(() => {
+  const n = Math.max(splitEquitativoN.value, 1)
+  return totalPedidoNum.value / n
+})
+
+const equitativoValido = computed(() =>
+  splitEquitativoN.value >= 2 && totalPedidoNum.value > 0
+)
+
+// ── Computeds modo por montos ──────────────────────────────────────────────
+const totalMontosCobrados = computed(() =>
+  splitMontos.value.reduce((s, m) => s + m.monto, 0)
+)
+
+const montoRestante = computed(() =>
+  totalPedidoNum.value - totalMontosCobrados.value
+)
+
+const montosValidos = computed(() =>
+  Math.abs(montoRestante.value) < 0.05 && splitMontos.value.length >= 2
+)
+
+const agregarMontoPago = () => {
+  const val = parseFloat(splitMontoInput.value)
+  if (!Number.isFinite(val) || val <= 0) return
+  splitMontos.value.push({ monto: val })
+  splitMontoInput.value = ''
+}
+
+const eliminarMontoPago = (idx: number) => {
+  splitMontos.value.splice(idx, 1)
+}
+
+// ── Helper compartido para llamar al endpoint de montos ────────────────────
+const dividirPorMontosAPI = async (cuentas: { monto: number }[]) => {
+  if (!splitPedido.value) return
+  splitProcessing.value = true
+  splitPrintPaused.value = false
+  splitPrintError.value = null
+
+  try {
+    const res = await api.post(`/pedidos/${splitPedido.value.id}/dividir_por_montos`, { cuentas })
+    const nuevasCuentas: PedidoResponse[] = res.data?.cuentas || []
+
+    if (!nuevasCuentas.length) throw new Error('No se recibieron cuentas nuevas')
+
+    splitPendingPrints.value = nuevasCuentas
+    splitCurrentPrintIndex.value = 0
+    await processSplitPrintQueue()
+
+    if (!splitPrintPaused.value) {
+      showSuccessNotification(`Cuenta dividida en ${nuevasCuentas.length} partes`)
+      closeSplitModal()
+      await pedidosStore.refreshPedidos()
+    }
+  } catch (e: any) {
+    console.error('Error dividiendo cuenta por montos:', e)
+    showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+  } finally {
+    splitProcessing.value = false
+  }
+}
+
+const dividirCuentaEquitativoConfirmar = async () => {
+  if (!equitativoValido.value) return
+  const n = splitEquitativoN.value
+  const base = parseFloat(montoEquitativo.value.toFixed(2))
+  // El último absorbe el centavo residual
+  const ultimo = parseFloat((totalPedidoNum.value - base * (n - 1)).toFixed(2))
+  const cuentas = Array.from({ length: n }, (_, i) => ({ monto: i < n - 1 ? base : ultimo }))
+  await dividirPorMontosAPI(cuentas)
+}
+
+const dividirCuentaMontosConfirmar = async () => {
+  if (!montosValidos.value) return
+  const cuentas = splitMontos.value.map(m => ({ monto: m.monto }))
+  await dividirPorMontosAPI(cuentas)
+}
 
 const dividirCuentaConfirmar = async () => {
   if (!splitPedido.value) return
@@ -2780,12 +2921,12 @@ const handleGastoSaved = async () => {
     <!-- Modal Calculadora de Efectivo Profesional -->
     <div
       v-if="showEfectivoCalculator && selectedPedido"
-      class="fixed inset-0 flex items-center justify-center z-[160] p-4"
+      class="fixed inset-0 flex items-center justify-center z-[160] p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="cerrarCalculadoraEfectivo"
     >
-      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-gray-300">
+      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in slide-in-from-bottom-8 duration-300">
         <!-- Header profesional -->
-        <div class="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 rounded-t-2xl">
+        <div class="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4">
           <div class="flex items-center justify-between text-white">
             <h2 class="text-xl font-bold flex items-center gap-2">
               💵 Pago en Efectivo
@@ -2826,6 +2967,7 @@ const handleGastoSaved = async () => {
             <div class="relative">
               <span class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-lg font-bold">$</span>
               <input
+                ref="efectivoInput"
                 v-model="efectivoRecibido"
                 @input="calcularCambio"
                 type="number"
@@ -2833,7 +2975,6 @@ const handleGastoSaved = async () => {
                 min="0"
                 class="w-full pl-8 pr-4 py-4 text-2xl font-bold border-2 border-gray-300 rounded-lg focus:border-green-500 focus:ring-2 focus:ring-green-200 text-center"
                 placeholder="0.00"
-                autofocus
               />
             </div>
           </div>
@@ -2891,27 +3032,6 @@ const handleGastoSaved = async () => {
               {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar Pago' }}
             </button>
 
-            <div class="grid grid-cols-3 gap-2">
-              <button
-                @click="efectivoRecibido = (Number(selectedPedido.total) + propinaEfectivoNum).toString(); calcularCambio()"
-                class="py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 font-medium text-sm rounded transition-all"
-              >
-                Exacto
-              </button>
-              <button
-                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum) / 50) * 50).toString(); calcularCambio()"
-                class="py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium text-sm rounded transition-all"
-              >
-                + $50
-              </button>
-              <button
-                @click="efectivoRecibido = (Math.ceil((Number(selectedPedido.total) + propinaEfectivoNum) / 100) * 100).toString(); calcularCambio()"
-                class="py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 font-medium text-sm rounded transition-all"
-              >
-                + $100
-              </button>
-            </div>
-
             <button
               @click="cerrarCalculadoraEfectivo"
               :disabled="processingPayment"
@@ -2927,12 +3047,12 @@ const handleGastoSaved = async () => {
     <!-- Modal de Propina para Tarjeta/Transferencia -->
     <div
       v-if="showPropinaTarjetaModal && selectedPedido && metodoPagoSeleccionado"
-      class="fixed inset-0 flex items-center justify-center z-[165] p-4"
+      class="fixed inset-0 flex items-center justify-center z-[165] p-4 bg-slate-900/40 backdrop-blur-sm"
       @click.self="cerrarModalPropina"
     >
-      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border-2 border-blue-300">
+      <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in slide-in-from-bottom-8 duration-300">
         <!-- Header profesional -->
-        <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 rounded-t-2xl">
+        <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
           <div class="flex items-center justify-between text-white">
             <h2 class="text-xl font-bold flex items-center gap-2">
               💳 Propina - Pago con {{ metodoPagoSeleccionado === 'tarjeta' ? 'Tarjeta' : 'Transferencia' }}
@@ -2967,22 +3087,22 @@ const handleGastoSaved = async () => {
             </label>
             <div class="grid grid-cols-3 gap-3">
               <button
-                @click="aplicarPropinaPorcentaje(10)"
+                @click="aplicarPropinaPorcentaje(5)"
                 class="py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-lg transition-all hover:scale-105"
+              >
+                5%
+              </button>
+              <button
+                @click="aplicarPropinaPorcentaje(10)"
+                class="py-3 bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold rounded-lg transition-all hover:scale-105"
               >
                 10%
               </button>
               <button
                 @click="aplicarPropinaPorcentaje(15)"
-                class="py-3 bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold rounded-lg transition-all hover:scale-105"
-              >
-                15%
-              </button>
-              <button
-                @click="aplicarPropinaPorcentaje(20)"
                 class="py-3 bg-blue-300 hover:bg-blue-400 text-blue-900 font-bold rounded-lg transition-all hover:scale-105"
               >
-                20%
+                15%
               </button>
             </div>
           </div>
@@ -3224,158 +3344,358 @@ const handleGastoSaved = async () => {
     <!-- Modal dividir cuenta -->
     <div
       v-if="showSplitModal && splitPedido"
-      class="fixed inset-0 z-[180] flex items-center justify-center p-4"
+      class="fixed inset-0 z-[180] flex items-center justify-center p-4 sm:p-6"
       @click.self="closeSplitModal"
     >
-      <div class="absolute inset-0 bg-black bg-opacity-60"></div>
+      <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"></div>
 
-      <div class="relative bg-white rounded-2xl max-w-4xl w-full mx-4 shadow-2xl border border-gray-200 overflow-hidden">
-        <div class="px-6 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between">
+      <div class="relative bg-white rounded-3xl max-w-5xl w-full mx-auto shadow-2xl overflow-hidden flex flex-col max-h-full">
+        <div class="px-6 py-5 bg-gradient-to-r from-amber-500 to-amber-600 text-white flex items-center justify-between flex-shrink-0">
           <div>
-            <div class="text-sm opacity-90">Dividir cuenta</div>
-            <div class="text-lg font-bold">Pedido #{{ splitPedido.numero_display }}</div>
+            <div class="text-sm font-semibold opacity-90 uppercase tracking-widest">Dividir cuenta</div>
+            <div class="text-2xl font-black">Pedido #{{ splitPedido.numero_display }}</div>
           </div>
           <button
             @click="closeSplitModal"
-            class="text-white hover:text-gray-100 text-2xl font-bold"
+            class="text-white/80 hover:text-white bg-white/10 hover:bg-white/20 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
           >
-            ×
+            <X class="w-6 h-6" />
           </button>
         </div>
 
-        <div class="p-6">
-          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+        <div class="p-6 overflow-y-auto flex-grow scrollbar-thin scrollbar-thumb-gray-200">
+          <!-- Info del pedido -->
+          <div class="flex items-center justify-between mb-4">
             <div class="text-sm text-gray-700">
               <div v-if="splitPedido.mesa" class="font-semibold text-blue-700">🪑 Mesa {{ splitPedido.mesa }}</div>
               <div v-else-if="splitPedido.nombre_cliente" class="font-semibold text-green-700">👤 {{ splitPedido.nombre_cliente }}</div>
-              <div class="text-xs text-gray-500 mt-1">Maximo {{ MAX_SPLIT_CUENTAS }} cuentas</div>
-            </div>
-
-            <div class="flex items-center gap-3">
-              <label class="text-sm font-semibold text-gray-700">Cuentas:</label>
-              <select
-                v-model.number="splitNumCuentas"
-                class="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                :disabled="splitProcessing || splitPrintPaused"
-              >
-                <option :value="2">2</option>
-                <option :value="3">3</option>
-                <option :value="4">4</option>
-                <option :value="5">5</option>
-              </select>
+              <div class="text-xs text-gray-500 mt-0.5">Total: <span class="font-bold text-gray-800">${{ Number(splitPedido.total).toFixed(2) }}</span></div>
             </div>
           </div>
 
-          <div class="overflow-auto border border-gray-200 rounded-xl">
-            <table class="min-w-full">
-              <thead class="bg-gray-50">
-                <tr>
-                  <th class="text-left text-xs font-bold text-gray-600 px-3 py-3">Articulo</th>
-                  <th class="text-center text-xs font-bold text-gray-600 px-3 py-3">Total</th>
-                  <th
-                    v-for="idx in splitCuentasVisibles"
-                    :key="idx"
-                    class="text-center text-xs font-bold text-gray-600 px-3 py-3"
-                  >
-                    {{ buildCuentaText(idx + 1, splitCuentasVisibles.length) }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="articulo in (splitPedido.articulos_pedido || [])"
-                  :key="articulo.id"
-                  class="border-t"
-                >
-                  <td class="px-3 py-3">
-                    <div class="text-sm font-semibold text-gray-800">{{ articulo.platillo?.nombre || 'Producto' }}</div>
-                    <div v-if="articulo.modificaciones" class="text-xs text-gray-500">{{ articulo.modificaciones }}</div>
-                  </td>
-                  <td class="px-3 py-3 text-center text-sm font-bold text-gray-700">{{ articulo.cantidad }}</td>
-                  <td
-                    v-for="idx in splitCuentasVisibles"
-                    :key="idx"
-                    class="px-3 py-2 text-center"
-                  >
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      class="w-20 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm"
-                      :disabled="splitProcessing || splitPrintPaused"
-                      :value="(splitAsignaciones[articulo.id] || [])[idx] || 0"
-                      @input="setSplitCantidad(articulo.id, idx, Number(($event.target as HTMLInputElement).value))"
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Tabs de modo -->
+          <div class="flex gap-2 mb-5 border-b border-gray-200 pb-3">
+            <button
+              @click="splitModo = 'articulo'"
+              :disabled="splitProcessing || splitPrintPaused"
+              :class="splitModo === 'articulo'
+                ? 'bg-amber-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+            >
+              Por artículo
+            </button>
+            <button
+              @click="splitModo = 'equitativo'"
+              :disabled="splitProcessing || splitPrintPaused"
+              :class="splitModo === 'equitativo'
+                ? 'bg-amber-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+            >
+              Equitativo
+            </button>
+            <button
+              @click="splitModo = 'montos'"
+              :disabled="splitProcessing || splitPrintPaused"
+              :class="splitModo === 'montos'
+                ? 'bg-amber-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              class="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+            >
+              Por montos
+            </button>
           </div>
 
-          <div class="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
-              <div class="text-sm font-bold text-gray-700 mb-3">Totales por cuenta</div>
-              <div class="grid grid-cols-2 gap-2">
-                <div
-                  v-for="(total, idx) in splitTotalesPorCuenta"
-                  :key="idx"
-                  class="bg-white border border-gray-200 rounded-lg p-3"
+          <!-- ── MODO POR ARTÍCULO ─────────────────────────────────────────── -->
+          <template v-if="splitModo === 'articulo'">
+            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-4">
+              <div class="text-sm text-gray-500">
+                <span class="font-semibold text-amber-600">Tip:</span> Asigna las cantidades a cada cuenta usando los controles. Los artículos sin asignar se mostrarán en rojo.
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <label class="text-sm font-semibold text-gray-700">Cuentas:</label>
+                <select
+                  v-model.number="splitNumCuentas"
+                  class="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white font-bold text-amber-700 w-full sm:w-auto"
+                  :disabled="splitProcessing || splitPrintPaused"
                 >
-                  <div class="text-xs text-gray-500">{{ buildCuentaText(idx + 1, splitTotalesPorCuenta.length) }}</div>
-                  <div class="text-lg font-black text-amber-700">$ {{ total.toFixed(2) }}</div>
+                  <option :value="2">2 Cuentas</option>
+                  <option :value="3">3 Cuentas</option>
+                  <option :value="4">4 Cuentas</option>
+                  <option :value="5">5 Cuentas</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3 sm:p-4 mb-5 max-h-[50vh] overflow-y-auto w-full">
+              <div class="space-y-3 sm:space-y-4">
+                <div v-for="articulo in (splitPedido.articulos_pedido || [])" :key="articulo.id" class="bg-white border border-gray-200 rounded-xl p-3 sm:p-4 shadow-sm flex flex-col gap-3">
+                  
+                  <!-- Info del artículo -->
+                  <div class="w-full flex justify-between items-start gap-2">
+                    <div>
+                      <div class="font-bold text-gray-800 text-sm sm:text-base">{{ articulo.platillo?.nombre || 'Producto' }}</div>
+                      <div v-if="articulo.modificaciones" class="text-xs text-gray-500 line-clamp-2 mt-0.5">{{ articulo.modificaciones }}</div>
+                    </div>
+                    
+                    <div class="flex-shrink-0 flex items-center justify-between bg-amber-50 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 border"
+                         :class="{'border-red-200 bg-red-50': splitRestantePorArticulo[articulo.id] > 0, 'border-green-200 bg-green-50': splitRestantePorArticulo[articulo.id] === 0}">
+                      <span class="font-black text-sm sm:text-base" :class="{'text-red-600': splitRestantePorArticulo[articulo.id] > 0, 'text-green-700': splitRestantePorArticulo[articulo.id] === 0}">
+                        Faltan: {{ splitRestantePorArticulo[articulo.id] }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Controles por cuenta -->
+                  <div class="grid grid-cols-2 md:grid-cols-4 lg:flex gap-2 w-full mt-2">
+                    <div v-for="idx in splitCuentasVisibles" :key="idx" class="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-lg p-2 flex flex-col items-center">
+                      <div class="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Cuenta {{ idx + 1 }}</div>
+                      <div class="flex items-center gap-1 sm:gap-2">
+                        <button 
+                          @click="decrementarSplitArticulo(articulo.id, idx)"
+                          :disabled="splitProcessing || splitPrintPaused || (splitAsignaciones[articulo.id] || [])[idx] === 0"
+                          class="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white border border-gray-300 text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-300 disabled:opacity-30 transition-colors shadow-sm font-bold text-lg leading-none"
+                        >−</button>
+                        <span class="font-black text-sm sm:text-lg text-gray-800 min-w-[1.5rem] sm:min-w-[2rem] text-center">
+                          {{ (splitAsignaciones[articulo.id] || [])[idx] || 0 }}
+                        </span>
+                        <button 
+                          @click="incrementarSplitArticulo(articulo.id, idx)"
+                          :disabled="splitProcessing || splitPrintPaused || splitRestantePorArticulo[articulo.id] === 0"
+                          class="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center bg-white border border-gray-300 text-gray-600 hover:bg-green-50 hover:text-green-600 hover:border-green-300 disabled:opacity-30 transition-colors shadow-sm font-bold text-lg leading-none"
+                        >+</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="bg-white border border-gray-200 rounded-xl p-4">
-              <div v-if="splitPrintPaused" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
-                <div class="text-sm font-bold text-red-700">Impresion detenida</div>
-                <div class="text-xs text-red-700 mt-1">{{ splitPrintError }}</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div class="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <div class="text-sm font-bold text-gray-700 mb-3">Totales por cuenta</div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div
+                    v-for="(total, idx) in splitTotalesPorCuenta"
+                    :key="idx"
+                    class="bg-white border border-gray-200 rounded-lg p-3"
+                  >
+                    <div class="text-xs text-gray-500">{{ buildCuentaText(idx + 1, splitTotalesPorCuenta.length) }}</div>
+                    <div class="text-lg font-black text-amber-700">$ {{ total.toFixed(2) }}</div>
+                  </div>
+                </div>
               </div>
 
-              <div class="text-xs text-gray-500 mb-2">
-                Se imprimiran {{ splitCuentasVisibles.length }} tickets (uno por cuenta) al confirmar.
-              </div>
-
-              <button
-                v-if="!splitPrintPaused"
-                @click="dividirCuentaConfirmar"
-                :disabled="splitProcessing || !splitIsValid"
-                class="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed"
-              >
-                {{ splitProcessing ? 'Procesando...' : '✅ Confirmar y imprimir' }}
-              </button>
-
-              <div v-else class="grid grid-cols-2 gap-3">
+              <div class="bg-white border border-gray-200 rounded-xl p-4">
+                <div v-if="splitPrintPaused" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <div class="text-sm font-bold text-red-700">Impresion detenida</div>
+                  <div class="text-xs text-red-700 mt-1">{{ splitPrintError }}</div>
+                </div>
+                <div class="text-xs text-gray-500 mb-2">
+                  Se imprimiran {{ splitCuentasVisibles.length }} tickets (uno por cuenta) al confirmar.
+                </div>
                 <button
-                  @click="reintentarImpresionSplit"
-                  :disabled="splitProcessing"
-                  class="py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg"
+                  v-if="!splitPrintPaused"
+                  @click="dividirCuentaConfirmar"
+                  :disabled="splitProcessing || !splitIsValid"
+                  class="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed"
                 >
-                  Reintentar
+                  {{ splitProcessing ? 'Procesando...' : '✅ Confirmar y imprimir' }}
                 </button>
-                <button
-                  @click="cancelarImpresionesRestantes"
-                  :disabled="splitProcessing"
-                  class="py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg"
-                >
-                  Cancelar
-                </button>
-              </div>
-
-              <button
-                @click="closeSplitModal"
-                :disabled="splitProcessing"
-                class="w-full mt-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg"
-              >
-                Cerrar
-              </button>
-
-              <div v-if="!splitIsValid" class="text-xs text-gray-500 mt-2">
-                Tip: cada articulo debe sumar exactamente su total entre cuentas.
+                <div v-else class="grid grid-cols-2 gap-3">
+                  <button @click="reintentarImpresionSplit" :disabled="splitProcessing" class="py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">Reintentar</button>
+                  <button @click="cancelarImpresionesRestantes" :disabled="splitProcessing" class="py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg">Cancelar</button>
+                </div>
+                <button @click="closeSplitModal" :disabled="splitProcessing" class="w-full mt-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg">Cerrar</button>
+                <div v-if="!splitIsValid" class="text-xs text-gray-500 mt-2">Tip: cada articulo debe sumar exactamente su total entre cuentas.</div>
               </div>
             </div>
-          </div>
+          </template>
+
+          <!-- ── MODO EQUITATIVO ──────────────────────────────────────────── -->
+          <template v-else-if="splitModo === 'equitativo'">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Panel izquierdo: configuración -->
+              <div class="bg-gray-50 border border-gray-200 rounded-xl p-5 flex flex-col">
+                <div class="text-sm font-bold text-gray-700 mb-4">Dividir en partes iguales</div>
+                <div class="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-2 mb-5">
+                  <button @click="splitEquitativoN = Math.max(2, splitEquitativoN - 1)" :disabled="splitProcessing || splitPrintPaused || splitEquitativoN <= 2" class="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-red-50 text-gray-600 rounded-lg disabled:opacity-50 font-bold text-xl transition-colors">-</button>
+                  <div class="text-center">
+                    <span class="block text-2xl font-black text-gray-800">{{ splitEquitativoN }}</span>
+                    <span class="block text-[10px] text-gray-500 uppercase tracking-widest -mt-1 font-bold">Personas</span>
+                  </div>
+                  <button @click="splitEquitativoN++" :disabled="splitProcessing || splitPrintPaused" class="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-green-50 text-gray-600 rounded-lg disabled:opacity-50 font-bold text-xl transition-colors">+</button>
+                </div>
+                
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center mt-auto shadow-inner">
+                  <div class="text-xs font-bold uppercase tracking-wider text-amber-600 mb-1">Cada persona paga</div>
+                  <div class="text-4xl font-black text-amber-700 tracking-tight">${{ montoEquitativo.toFixed(2) }}</div>
+                  <div class="text-xs text-amber-600/70 mt-1 font-semibold">Total a dividir: ${{ totalPedidoNum.toFixed(2) }}</div>
+                </div>
+
+                <!-- Visual tickets -->
+                <div class="mt-4 flex flex-wrap gap-2 justify-center max-h-32 overflow-y-auto w-full">
+                  <div v-for="i in Math.min(splitEquitativoN, 10)" :key="i" class="w-16 h-20 bg-white border border-gray-200 border-x-dashed border-x-2 rounded-sm shadow-sm flex flex-col items-center justify-center text-center">
+                    <span class="text-[9px] text-gray-400 font-bold mb-1 border-b border-gray-100 w-full pb-1">T-{{i}}</span>
+                    <span class="text-xs font-black text-gray-800">${{ montoEquitativo.toFixed(0) }}</span>
+                  </div>
+                  <div v-if="splitEquitativoN > 10" class="w-16 h-20 flex items-center justify-center text-gray-400 font-bold text-sm bg-gray-100 rounded-lg">
+                    +{{ splitEquitativoN - 10 }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Panel derecho: acciones -->
+              <div class="bg-white border border-gray-200 rounded-xl p-5">
+                <div v-if="splitPrintPaused" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <div class="text-sm font-bold text-red-700">Impresion detenida</div>
+                  <div class="text-xs text-red-700 mt-1">{{ splitPrintError }}</div>
+                </div>
+                <div class="text-xs text-gray-500 mb-3">
+                  Se crearán {{ splitEquitativoN }} sub-pedidos de ${{ montoEquitativo.toFixed(2) }} c/u. Cada uno se cobra por separado con su propio método de pago.
+                </div>
+                <button
+                  v-if="!splitPrintPaused"
+                  @click="dividirCuentaEquitativoConfirmar"
+                  :disabled="splitProcessing || !equitativoValido"
+                  class="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed"
+                >
+                  {{ splitProcessing ? 'Procesando...' : '✅ Dividir y generar tickets' }}
+                </button>
+                <div v-else class="grid grid-cols-2 gap-3">
+                  <button @click="reintentarImpresionSplit" :disabled="splitProcessing" class="py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">Reintentar</button>
+                  <button @click="cancelarImpresionesRestantes" :disabled="splitProcessing" class="py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg">Cancelar</button>
+                </div>
+                <button @click="closeSplitModal" :disabled="splitProcessing" class="w-full mt-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg">Cerrar</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- ── MODO POR MONTOS ──────────────────────────────────────────── -->
+          <template v-else-if="splitModo === 'montos'">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- Panel izquierdo: ingresar pagos -->
+              <div class="bg-gray-50 border border-gray-200 rounded-xl p-5">
+                <div class="text-sm font-bold text-gray-700 mb-3">Registrar pagos</div>
+
+                <!-- Input agregar monto -->
+                <div class="flex flex-col gap-2 mb-4">
+                  <div class="flex gap-2">
+                    <div class="relative flex-1">
+                      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        placeholder="0.00"
+                        v-model="splitMontoInput"
+                        :disabled="splitProcessing || splitPrintPaused"
+                        @keydown.enter="agregarMontoPago"
+                        class="w-full border border-gray-300 rounded-lg pl-7 pr-3 py-2 text-sm focus:ring-amber-500 focus:border-amber-500"
+                      />
+                    </div>
+                    <button
+                      @click="agregarMontoPago"
+                      :disabled="splitProcessing || splitPrintPaused || !splitMontoInput || parseFloat(splitMontoInput) <= 0"
+                      class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-sm disabled:opacity-50 transition-colors"
+                    >
+                      + Agregar
+                    </button>
+                  </div>
+                  <button 
+                    v-if="montoRestante > 0.05"
+                    @click="splitMontoInput = montoRestante.toFixed(2)"
+                    class="text-xs text-amber-700 bg-amber-50 border border-amber-200 py-1.5 px-3 rounded-md hover:bg-amber-100 self-start font-semibold transition-colors"
+                  >
+                    Sugerir monto restante: ${{ montoRestante.toFixed(2) }}
+                  </button>
+                </div>
+
+                <!-- Lista de pagos -->
+                <div class="space-y-2 max-h-52 overflow-y-auto">
+                  <div
+                    v-for="(pago, idx) in splitMontos"
+                    :key="idx"
+                    class="flex items-center justify-between bg-white border border-gray-200 rounded-lg px-3 py-2"
+                  >
+                    <span class="text-xs text-gray-500">Persona {{ idx + 1 }}</span>
+                    <span class="font-bold text-gray-800">${{ pago.monto.toFixed(2) }}</span>
+                    <button
+                      @click="eliminarMontoPago(idx)"
+                      :disabled="splitProcessing || splitPrintPaused"
+                      class="text-red-400 hover:text-red-600 font-bold text-lg leading-none disabled:opacity-40"
+                    >×</button>
+                  </div>
+                  <div v-if="!splitMontos.length" class="text-center text-xs text-gray-400 py-4">
+                    Agrega el monto de cada persona
+                  </div>
+                </div>
+              </div>
+
+              <!-- Panel derecho: resumen y confirmación -->
+              <div class="bg-white border border-gray-200 rounded-xl p-5">
+                <!-- Barra de progreso -->
+                <div class="mb-4">
+                  <div class="flex justify-between text-xs font-semibold mb-1">
+                    <span class="text-gray-600">Cobrado</span>
+                    <span :class="montosValidos ? 'text-green-600' : 'text-gray-700'">${{ totalMontosCobrados.toFixed(2) }} / ${{ totalPedidoNum.toFixed(2) }}</span>
+                  </div>
+                  <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      class="h-2 rounded-full transition-all"
+                      :class="montosValidos ? 'bg-green-500' : 'bg-amber-500'"
+                      :style="{ width: `${Math.min((totalMontosCobrados / totalPedidoNum) * 100, 100)}%` }"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- Restante / cambio -->
+                <div class="rounded-lg p-3 mb-4 text-center" :class="montoRestante > 0.05 ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'">
+                  <div v-if="montoRestante > 0.05">
+                    <div class="text-xs text-red-600 font-semibold">Falta por cobrar</div>
+                    <div class="text-2xl font-black text-red-700">${{ montoRestante.toFixed(2) }}</div>
+                  </div>
+                  <div v-else-if="montoRestante < -0.05">
+                    <div class="text-xs text-green-700 font-semibold">Cambio a regresar</div>
+                    <div class="text-2xl font-black text-green-700">${{ Math.abs(montoRestante).toFixed(2) }}</div>
+                  </div>
+                  <div v-else>
+                    <div class="text-xs text-green-700 font-semibold">Total cubierto</div>
+                    <div class="text-2xl font-black text-green-700">✓</div>
+                  </div>
+                </div>
+
+                <div v-if="splitPrintPaused" class="bg-red-50 border border-red-200 rounded-lg p-3 mb-3">
+                  <div class="text-sm font-bold text-red-700">Impresion detenida</div>
+                  <div class="text-xs text-red-700 mt-1">{{ splitPrintError }}</div>
+                </div>
+
+                <div class="text-xs text-gray-500 mb-3">
+                  Se creará un sub-pedido por cada monto. Cada uno se cobra por separado con su propio método de pago.
+                </div>
+
+                <button
+                  v-if="!splitPrintPaused"
+                  @click="dividirCuentaMontosConfirmar"
+                  :disabled="splitProcessing || !montosValidos"
+                  class="w-full py-3 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 text-white font-bold rounded-lg transition-all disabled:cursor-not-allowed"
+                >
+                  {{ splitProcessing ? 'Procesando...' : '✅ Dividir y generar tickets' }}
+                </button>
+                <div v-else class="grid grid-cols-2 gap-3">
+                  <button @click="reintentarImpresionSplit" :disabled="splitProcessing" class="py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg">Reintentar</button>
+                  <button @click="cancelarImpresionesRestantes" :disabled="splitProcessing" class="py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg">Cancelar</button>
+                </div>
+                <button @click="closeSplitModal" :disabled="splitProcessing" class="w-full mt-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg">Cerrar</button>
+
+                <div v-if="splitMontos.length < 2 && splitMontos.length > 0" class="text-xs text-gray-500 mt-2">
+                  Agrega al menos 2 pagos para poder dividir.
+                </div>
+              </div>
+            </div>
+          </template>
+
         </div>
       </div>
     </div>

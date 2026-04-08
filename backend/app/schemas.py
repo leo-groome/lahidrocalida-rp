@@ -178,6 +178,14 @@ class DividirCuentaResponse(BaseModel):
     cuentas: List[PedidoResponse]
 
 
+class DividirPorMontoCuenta(BaseModel):
+    monto: Decimal
+
+
+class DividirPorMontoRequest(BaseModel):
+    cuentas: List[DividirPorMontoCuenta]
+
+
 
 # ===== SCHEMAS PARA GASTOS =====
 class ProveedorBase(BaseModel):
