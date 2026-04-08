@@ -40,19 +40,11 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.port === '8000',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'backend-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 300 },
-              networkTimeoutSeconds: 10,
-            },
+            handler: 'NetworkOnly',
           },
         ],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/ws\//],
-      },
-      devOptions: {
-        enabled: true,
       },
     }),
     // Analizar bundle size
