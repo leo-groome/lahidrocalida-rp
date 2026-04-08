@@ -12,7 +12,7 @@ from app.auth import get_current_active_user
 router = APIRouter(prefix="/platillos", tags=["platillos"])
 
 
-@router.get("/", response_model=List[PlatilloResponse])
+@router.get("", response_model=List[PlatilloResponse])
 def list_platillos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)

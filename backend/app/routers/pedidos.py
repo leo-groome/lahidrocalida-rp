@@ -261,7 +261,7 @@ async def create_pedido(
     raise HTTPException(status_code=500, detail="No fue posible generar un numero_display único. Intenta de nuevo.")
 
 
-@router.get("/", response_model=List[PedidoResponse])
+@router.get("", response_model=List[PedidoResponse])
 def list_pedidos(
     estado: Optional[str] = None,
     db: Session = Depends(get_db),
