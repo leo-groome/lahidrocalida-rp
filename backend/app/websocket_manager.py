@@ -67,7 +67,7 @@ class WebSocketManager:
                         logger.warning(f"Cerrando conexión zombie: user={conn.user_id}, type={client_type}")
                         try:
                             # Intentar cerrar la conexión (puede que ya esté cerrada del lado del cliente)
-                            await conn.websocket.close(code=1000, reason="Ping timeout")
+                            await conn.websocket.close(code=4008, reason="Ping timeout")
                         except Exception:
                             pass
                     else:

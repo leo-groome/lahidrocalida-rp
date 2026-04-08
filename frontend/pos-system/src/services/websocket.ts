@@ -20,7 +20,11 @@ export class WebSocketService {
   private heartbeatTimer: number | null = null
   private reconnectTimer: number | null = null
   private listeners: Map<string, Array<(data: any) => void>> = new Map()
-  
+  private clientType: 'kds' | 'caja' | 'mesero' | null = null
+  private intentionalDisconnect = false
+  private visibilityHandler: (() => void) | null = null
+  private onlineHandler: (() => void) | null = null
+
   // Estado reactivo
   public isConnected = ref(false)
   public connectionStatus = ref<'disconnected' | 'connecting' | 'connected' | 'reconnecting'>('disconnected')
@@ -34,7 +38,7 @@ export class WebSocketService {
 
   private config: WebSocketConfig = {
     reconnectInterval: 3000, // 3 segundos
-    maxReconnectAttempts: 10,
+    maxReconnectAttempts: 0, // 0 = ilimitado
     heartbeatInterval: 30000 // 30 segundos
   }
 
@@ -49,12 +53,19 @@ export class WebSocketService {
    */
   async connect(clientType: 'kds' | 'caja' | 'mesero'): Promise<boolean> {
     const authStore = useAuthStore()
-    
+
     if (!authStore.isAuthenticated || !authStore.token) {
       this.lastError.value = 'No hay token de autenticación'
       console.error('WebSocket: No hay token de autenticación')
       return false
     }
+
+    // Guardar tipo de cliente para reconexiones
+    this.clientType = clientType
+    this.intentionalDisconnect = false
+
+    // Registrar event listeners del browser (una sola vez)
+    this._registerBrowserListeners()
 
     // Si ya está conectado, no reconectar
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -64,21 +75,23 @@ export class WebSocketService {
 
     // Cerrar conexión existente si existe
     if (this.ws) {
-      this.disconnect()
+      this.ws.onopen = null
+      this.ws.onmessage = null
+      this.ws.onclose = null
+      this.ws.onerror = null
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close(1000, 'Reconectando')
+      }
+      this.ws = null
     }
 
     const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/ws/${clientType}?token=${authStore.token}`
-    
+
     try {
       this.connectionStatus.value = 'connecting'
       console.log(`WebSocket: Conectando a ${clientType}...`)
-      
+
       this.ws = new WebSocket(wsUrl)
-      
-      this.ws.onopen = this.handleOpen.bind(this)
-      this.ws.onmessage = this.handleMessage.bind(this)
-      this.ws.onclose = this.handleClose.bind(this)
-      this.ws.onerror = this.handleError.bind(this)
 
       // Promesa para esperar conexión
       return new Promise((resolve) => {
@@ -92,6 +105,9 @@ export class WebSocketService {
           this.handleOpen(event)
           resolve(true)
         }
+
+        this.ws!.onmessage = this.handleMessage.bind(this)
+        this.ws!.onclose = this.handleClose.bind(this)
 
         this.ws!.onerror = () => {
           clearTimeout(timeout)
@@ -108,17 +124,21 @@ export class WebSocketService {
   }
 
   /**
-   * Desconectar WebSocket
+   * Desconectar WebSocket (intencional, no reconecta)
    */
   disconnect(): void {
     console.log('WebSocket: Desconectando...')
-    
+    this.intentionalDisconnect = true
+
+    // Remover event listeners del browser
+    this._unregisterBrowserListeners()
+
     // Limpiar timers
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
     }
-    
+
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -130,11 +150,11 @@ export class WebSocketService {
       this.ws.onmessage = null
       this.ws.onclose = null
       this.ws.onerror = null
-      
+
       if (this.ws.readyState === WebSocket.OPEN) {
         this.ws.close(1000, 'Cliente desconectando')
       }
-      
+
       this.ws = null
     }
 
@@ -143,6 +163,7 @@ export class WebSocketService {
     this.connectionStatus.value = 'disconnected'
     this.reconnectAttempts = 0
     this.stats.connectedSince = null
+    this.clientType = null
   }
 
   /**
@@ -217,6 +238,9 @@ export class WebSocketService {
     this.stats.connectedSince = new Date()
 
     // Iniciar heartbeat
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+    }
     this.heartbeatTimer = window.setInterval(() => {
       this.sendPing()
     }, this.config.heartbeatInterval)
@@ -285,8 +309,8 @@ export class WebSocketService {
       this.heartbeatTimer = null
     }
 
-    // Si no fue un cierre normal, intentar reconectar
-    if (event.code !== 1000 && event.code !== 1001) {
+    // Reconectar en cualquier cierre no-intencional
+    if (!this.intentionalDisconnect) {
       this.attemptReconnect()
     } else {
       this.connectionStatus.value = 'disconnected'
@@ -299,14 +323,16 @@ export class WebSocketService {
   private handleError(event: Event): void {
     console.error('WebSocket: Error de conexión:', event)
     this.lastError.value = 'Error de conexión WebSocket'
-    this.attemptReconnect()
+    // handleClose se llama automáticamente después de onerror
   }
 
   /**
-   * Intentar reconexión automática
+   * Intentar reconexión automática con backoff exponencial
    */
   private attemptReconnect(): void {
-    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+    if (this.intentionalDisconnect) return
+
+    if (this.config.maxReconnectAttempts > 0 && this.reconnectAttempts >= this.config.maxReconnectAttempts) {
       console.error('WebSocket: Máximo de intentos de reconexión alcanzado')
       this.connectionStatus.value = 'disconnected'
       this.lastError.value = 'No se pudo reconectar al WebSocket'
@@ -322,15 +348,72 @@ export class WebSocketService {
       30000 // Máximo 30 segundos
     )
 
-    console.log(`WebSocket: Reintentando conexión en ${delay}ms (intento ${this.reconnectAttempts}/${this.config.maxReconnectAttempts})`)
+    console.log(`WebSocket: Reintentando conexión en ${delay}ms (intento ${this.reconnectAttempts})`)
 
-    this.reconnectTimer = window.setTimeout(() => {
-      if (this.connectionStatus.value === 'reconnecting') {
+    this.reconnectTimer = window.setTimeout(async () => {
+      if (!this.intentionalDisconnect && this.clientType) {
         console.log('WebSocket: Reintentando conexión...')
-        // El tipo de cliente se debe almacenar para reconexión
-        // Por simplicidad, esperaremos que la app llame a connect() nuevamente
+        await this.connect(this.clientType)
       }
     }, delay)
+  }
+
+  /**
+   * Reconectar cuando el tab vuelve a estar activo
+   */
+  private handleVisibilityChange(): void {
+    if (document.visibilityState === 'visible' && !this.intentionalDisconnect && this.clientType) {
+      if (!this.isConnected.value || this.ws?.readyState !== WebSocket.OPEN) {
+        console.log('WebSocket: Tab activo de nuevo, reconectando...')
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer)
+          this.reconnectTimer = null
+        }
+        this.connectionStatus.value = 'reconnecting'
+        this.connect(this.clientType)
+      } else {
+        // Conexión viva: enviar ping inmediato para renovar last_ping en el server
+        this.sendPing()
+      }
+    }
+  }
+
+  /**
+   * Reconectar cuando se restaura la red
+   */
+  private handleOnline(): void {
+    if (!this.intentionalDisconnect && this.clientType && !this.isConnected.value) {
+      console.log('WebSocket: Red restaurada, reconectando...')
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
+      this.connectionStatus.value = 'reconnecting'
+      this.connect(this.clientType)
+    }
+  }
+
+  private _registerBrowserListeners(): void {
+    // Solo registrar si no están ya registrados
+    if (!this.visibilityHandler) {
+      this.visibilityHandler = this.handleVisibilityChange.bind(this)
+      document.addEventListener('visibilitychange', this.visibilityHandler)
+    }
+    if (!this.onlineHandler) {
+      this.onlineHandler = this.handleOnline.bind(this)
+      window.addEventListener('online', this.onlineHandler)
+    }
+  }
+
+  private _unregisterBrowserListeners(): void {
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler)
+      this.visibilityHandler = null
+    }
+    if (this.onlineHandler) {
+      window.removeEventListener('online', this.onlineHandler)
+      this.onlineHandler = null
+    }
   }
 
   /**
