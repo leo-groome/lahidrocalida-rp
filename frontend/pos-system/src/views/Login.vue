@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import InstallPWA from '../components/InstallPWA.vue'
 
 const userId = ref('')
 const password = ref('')
@@ -67,6 +68,7 @@ async function onSubmit() {
           {{ auth.loading ? 'Entrando...' : 'Entrar' }}
         </button>
       </form>
+      <InstallPWA />
     </div>
   </div>
 </template>
