@@ -92,16 +92,21 @@
         </div>
       </main>
 
-      <!-- Bottom link: Registrar Asistencia -->
-      <div class="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none">
-        <router-link
-          to="/checkin"
-          class="pointer-events-auto text-white/40 text-xs font-semibold hover:text-white/70 transition-colors underline underline-offset-2"
-        >
-          Registrar Asistencia
-        </router-link>
-      </div>
     </template>
+
+    <!-- Global Floating Button: Registrar Asistencia -->
+    <div class="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none z-50">
+      <router-link
+        to="/checkin"
+        class="pointer-events-auto flex items-center gap-2 px-6 py-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-sm tracking-wide shadow-lg backdrop-blur-md active:scale-95 transition-all duration-300"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-emerald-400 animate-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Registrar Asistencia
+      </router-link>
+    </div>
 
     <!-- NIP Overlay -->
     <NipKeypad

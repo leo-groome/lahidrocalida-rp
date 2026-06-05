@@ -283,19 +283,35 @@ const loadPlatillos = async () => {
 }
 
 
-// Categorías únicas de platillos (excluyendo Pozoles) - Postres penúltimo, Bebidas último
+// Categorías únicas de platillos (excluyendo Pozoles) - Ordenadas según la preferencia del usuario
 const categorias = computed(() => {
   const cats = [...new Set(platillos.value
     .filter(p => p.categoria !== 'Pozole' && p.estado === 'disponible')
     .map(p => p.categoria))]
   
-  // Ordenamiento personalizado: Postres penúltimo, Bebidas/Aguas/Refrescos al final
+  const categoryOrder = [
+    'enchiladas',
+    'sopes',
+    'flautas',
+    'tacos',
+    'tostadas',
+    'tamales',
+    'extras',
+    'postres',
+    'bebidas',
+    'aguas',
+    'refrescos'
+  ]
+
   const sortedCats = cats.sort((a, b) => {
-    const isBeverage = (x: string) => ['Bebidas', 'Aguas', 'Refrescos'].includes(x)
-    if (isBeverage(a) && !isBeverage(b)) return 1
-    if (!isBeverage(a) && isBeverage(b)) return -1
-    if (a === 'Postres' && !isBeverage(b)) return 1
-    if (b === 'Postres' && !isBeverage(a)) return -1
+    const indexA = categoryOrder.indexOf(a.toLowerCase())
+    const indexB = categoryOrder.indexOf(b.toLowerCase())
+    
+    if (indexA !== -1 && indexB !== -1) {
+      return indexA - indexB
+    }
+    if (indexA !== -1) return -1
+    if (indexB !== -1) return 1
     return a.localeCompare(b)
   })
 
