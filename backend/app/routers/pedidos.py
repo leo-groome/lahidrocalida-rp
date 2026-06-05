@@ -9,7 +9,7 @@ from decimal import Decimal
 import requests
 
 from app.db.session import get_db
-from app.models import Pedido, ArticuloPedido, Platillo, Usuario
+from app.models import Pedido, ArticuloPedido, Platillo, Usuario, Turno
 from app.utils.timezone import get_mexico_now, MEXICO_TZ
 from app.schemas import (
     PedidoCreate,
@@ -21,9 +21,17 @@ from app.schemas import (
     DividirCuentaResponse,
     DividirPorMontoRequest,
 )
-from app.auth import get_current_active_user
+from app.auth import get_current_active_user, get_optional_current_user
 from app.websocket_manager import websocket_manager
 from app.core.config import settings
+
+
+def _get_turno_activo(db: Session, sucursal_id: int) -> Optional[Turno]:
+    """Obtener el turno activo de una sucursal."""
+    return db.query(Turno).filter(
+        Turno.sucursal_id == sucursal_id,
+        Turno.estado == "abierto"
+    ).first()
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
@@ -116,9 +124,18 @@ async def create_pedido(
     # Validar permisos
     if current_user.rol not in ["cajero", "administrador", "mesero"]:
         raise HTTPException(
-            status_code=403, 
+            status_code=403,
             detail="Solo cajeros, meseros y administradores pueden crear pedidos"
         )
+
+    # Verificar que hay turno activo — sin turno no se acepta ningún pedido
+    turno_activo = _get_turno_activo(db, current_user.sucursal_id)
+    if not turno_activo:
+        raise HTTPException(
+            status_code=400,
+            detail="No hay turno activo en esta sucursal. El cajero debe abrir turno antes de tomar pedidos."
+        )
+
     # Validar tipo_orden
     if data.tipo_orden not in ["aqui", "llevar", "uber_eats"]:
         raise HTTPException(
@@ -189,7 +206,8 @@ async def create_pedido(
                 metodo_pago=data.metodo_pago,
                 tipo_orden=data.tipo_orden,
                 sucursal_id=current_user.sucursal_id,
-                usuario_id=current_user.id
+                usuario_id=current_user.id,
+                turno_id=turno_activo.id,
             )
 
             db.add(pedido)
@@ -264,44 +282,59 @@ async def create_pedido(
 @router.get("", response_model=List[PedidoResponse])
 def list_pedidos(
     estado: Optional[str] = None,
+    turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Optional[Usuario] = Depends(get_optional_current_user)
 ):
     """
-    Listar pedidos del día actual según zona horaria del restaurante.
-    Cajeros ven solo pedidos de su sucursal.
-    Administradores ven todos los pedidos.
+    Listar pedidos.
+    - Sin auth (KDS): devuelve pedidos activos (no pagados/cancelados) sin filtro de fecha.
+    - Con auth: filtra por turno activo o turno_id explícito.
     """
-    now_local = get_mexico_now()
-    today_local = now_local.date()
-    
-    # Rango del día actual en zona horaria de México
-    start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
-    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
-    
-    query = db.query(Pedido).filter(
-        Pedido.fecha_creacion >= start_dt,
-        Pedido.fecha_creacion < end_dt
-    )
-    
-    # Filtro por sucursal según el rol
+    ESTADOS_VALIDOS = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]
+
+    if estado and estado not in ESTADOS_VALIDOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Estado inválido. Valores permitidos: {', '.join(ESTADOS_VALIDOS)}"
+        )
+
+    if current_user is None:
+        # Modo KDS público — pedidos activos sin filtro de fecha ni sucursal
+        estados_kds = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada"]
+        query = db.query(Pedido)
+        if estado and estado in estados_kds:
+            query = query.filter(Pedido.estado == estado)
+        else:
+            query = query.filter(Pedido.estado.in_(estados_kds))
+        return query.order_by(Pedido.fecha_creacion.asc()).all()
+
+    # Con autenticación — filtro por turno
+    if turno_id:
+        query = db.query(Pedido).filter(Pedido.turno_id == turno_id)
+    else:
+        turno_activo = _get_turno_activo(db, current_user.sucursal_id)
+        if turno_activo:
+            query = db.query(Pedido).filter(Pedido.turno_id == turno_activo.id)
+        else:
+            # Sin turno activo: fallback a pedidos del día actual
+            now_local = get_mexico_now()
+            today_local = now_local.date()
+            start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            query = db.query(Pedido).filter(
+                Pedido.fecha_creacion >= start_dt,
+                Pedido.fecha_creacion < end_dt
+            )
+
+    # Filtro por sucursal según rol
     if current_user.rol == "cajero":
         query = query.filter(Pedido.sucursal_id == current_user.sucursal_id)
-    # Los administradores ven todos los pedidos (sin filtro de sucursal)
-    
-    # Filtro por estado si se especifica
+
     if estado:
-        if estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
-            )
         query = query.filter(Pedido.estado == estado)
-    
-    # Ordenar por fecha de creación descendente
-    query = query.order_by(Pedido.fecha_creacion.desc())
-    
-    return query.all()
+
+    return query.order_by(Pedido.fecha_creacion.desc()).all()
 
 
 @router.get("/pendientes-pago/lista", response_model=List[PedidoResponse])
@@ -335,12 +368,11 @@ def get_pedidos_pendientes_pago(
 def get_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Optional[Usuario] = Depends(get_optional_current_user)
 ):
     """
     Obtener un pedido específico por ID.
-    Cajeros solo pueden ver pedidos de su sucursal.
-    Administradores pueden ver cualquier pedido.
+    Público para KDS (sin auth). Con auth: cajeros solo ven su sucursal.
     """
     pedido = (
         db.query(Pedido)
@@ -355,13 +387,13 @@ def get_pedido(
             detail="Pedido no encontrado"
         )
     
-    # Validar permisos de acceso
-    if current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
+    # Con auth: cajeros solo ven su sucursal
+    if current_user and current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
         raise HTTPException(
             status_code=403,
             detail="No tienes permisos para ver este pedido"
         )
-    
+
     return pedido
 
 

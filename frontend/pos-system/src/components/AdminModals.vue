@@ -117,13 +117,16 @@
         </div>
         
         <div>
-          <label class="block text-sm font-medium text-gray-700">Contraseña</label>
+          <label class="block text-sm font-medium text-gray-700">PIN</label>
           <input
-            v-model="usuarioForm.password"
-            type="password"
+            v-model="usuarioForm.pin"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            maxlength="8"
             :required="!editingUsuario"
             class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
-            :placeholder="editingUsuario ? 'Dejar vacío para mantener actual' : 'Contraseña del usuario'"
+            :placeholder="editingUsuario ? 'Dejar vacío para mantener PIN actual' : 'PIN del usuario'"
           />
         </div>
         
@@ -210,7 +213,7 @@ const platilloForm = reactive({
 
 const usuarioForm = reactive({
   nombre: '',
-  password: '',
+  pin: '',
   rol: 'mesero',
   sucursal_id: 1,
   activo: true
@@ -241,7 +244,7 @@ const resetPlatilloForm = () => {
 const resetUsuarioForm = () => {
   Object.assign(usuarioForm, {
     nombre: '',
-    password: '',
+    pin: '',
     rol: 'mesero',
     sucursal_id: 1,
     activo: true
@@ -257,11 +260,24 @@ const savePlatillo = () => {
 }
 
 const saveUsuario = () => {
-  const data = { ...usuarioForm }
-  // Si es edición y no hay password, no enviar password
-  if (props.editingUsuario && !data.password) {
-    delete data.password
+  const data: Record<string, any> = {}
+
+  if (!props.editingUsuario || usuarioForm.nombre !== props.editingUsuario.nombre) {
+    data.nombre = usuarioForm.nombre
   }
+  if (!props.editingUsuario || usuarioForm.rol !== props.editingUsuario.rol) {
+    data.rol = usuarioForm.rol
+  }
+  if (!props.editingUsuario || usuarioForm.activo !== props.editingUsuario.activo) {
+    data.activo = usuarioForm.activo
+  }
+  if (!props.editingUsuario || usuarioForm.sucursal_id !== props.editingUsuario.sucursal_id) {
+    data.sucursal_id = usuarioForm.sucursal_id
+  }
+  if (usuarioForm.pin.trim()) {
+    data.pin = usuarioForm.pin.trim()
+  }
+
   emit('save-usuario', data)
 }
 
@@ -280,10 +296,10 @@ watch(() => props.editingUsuario, (newVal) => {
   if (newVal) {
     Object.assign(usuarioForm, {
       ...newVal,
-      password: '' // No mostrar password actual
+      pin: ''
     })
   } else {
     resetUsuarioForm()
   }
-})
+}, { immediate: true })
 </script>

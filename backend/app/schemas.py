@@ -14,11 +14,15 @@ class UsuarioBase(BaseModel):
 
 
 class UsuarioCreate(UsuarioBase):
-    password: str
+    pin: str
 
 
-class UsuarioUpdate(UsuarioBase):
-    password: Optional[str] = None  # Password opcional para updates
+class UsuarioUpdate(BaseModel):
+    nombre: Optional[str] = None
+    rol: Optional[str] = None
+    activo: Optional[bool] = None
+    sucursal_id: Optional[int] = None
+    pin: Optional[str] = None  # PIN opcional para updates
 
 
 class UsuarioResponse(UsuarioBase):
@@ -30,6 +34,11 @@ class UsuarioResponse(UsuarioBase):
 
 class UsuarioLogin(BaseModel):
     user_id: str  # ID del usuario (ej: "1", "2", "3")
+    pin: str
+
+
+class AdminLogin(BaseModel):
+    email: str
     password: str
 
 
@@ -127,6 +136,7 @@ class PedidoBase(BaseModel):
     tipo_orden: str = "aqui"
     sucursal_id: int
     usuario_id: int
+    turno_id: Optional[int] = None
 
 
 class PedidoCreate(BaseModel):
@@ -135,6 +145,7 @@ class PedidoCreate(BaseModel):
     metodo_pago: Optional[str] = None  # Opcional para flujo mesero
     tipo_orden: str = "aqui"
     articulos: List[ArticuloPedidoCreate]
+    turno_id: Optional[int] = None  # Se inyecta automáticamente en el backend
 
 
 class PedidoUpdate(BaseModel):
@@ -351,6 +362,7 @@ class TurnoResponse(BaseModel):
     total_final: Optional[float] = None
     ventas_efectivo: Optional[float] = None
     propinas_efectivo: Optional[float] = None
+    diferencia: Optional[float] = None
     fondo_anterior: Optional[float] = None
     observaciones: Optional[str] = None
     denominaciones_iniciales: List[DenominacionBase]
@@ -360,3 +372,44 @@ class TurnoResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ===== SCHEMAS PARA ASISTENCIA =====
+class RegistroAsistenciaCreate(BaseModel):
+    usuario_id: int
+    notas: Optional[str] = None
+
+
+class AsistenciaPinRequest(BaseModel):
+    usuario_id: int
+    pin: str
+    notas: Optional[str] = None
+
+
+class RegistroAsistenciaResponse(BaseModel):
+    id: int
+    usuario_id: int
+    fecha_entrada: datetime
+    fecha_salida: Optional[datetime] = None
+    notas: Optional[str] = None
+    usuario_nombre: Optional[str] = None
+    horas_trabajadas: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AsistenciaResumenItem(BaseModel):
+    usuario_id: int
+    usuario_nombre: str
+    rol: str
+    total_registros: int
+    horas_totales: float
+    ultima_entrada: Optional[datetime] = None
+    ultima_salida: Optional[datetime] = None
+
+
+class AsistenciaResumenResponse(BaseModel):
+    fecha_inicio: datetime
+    fecha_fin: datetime
+    empleados: List[AsistenciaResumenItem]

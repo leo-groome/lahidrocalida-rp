@@ -30,17 +30,36 @@ export const useAuthStore = defineStore('auth', {
     role: (state): Rol | null => state.user?.rol ?? null,
   },
   actions: {
-    async login(user_id: string, password: string) {
+    async login(user_id: string, pin: string) {
       this.loading = true
       this.error = null
       try {
-        const { data } = await api.post('/auth/login-simple', { user_id, password })
+        const { data } = await api.post('/auth/login-simple', { user_id, pin })
         const token: string = data.access_token
         this.token = token
         localStorage.setItem('token', token)
         await this.fetchMe()
       } catch (e: any) {
-        this.error = e?.response?.data?.detail || 'Error de autenticación'
+        const detail = e?.response?.data?.detail
+        this.error = Array.isArray(detail) ? 'Error de validación' : (detail || 'Error de autenticación')
+        this.token = null
+        localStorage.removeItem('token')
+        throw e
+      } finally {
+        this.loading = false
+      }
+    },
+    async loginAdmin(email: string, password: string) {
+      this.loading = true
+      this.error = null
+      try {
+        const { data } = await api.post('/auth/login-admin', { email, password })
+        const token: string = data.access_token
+        this.token = token
+        localStorage.setItem('token', token)
+        await this.fetchMe()
+      } catch (e: any) {
+        this.error = e?.response?.data?.detail || 'Credenciales incorrectas'
         this.token = null
         localStorage.removeItem('token')
         throw e

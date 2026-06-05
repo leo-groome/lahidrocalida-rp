@@ -4,6 +4,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional as _Optional
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import Usuario
@@ -24,6 +25,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Esquema de autenticación
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)  # Para endpoints públicos opcionales (KDS)
 
 def verify_password(plain_password: str, stored_password: str) -> bool:
     """Verifica contraseña hash (bcrypt_sha256/bcrypt) o texto plano legado."""
@@ -63,7 +65,7 @@ def authenticate_user(db: Session, user_id: str, password: str) -> Optional[Usua
     user = db.query(Usuario).filter(Usuario.id == user_id_int).first()
     if not user:
         return None
-    if not verify_password(password, user.password):
+    if not verify_password(password, user.pin):
         return None
     return user
 
@@ -92,6 +94,25 @@ def get_current_user(
         raise credentials_exception
     
     return user
+
+def get_optional_current_user(
+    credentials: _Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    db: Session = Depends(get_db)
+) -> _Optional[Usuario]:
+    """Retorna el usuario autenticado o None si no hay token (para endpoints públicos como KDS)."""
+    if credentials is None:
+        return None
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        usuario_id: int = payload.get("sub")
+        if usuario_id is None:
+            return None
+        user = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+        return user if user and user.activo else None
+    except JWTError:
+        return None
+
 
 def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -> Usuario:
     """Obtiene el usuario actual activo"""

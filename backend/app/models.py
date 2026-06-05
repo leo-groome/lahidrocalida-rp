@@ -49,13 +49,14 @@ class Usuario(Base):
     rol = Column(
         String(20), nullable=False
     )  # 'cajero', 'cocina', 'administrador', 'compras', 'mesero'
-    password = Column(String(255), nullable=False)  # Cambiado de 'pin' a 'password'
+    pin = Column(String(255), nullable=False)  # Hash del NIP (admins usan password como NIP)
     activo = Column(Boolean, default=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="usuarios")
     pedidos = relationship("Pedido", back_populates="usuario")
+    registros_asistencia = relationship("RegistroAsistencia", back_populates="usuario")
 
 
 class Platillo(Base):
@@ -104,10 +105,12 @@ class Pedido(Base):
     fecha_pago = Column(DateTime(timezone=True), nullable=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
+    turno_id = Column(Integer, ForeignKey("turnos.id"), nullable=True)
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="pedidos")
     usuario = relationship("Usuario", back_populates="pedidos")
+    turno = relationship("Turno", back_populates="pedidos")
     articulos_pedido = relationship("ArticuloPedido", back_populates="pedido")
 
     @property
@@ -240,6 +243,7 @@ class Turno(Base):
     # Relaciones
     sucursal = relationship("Sucursal")
     usuario = relationship("Usuario")
+    pedidos = relationship("Pedido", back_populates="turno")
     denominaciones = relationship(
         "TurnoDenominacion", back_populates="turno", cascade="all, delete-orphan"
     )
@@ -288,3 +292,16 @@ class TurnoDenominacion(Base):
         CheckConstraint("cantidad >= 0", name="chk_turno_denominacion_cantidad"),
         CheckConstraint("subtotal >= 0", name="chk_turno_denominacion_subtotal"),
     )
+
+
+class RegistroAsistencia(Base):
+    __tablename__ = "registros_asistencia"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    fecha_entrada = Column(DateTime(timezone=True), nullable=False, default=get_local_datetime)
+    fecha_salida = Column(DateTime(timezone=True), nullable=True)
+    notas = Column(Text, nullable=True)
+
+    # Relaciones
+    usuario = relationship("Usuario", back_populates="registros_asistencia")

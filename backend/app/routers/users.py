@@ -24,8 +24,7 @@ def create_usuario(
     usuario = Usuario(
         nombre=data.nombre,
         rol=data.rol,
-        # Guardar contraseña hasheada
-        password=get_password_hash(data.password),
+        pin=get_password_hash(data.pin),
         activo=data.activo,
         sucursal_id=data.sucursal_id,
     )
@@ -80,29 +79,35 @@ def update_usuario(
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
+    update_data = data.model_dump(exclude_unset=True)
+
     # Verificar conflicto de nombre (excluyendo el usuario actual)
-    existing_user = db.query(Usuario).filter(
-        Usuario.nombre == data.nombre,
-        Usuario.sucursal_id == data.sucursal_id,
-        Usuario.id != usuario_id
-    ).first()
-    
-    if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Ya existe otro usuario con ese nombre en esta sucursal"
-        )
-    
-    # Actualizar campos
-    usuario.nombre = data.nombre
-    usuario.rol = data.rol
-    usuario.activo = data.activo
-    usuario.sucursal_id = data.sucursal_id
-    
-    # Actualizar contraseña solo si se proporciona una nueva
-    if data.password:
-        usuario.password = get_password_hash(data.password)
+    nombre = update_data.get("nombre", usuario.nombre)
+    sucursal_id = update_data.get("sucursal_id", usuario.sucursal_id)
+    if "nombre" in update_data or "sucursal_id" in update_data:
+        existing_user = db.query(Usuario).filter(
+            Usuario.nombre == nombre,
+            Usuario.sucursal_id == sucursal_id,
+            Usuario.id != usuario_id
+        ).first()
+
+        if existing_user:
+            raise HTTPException(
+                status_code=400,
+                detail="Ya existe otro usuario con ese nombre en esta sucursal"
+            )
+
+    if "nombre" in update_data:
+        usuario.nombre = update_data["nombre"]
+    if "rol" in update_data:
+        usuario.rol = update_data["rol"]
+    if "activo" in update_data:
+        usuario.activo = update_data["activo"]
+    if "sucursal_id" in update_data:
+        usuario.sucursal_id = update_data["sucursal_id"]
+    if update_data.get("pin"):
+        usuario.pin = get_password_hash(update_data["pin"])
     
     db.commit()
     db.refresh(usuario)
@@ -133,5 +138,4 @@ def delete_usuario(
     db.commit()
     
     return {"message": "Usuario desactivado correctamente"}
-
 

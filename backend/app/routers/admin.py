@@ -17,6 +17,7 @@ from app.models import (
     CategoriaArticulo,
     GastoDetalle,
     Articulo,
+    Turno,
 )
 from app.auth import get_current_active_user
 
@@ -398,107 +399,72 @@ def _get_predictive_sales(sucursal_id: int, db: Session) -> Dict[str, Any]:
 
 @router.get("/dashboard")
 def get_dashboard_metrics(
+    turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    """Dashboard principal - métricas del día actual"""
+    """Dashboard principal — métricas del turno activo (o turno_id explícito)."""
     _ensure_admin_access(current_user)
-    
-    today = date.today()
-    
-    # Consulta base para pedidos del día actual con estado 'pagado'
-    base_query = db.query(Pedido).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    )
-    
-    # Total pedidos del día
-    total_pedidos = base_query.count()
-    
-    # Total por método de pago
-    efectivo_total = db.query(func.sum(Pedido.total)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.metodo_pago == "efectivo",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).scalar() or Decimal('0.00')
-    
-    tarjeta_total = db.query(func.sum(Pedido.total)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.metodo_pago == "tarjeta",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).scalar() or Decimal('0.00')
-    
-    transferencia_total = db.query(func.sum(Pedido.total)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.metodo_pago == "transferencia",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).scalar() or Decimal('0.00')
 
-    # Propinas por método de pago
-    propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.metodo_pago == "efectivo",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).scalar() or Decimal('0.00')
-    
-    propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.metodo_pago.in_(['tarjeta', 'transferencia']),
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).scalar() or Decimal('0.00')
-    
+    # Determinar turno_id efectivo
+    tid = turno_id
+    if not tid:
+        turno_activo = db.query(Turno).filter(
+            Turno.sucursal_id == current_user.sucursal_id,
+            Turno.estado == "abierto"
+        ).first()
+        tid = turno_activo.id if turno_activo else None
+
+    def _fp(*extra):
+        """Filtro periodo: turno_id o fecha del día + pagado + sucursal."""
+        f = [Pedido.estado == "pagado", Pedido.sucursal_id == current_user.sucursal_id]
+        f += list(extra)
+        if tid:
+            f.append(Pedido.turno_id == tid)
+        else:
+            f.append(func.date(Pedido.fecha_creacion) == date.today())
+        return and_(*f)
+
+    def _fp_any_estado(*estados, extra=None):
+        """Filtro periodo sin restricción de estado=pagado."""
+        f = [Pedido.sucursal_id == current_user.sucursal_id, Pedido.estado.in_(list(estados))]
+        if extra:
+            f += list(extra)
+        if tid:
+            f.append(Pedido.turno_id == tid)
+        else:
+            f.append(func.date(Pedido.fecha_creacion) == date.today())
+        return and_(*f)
+
+    # Consulta base
+    base_query = db.query(Pedido).filter(_fp())
+    total_pedidos = base_query.count()
+
+    # Totales por método de pago
+    efectivo_total = db.query(func.sum(Pedido.total)).filter(_fp(Pedido.metodo_pago == "efectivo")).scalar() or Decimal('0.00')
+    tarjeta_total = db.query(func.sum(Pedido.total)).filter(_fp(Pedido.metodo_pago == "tarjeta")).scalar() or Decimal('0.00')
+    transferencia_total = db.query(func.sum(Pedido.total)).filter(_fp(Pedido.metodo_pago == "transferencia")).scalar() or Decimal('0.00')
+
+    # Propinas
+    propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(_fp(Pedido.metodo_pago == "efectivo")).scalar() or Decimal('0.00')
+    propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(_fp(Pedido.metodo_pago.in_(['tarjeta', 'transferencia']))).scalar() or Decimal('0.00')
     propina_total = propina_efectivo_total + propina_tarjeta_total
 
     # Productos más vendidos (top 5)
     productos_vendidos = db.query(
-        Platillo.nombre,
-        func.sum(ArticuloPedido.cantidad).label('total_vendido')
-    ).join(
-        ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id
-    ).join(
-        Pedido, ArticuloPedido.pedido_id == Pedido.id
-    ).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).group_by(
-        Platillo.id, Platillo.nombre
-    ).order_by(
-        func.sum(ArticuloPedido.cantidad).desc()
-    ).limit(5).all()
+        Platillo.nombre, func.sum(ArticuloPedido.cantidad).label('total_vendido')
+    ).join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id
+    ).join(Pedido, ArticuloPedido.pedido_id == Pedido.id
+    ).filter(_fp()
+    ).group_by(Platillo.id, Platillo.nombre
+    ).order_by(func.sum(ArticuloPedido.cantidad).desc()).limit(5).all()
 
-    # Pedidos del día (para la lista en dashboard)
+    # Pedidos del turno (para lista en dashboard)
     pedidos_del_dia = db.query(Pedido).options(
         joinedload(Pedido.articulos_pedido).joinedload(ArticuloPedido.platillo)
-    ).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).order_by(Pedido.fecha_creacion.desc()).all()
+    ).filter(_fp()).order_by(Pedido.fecha_creacion.desc()).all()
 
-     # Ticket promedio
+    # Ticket promedio
     total_ingresos = efectivo_total + tarjeta_total + transferencia_total
     promedio_ticket = float(total_ingresos) / total_pedidos if total_pedidos > 0 else 0
 
@@ -507,49 +473,30 @@ def get_dashboard_metrics(
         extract('hour', Pedido.fecha_creacion).label('hora'),
         func.count(Pedido.id).label('cantidad'),
         func.sum(Pedido.total).label('total')
-    ).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).group_by(extract('hour', Pedido.fecha_creacion)).order_by(extract('hour', Pedido.fecha_creacion)).all()
+    ).filter(_fp()).group_by(extract('hour', Pedido.fecha_creacion)).order_by(extract('hour', Pedido.fecha_creacion)).all()
 
     # Tipos de orden
     tipos_orden_data = db.query(
-        Pedido.tipo_orden,
-        func.count(Pedido.id).label('cantidad')
-    ).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
-    ).group_by(Pedido.tipo_orden).all()
+        Pedido.tipo_orden, func.count(Pedido.id).label('cantidad')
+    ).filter(_fp()).group_by(Pedido.tipo_orden).all()
 
     # Cancelaciones
     cancelaciones = db.query(func.count(Pedido.id)).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado == "cancelado",
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
+        _fp_any_estado("cancelado")
     ).scalar() or 0
 
-    # Estado actual (Pedidos activos)
+    # Estado actual (pedidos activos)
     estado_actual_data = db.query(
-        Pedido.estado,
-        func.count(Pedido.id).label('cantidad')
+        Pedido.estado, func.count(Pedido.id).label('cantidad')
     ).filter(
-        and_(
-            func.date(Pedido.fecha_creacion) == today,
-            Pedido.estado.in_(['pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada', 'dividido']),
-            Pedido.sucursal_id == current_user.sucursal_id
-        )
+        _fp_any_estado('pendiente', 'preparando', 'listo', 'entregado', 'cuenta_solicitada', 'dividido')
     ).group_by(Pedido.estado).all()
-    
+
+    periodo_label = f"turno_{tid}" if tid else date.today().isoformat()
+
     return {
-        "fecha": today.isoformat(),
+        "fecha": periodo_label,
+        "turno_id": tid,
         "total_pedidos": total_pedidos,
         "promedio_ticket": promedio_ticket,
         "cancelaciones": cancelaciones,

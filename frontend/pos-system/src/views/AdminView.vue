@@ -77,6 +77,8 @@ import GastosSection from '@/components/admin/sections/GastosSection.vue'
 import PlatillosSection from '@/components/admin/sections/PlatillosSection.vue'
 import UsuariosSection from '@/components/admin/sections/UsuariosSection.vue'
 import ConfiguracionSection from '@/components/admin/sections/ConfiguracionSection.vue'
+import TurnosSection from '@/components/admin/sections/TurnosSection.vue'
+import RecursosHumanosSection from '@/components/admin/sections/RecursosHumanosSection.vue'
 
 // Modales y Formas
 import AdminModals from '@/components/AdminModals.vue'
@@ -113,20 +115,30 @@ const sections: Record<string, { name: string, subtitle: string, component: any 
     subtitle: 'Visión general del rendimiento del restaurante.',
     component: DashboardSection 
   },
-  gastos: { 
-    name: 'Egresos', 
+  gastos: {
+    name: 'Egresos',
     subtitle: 'Gestión de compras, nómina y proveedores.',
-    component: GastosSection 
+    component: GastosSection
+  },
+  turnos: {
+    name: 'Turnos',
+    subtitle: 'Historial de turnos y arqueos de caja.',
+    component: TurnosSection
   },
   menu: { 
     name: 'Menú', 
     subtitle: 'Administra tus platillos, precios y categorías.',
     component: PlatillosSection 
   },
-  usuarios: { 
-    name: 'Equipo', 
+  usuarios: {
+    name: 'Equipo',
     subtitle: 'Colaboradores y permisos de acceso.',
-    component: UsuariosSection 
+    component: UsuariosSection
+  },
+  rrhh: {
+    name: 'Recursos Humanos',
+    subtitle: 'Horas trabajadas y registro de asistencia.',
+    component: RecursosHumanosSection
   },
   configuracion: { 
     name: 'Ajustes', 

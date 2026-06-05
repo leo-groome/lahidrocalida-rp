@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { 
-  LayoutDashboard, 
-  Wallet, 
-  UtensilsCrossed, 
-  Users, 
-  Settings, 
-  LogOut 
+import {
+  LayoutDashboard,
+  Wallet,
+  UtensilsCrossed,
+  Users,
+  Settings,
+  LogOut,
+  Clock,
+  Users2,
 } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
@@ -25,9 +27,11 @@ const isHovered = ref(false)
 const menuItems = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { id: 'gastos', name: 'Gastos', icon: Wallet },
+  { id: 'turnos', name: 'Turnos', icon: Clock },
   { id: 'menu', name: 'Menú', icon: UtensilsCrossed },
   { id: 'usuarios', name: 'Usuarios', icon: Users },
-  { id: 'configuracion', name: 'Ajustes', icon: Settings }
+  { id: 'rrhh', name: 'Recursos Humanos', icon: Users2 },
+  { id: 'configuracion', name: 'Ajustes', icon: Settings },
 ]
 </script>
 

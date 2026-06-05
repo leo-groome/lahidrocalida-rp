@@ -7,7 +7,7 @@ import { websocketService } from '@/services/websocket'
 import type { PedidoResponse, ReporteDiaAnalytics, ReporteDiaTicket, Turno } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
 import TurnoModal from '@/components/TurnoModal.vue'
-import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
+import GastoRapidoModal from '@/components/gastos/GastoRapidoModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
 import { formatTime, formatDateTime, getMinutesElapsed } from '@/utils/dateUtils'
@@ -486,7 +486,9 @@ const cargarReportePropinas = async (fecha?: string) => {
 const cargarAnalyticsDia = async () => {
   loadingAnalyticsDia.value = true
   try {
-    const res = await api.get('/reportes/dia/analytics')
+    const params: Record<string, any> = {}
+    if (turnoActivo.value?.id) params.turno_id = turnoActivo.value.id
+    const res = await api.get('/reportes/dia/analytics', { params })
     analyticsDia.value = res.data
   } catch (error) {
     console.error('Error cargando analiticas del dia:', error)
@@ -1881,6 +1883,21 @@ const handleGastoSaved = async () => {
 
     <!-- Main Content -->
     <main class="flex-1 p-6 pt-0">
+      <!-- Banner: sin turno activo -->
+      <div v-if="!tieneTurnoActivo" class="mb-4 flex items-center gap-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm">
+        <AlertCircle class="w-6 h-6 text-amber-500 flex-shrink-0" />
+        <div class="flex-1 min-w-0">
+          <p class="font-bold text-amber-800 text-sm">No hay turno activo</p>
+          <p class="text-xs text-amber-600 mt-0.5">Las métricas son del día completo. Inicia un turno para ver datos del turno actual.</p>
+        </div>
+        <button
+          @click="manejarClickTurno"
+          class="px-4 py-2 bg-amber-500 text-white rounded-xl text-sm font-bold whitespace-nowrap hover:bg-amber-600 active:scale-95 transition-all flex-shrink-0"
+        >
+          Iniciar Turno
+        </button>
+      </div>
+
       <div class="flex gap-6">
         <!-- Contenido principal -->
         <div class="flex-1">
@@ -2159,7 +2176,7 @@ const handleGastoSaved = async () => {
                   <div class="p-2.5 bg-emerald-50 rounded-2xl text-emerald-600 shadow-inner">
                     <DollarSign class="w-5 h-5" />
                   </div>
-                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">Ingresos Totales</span>
+                  <span class="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none">{{ tieneTurnoActivo ? 'Ventas del Turno' : 'Ingresos del Día' }}</span>
                 </div>
                 <div class="text-4xl font-black text-slate-800 tracking-tighter mb-2 relative z-10">
                   <span class="text-emerald-500 text-xl mr-1 font-black">$</span>{{ Number(analyticsDia.ingresos.total).toFixed(2) }}
@@ -3861,11 +3878,11 @@ const handleGastoSaved = async () => {
       @confirmar="modalTipo === 'inicio' ? iniciarTurno($event) : cerrarTurno($event)"
     />
 
-    <GastoFormModal
+    <GastoRapidoModal
       v-if="showGastoModal"
       :turno-id="turnoActivo?.id"
-      @close="showGastoModal = false"
       @save="handleGastoSaved"
+      @cancel="showGastoModal = false"
     />
 
     <!-- Modal de Confirmación de Cancelación -->

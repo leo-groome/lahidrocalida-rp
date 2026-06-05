@@ -3,6 +3,7 @@ from app.db.session import engine, get_db
 from app.models import Base
 from app.routers import (
     admin,
+    asistencia,
     auth,
     gastos,
     pedidos,
@@ -39,6 +40,7 @@ app.add_middleware(
 
 # Incluir routers
 app.include_router(auth.router)
+app.include_router(asistencia.router)
 app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(pedidos.router)

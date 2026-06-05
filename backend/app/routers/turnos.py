@@ -34,6 +34,11 @@ def _validar_permisos_turnos(usuario: Usuario):
         )
 
 
+def _get_turno_diferencia(turno: Turno) -> Optional[float]:
+    diferencia = getattr(turno, "diferencia", None)
+    return float(diferencia) if diferencia is not None else None
+
+
 def _obtener_turno_activo_sucursal(db: Session, sucursal_id: int) -> Optional[Turno]:
     """Obtener el turno activo de una sucursal"""
     return (
@@ -450,7 +455,7 @@ def cerrar_turno(
         total_final=float(turno.total_final),
         ventas_efectivo=float(turno.ventas_efectivo),
         propinas_efectivo=float(turno.propinas_efectivo),
-        diferencia=float(turno.diferencia),
+        diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
         denominaciones_finales=denominaciones_finales,
@@ -569,7 +574,7 @@ def listar_turnos(
                 propinas_efectivo=float(turno.propinas_efectivo)
                 if turno.propinas_efectivo
                 else None,
-                diferencia=float(turno.diferencia) if turno.diferencia else None,
+                diferencia=_get_turno_diferencia(turno),
                 observaciones=turno.observaciones,
                 denominaciones_iniciales=denominaciones_iniciales,
                 denominaciones_finales=denominaciones_finales
@@ -644,7 +649,7 @@ def obtener_turno(
         propinas_efectivo=float(turno.propinas_efectivo)
         if turno.propinas_efectivo
         else None,
-        diferencia=float(turno.diferencia) if turno.diferencia else None,
+        diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
         denominaciones_finales=denominaciones_finales
@@ -801,7 +806,7 @@ def editar_turno(
         propinas_efectivo=float(turno.propinas_efectivo)
         if turno.propinas_efectivo
         else None,
-        diferencia=float(turno.diferencia) if turno.diferencia else None,
+        diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
         denominaciones_finales=denominaciones_finales
@@ -955,5 +960,3 @@ def obtener_resumen_turno(
     }
 
     return resumen
-
-

@@ -36,7 +36,7 @@
                 </div>
                 <div class="space-y-0.5">
                   <p class="text-sm font-extrabold text-slate-800 transition-colors group-hover:text-blue-600">{{ user.nombre }}</p>
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ user.email || 'hidrocalida.staff' }}</p>
+                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID #{{ user.id }} · PIN configurado</p>
                 </div>
               </div>
             </td>

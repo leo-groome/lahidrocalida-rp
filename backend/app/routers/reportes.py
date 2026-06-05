@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, case, extract, func, or_
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models import ArticuloPedido, Pedido, Platillo, Usuario
+from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.utils.timezone import get_mexico_now, MEXICO_TZ
 
 router = APIRouter(prefix="/reportes", tags=["reportes"])
@@ -17,14 +17,15 @@ router = APIRouter(prefix="/reportes", tags=["reportes"])
 
 @router.get("/dia/tickets")
 def tickets_del_dia(
+    turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    """Historial de tickets del dia (pagados y cancelados) para Caja.
+    """Historial de tickets del turno actual (pagados y cancelados) para Caja.
 
     - Solo cajero/administrador.
-    - Pagados: filtra por fecha_pago del dia local.
-    - Cancelados: filtra por fecha_creacion del dia local (no existe fecha_cancelacion).
+    - Con turno_id: filtra por turno.
+    - Sin turno_id: usa el turno activo; fallback a fecha del día.
     """
 
     user = cast(Any, current_user)
@@ -32,31 +33,46 @@ def tickets_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
-    now_local = get_mexico_now()
-    today_local = now_local.date()
-    start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
-    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
-
     fecha_evento_expr = case(
         (Pedido.estado == "pagado", Pedido.fecha_pago),
         else_=Pedido.fecha_creacion,
     )
 
-    query = db.query(Pedido).filter(
-        or_(
-            and_(
-                Pedido.estado == "pagado",
-                Pedido.fecha_pago.isnot(None),
-                Pedido.fecha_pago >= start_dt,
-                Pedido.fecha_pago < end_dt,
-            ),
-            and_(
-                Pedido.estado == "cancelado",
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-            ),
+    # Determinar filtro: turno o fecha
+    tid = turno_id
+    if not tid:
+        turno_activo = db.query(Turno).filter(
+            Turno.sucursal_id == user.sucursal_id,
+            Turno.estado == "abierto"
+        ).first()
+        tid = turno_activo.id if turno_activo else None
+
+    if tid:
+        query = db.query(Pedido).filter(
+            Pedido.turno_id == tid,
+            Pedido.estado.in_(["pagado", "cancelado"]),
         )
-    )
+    else:
+        # Fallback: fecha del día
+        now_local = get_mexico_now()
+        today_local = now_local.date()
+        start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
+        end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        query = db.query(Pedido).filter(
+            or_(
+                and_(
+                    Pedido.estado == "pagado",
+                    Pedido.fecha_pago.isnot(None),
+                    Pedido.fecha_pago >= start_dt,
+                    Pedido.fecha_pago < end_dt,
+                ),
+                and_(
+                    Pedido.estado == "cancelado",
+                    Pedido.fecha_creacion >= start_dt,
+                    Pedido.fecha_creacion < end_dt,
+                ),
+            )
+        )
 
     if user.rol == "cajero":
         query = query.filter(Pedido.sucursal_id == user.sucursal_id)
@@ -92,14 +108,15 @@ def tickets_del_dia(
 
 @router.get("/dia/analytics")
 def analytics_del_dia(
+    turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    """Analiticas del dia para Caja (mismo criterio que Admin dashboard).
+    """Analíticas del turno actual para Caja.
 
     - Solo cajero/administrador.
-    - Filtra por fecha_creacion (date) del dia.
-    - Filtra por sucursal del usuario.
+    - Con turno_id: filtra por turno.
+    - Sin turno_id: usa el turno activo; fallback a fecha del día.
     """
 
     user = cast(Any, current_user)
@@ -107,97 +124,64 @@ def analytics_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
-    now_local = get_mexico_now()
-    today = now_local.date()
-    start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
-    end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+    # Determinar filtro turno vs fecha
+    tid = turno_id
+    if not tid:
+        turno_activo = db.query(Turno).filter(
+            Turno.sucursal_id == user.sucursal_id,
+            Turno.estado == "abierto"
+        ).first()
+        tid = turno_activo.id if turno_activo else None
 
-    # Base query: pedidos pagados del dia
-    base_query = db.query(Pedido).filter(
-        and_(
-            Pedido.fecha_creacion >= start_dt,
-            Pedido.fecha_creacion < end_dt,
-            Pedido.estado == "pagado",
-            Pedido.sucursal_id == user.sucursal_id,
-        )
-    )
+    def _filtro_periodo(extra_filters=None):
+        """Construye los filtros de periodo (turno o fecha) + estado pagado + sucursal."""
+        filters = [Pedido.estado == "pagado", Pedido.sucursal_id == user.sucursal_id]
+        if tid:
+            filters.append(Pedido.turno_id == tid)
+        else:
+            now_local = get_mexico_now()
+            today = now_local.date()
+            start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
+        if extra_filters:
+            filters += extra_filters
+        return and_(*filters)
+
+    # Base query: pedidos pagados del turno/dia
+    base_query = db.query(Pedido).filter(_filtro_periodo())
 
     total_pedidos = base_query.count()
 
     efectivo_total = (
         db.query(func.sum(Pedido.total))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.metodo_pago == "efectivo",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or Decimal("0.00")
+        .filter(_filtro_periodo([Pedido.metodo_pago == "efectivo"]))
+        .scalar() or Decimal("0.00")
     )
 
     tarjeta_total = (
         db.query(func.sum(Pedido.total))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.metodo_pago == "tarjeta",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or Decimal("0.00")
+        .filter(_filtro_periodo([Pedido.metodo_pago == "tarjeta"]))
+        .scalar() or Decimal("0.00")
     )
 
     transferencia_total = (
         db.query(func.sum(Pedido.total))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.metodo_pago == "transferencia",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or Decimal("0.00")
+        .filter(_filtro_periodo([Pedido.metodo_pago == "transferencia"]))
+        .scalar() or Decimal("0.00")
     )
 
     # Propinas por metodo
     propina_efectivo_total = (
         db.query(func.sum(Pedido.propina_efectivo))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.metodo_pago == "efectivo",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or Decimal("0.00")
+        .filter(_filtro_periodo([Pedido.metodo_pago == "efectivo"]))
+        .scalar() or Decimal("0.00")
     )
 
     propina_tarjeta_total = (
         db.query(func.sum(Pedido.propina_tarjeta))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.metodo_pago.in_(["tarjeta", "transferencia"]),
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or Decimal("0.00")
+        .filter(_filtro_periodo([Pedido.metodo_pago.in_(["tarjeta", "transferencia"])]))
+        .scalar() or Decimal("0.00")
     )
 
     propina_total = propina_efectivo_total + propina_tarjeta_total
@@ -213,14 +197,7 @@ def analytics_del_dia(
             func.count(Pedido.id).label("cantidad"),
             func.sum(Pedido.total).label("total"),
         )
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
+        .filter(_filtro_periodo())
         .group_by(extract("hour", Pedido.fecha_creacion))
         .order_by(extract("hour", Pedido.fecha_creacion))
         .all()
@@ -229,52 +206,48 @@ def analytics_del_dia(
     # Tipos de orden
     tipos_orden_data = (
         db.query(Pedido.tipo_orden, func.count(Pedido.id).label("cantidad"))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
+        .filter(_filtro_periodo())
         .group_by(Pedido.tipo_orden)
         .all()
     )
 
-    # Cancelaciones
+    # Cancelaciones (no pagado, usa filtro de periodo sin estado=pagado)
+    def _filtro_cancelaciones():
+        filters = [Pedido.estado == "cancelado", Pedido.sucursal_id == user.sucursal_id]
+        if tid:
+            filters.append(Pedido.turno_id == tid)
+        else:
+            now_local = get_mexico_now()
+            today = now_local.date()
+            start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
+        return and_(*filters)
+
     cancelaciones = (
         db.query(func.count(Pedido.id))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "cancelado",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
-        .scalar()
-        or 0
+        .filter(_filtro_cancelaciones())
+        .scalar() or 0
     )
 
-    # Estado actual (operativo)
-    estados_operativos = [
-        "pendiente",
-        "preparando",
-        "listo",
-        "entregado",
-        "cuenta_solicitada",
-        "dividido",
-    ]
+    # Estado actual (operativo) — no filtra por estado=pagado
+    estados_operativos = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "dividido"]
+
+    def _filtro_operativos():
+        filters = [Pedido.estado.in_(estados_operativos), Pedido.sucursal_id == user.sucursal_id]
+        if tid:
+            filters.append(Pedido.turno_id == tid)
+        else:
+            now_local = get_mexico_now()
+            today = now_local.date()
+            start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
+        return and_(*filters)
+
     estado_actual_data = (
         db.query(Pedido.estado, func.count(Pedido.id).label("cantidad"))
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado.in_(estados_operativos),
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
+        .filter(_filtro_operativos())
         .group_by(Pedido.estado)
         .all()
     )
@@ -287,22 +260,19 @@ def analytics_del_dia(
         )
         .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
         .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
-        .filter(
-            and_(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt,
-                Pedido.estado == "pagado",
-                Pedido.sucursal_id == user.sucursal_id,
-            )
-        )
+        .filter(_filtro_periodo())
         .group_by(Platillo.id, Platillo.nombre)
         .order_by(func.sum(ArticuloPedido.cantidad).desc())
         .limit(5)
         .all()
     )
 
+    # Determinar etiqueta de fecha/turno para la respuesta
+    periodo_label = f"turno_{tid}" if tid else get_mexico_now().date().isoformat()
+
     return {
-        "fecha": today.isoformat(),
+        "fecha": periodo_label,
+        "turno_id": tid,
         "total_pedidos": total_pedidos,
         "promedio_ticket": promedio_ticket,
         "cancelaciones": int(cancelaciones),
