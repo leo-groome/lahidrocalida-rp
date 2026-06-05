@@ -151,9 +151,6 @@ function ordenarArticulosPorEstado(articulos: any[]) {
 }
 
 onMounted(async () => {
-  if (!auth.isAuthenticated) { router.replace({ name: 'login' }); return }
-  if (!['cocina', 'administrador'].includes(auth.user?.rol || '')) { router.replace({ name: 'login' }); return }
-
   try {
     await pedidosStore.loadInitialData()
     const wsConnected = await pedidosStore.initWebSocket('kds')

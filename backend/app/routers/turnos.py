@@ -118,21 +118,25 @@ def _calcular_movimientos_efectivo(
         else fecha_cierre
     )
 
-    # Consultar pedidos pagados en efectivo en el rango de fechas
-    ventas_res = (
-        db.query(
-            func.sum(Pedido.total).label("total_ventas"),
-            func.sum(Pedido.propina_efectivo).label("total_propinas"),
-        )
-        .filter(
-            Pedido.sucursal_id == sucursal_id,
+    # Consultar pedidos pagados en efectivo — por turno_id si está disponible
+    ventas_query = db.query(
+        func.sum(Pedido.total).label("total_ventas"),
+        func.sum(Pedido.propina_efectivo).label("total_propinas"),
+    ).filter(
+        Pedido.sucursal_id == sucursal_id,
+        Pedido.metodo_pago == "efectivo",
+        Pedido.estado == "pagado",
+    )
+
+    if turno_id:
+        ventas_query = ventas_query.filter(Pedido.turno_id == turno_id)
+    else:
+        ventas_query = ventas_query.filter(
             Pedido.fecha_pago >= apertura_local,
             Pedido.fecha_pago <= cierre_local,
-            Pedido.metodo_pago == "efectivo",
-            Pedido.estado == "pagado",
         )
-        .first()
-    )
+
+    ventas_res = ventas_query.first()
 
     # Consultar gastos pagados en efectivo vinculados a este turno
     gastos_query = db.query(func.sum(Gasto.total)).filter(
@@ -913,7 +917,7 @@ def obtener_resumen_turno(
         turno_id=turno.id,
     )
 
-    # Comandas cobradas en efectivo durante el turno (por fecha_pago)
+    # Comandas cobradas en efectivo durante el turno — filtradas por turno_id
     comandas = (
         db.query(Pedido)
         .options(selectinload(Pedido.usuario))
@@ -922,8 +926,7 @@ def obtener_resumen_turno(
             Pedido.estado == "pagado",
             Pedido.metodo_pago == "efectivo",
             Pedido.fecha_pago.isnot(None),
-            Pedido.fecha_pago >= fecha_inicio,
-            Pedido.fecha_pago <= fecha_fin,
+            Pedido.turno_id == turno_id,
         )
         .order_by(Pedido.fecha_pago.asc())
         .all()

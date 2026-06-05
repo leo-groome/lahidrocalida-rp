@@ -1,8 +1,8 @@
 # LA HIDROCÁLIDA — SCOPE DEL SISTEMA POS
 
-**Fecha:** 2026-04-27  
-**Versión del sistema:** 1.0.0  
-**Estado global:** ~85-90% feature-complete. Producción activa.
+**Fecha:** 2026-06-04  
+**Versión del sistema:** 1.1.0  
+**Estado global:** ~88-92% feature-complete. Producción activa.
 
 ---
 
@@ -96,7 +96,7 @@ lahidrocalida-rp/
 | **Sucursal** | Sucursal del restaurante | id, nombre, direccion |
 | **Usuario** | Cuentas de staff | id, nombre, rol, pin (argon2), activo, sucursal_id |
 | **Platillo** | Menú | id, nombre, precio, categoria, kds_name, estado (disponible/no_disponible) |
-| **Pedido** | Órdenes | id, numero_display, mesa, total, estado, metodo_pago, propina_efectivo, propina_tarjeta, tipo_orden, fecha_creacion, fecha_pago |
+| **Pedido** | Órdenes | id, numero_display, mesa, total, estado, metodo_pago, propina_efectivo, propina_tarjeta, tipo_orden, fecha_creacion, fecha_pago, **turno_id** |
 | **ArticuloPedido** | Items en orden | id, pedido_id, platillo_id, cantidad, precio_cobrado, modificaciones, estado_item |
 | **Proveedor** | Proveedores | id, nombre, telefono, notas, sucursal_id |
 | **CategoriaArticulo** | Categorías de gasto | id, nombre |
@@ -110,6 +110,8 @@ lahidrocalida-rp/
 - Sucursal → Usuario, Pedido, Gasto (1:many)
 - Pedido → ArticuloPedido (1:many, cascade delete)
 - Gasto → GastoDetalle (1:many, cascade delete)
+- **Turno → Pedido (1:many)** — cada pedido lleva `turno_id`; se inyecta automáticamente en el backend al crear la orden; sin turno activo → 400
+- **Turno → Gasto (1:many)** — gastos ligados al turno explícitamente
 
 ---
 
@@ -187,8 +189,16 @@ lahidrocalida-rp/
 ### Turnos `/turnos`
 | Método | Ruta | Función | Rol |
 |--------|------|---------|-----|
-| POST | `/turnos/iniciar` | Abrir turno con denominaciones | Cajero/Admin |
-| (más endpoints) | `/turnos/*` | Cierre, consulta | — |
+| POST | `/turnos/iniciar` | Abrir turno con denominaciones iniciales | Cajero/Admin |
+| GET | `/turnos/activo` | Turno activo de la sucursal | Cajero/Admin |
+| GET | `/turnos/{id}/resumen` | Resumen detallado (ventas, propinas, gastos, comandas) filtrado por turno_id | Cajero/Admin |
+| POST | `/turnos/{id}/cerrar` | Cierre de turno con conteo final de denominaciones | Cajero/Admin |
+| GET | `/turnos/historial` | Historial de turnos cerrados | Admin |
+
+**Comportamiento clave:**
+- Solo existe **un turno activo por sucursal** (índice unique parcial en DB)
+- `turno_id` se auto-inyecta en cada `POST /pedidos/` desde el turno activo
+- Resumen y cierre filtran pedidos por `turno_id`, no por rango de fecha — correcto ante cambios de día
 
 ### Admin `/admin`
 | Método | Ruta | Función | Rol |
@@ -368,7 +378,7 @@ lahidrocalida-rp/
 | Gestión de platillos | Completo | 100% |
 | Gestión de usuarios | Completo | 100% |
 | Gastos y proveedores | Parcial | 65% |
-| Turnos de caja | Parcial | 70% |
+| Turnos de caja | Funcional | 85% |
 | Reportes y analytics | Funcional | 85% |
 | Propinas | Completo | 100% |
 | WebSocket tiempo real | Completo | 100% |
@@ -419,6 +429,7 @@ lahidrocalida-rp/
    └── Si es Pozole: modal variantes (tamaño / proteína / color)
 3. Llena datos de orden: mesa, cliente, tipo (aquí/llevar/UberEats)
 4. POST /pedidos/ → estado "pendiente"
+   └── Backend valida turno activo → inyecta turno_id (sin turno: 400)
    └── WebSocket → KDS y Caja notificados
 5. Cocina ve orden en KDSView (pantalla grande)
 6. KDS Manager (tablet): Preparando → Listo por ítem
