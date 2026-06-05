@@ -177,7 +177,7 @@ const savePlatillo = async (data: any) => {
     if (editingPlatillo.value) {
       await api.put(`/platillos/${editingPlatillo.value.id}`, data)
     } else {
-      await api.post('/platillos', data)
+      await api.post('/platillos/', data)
     }
     closePlatilloModal()
     window.location.reload()

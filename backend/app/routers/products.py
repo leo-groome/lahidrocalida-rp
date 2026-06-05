@@ -36,6 +36,7 @@ def create_platillo(
         precio=data.precio,
         categoria=data.categoria,
         estado=data.estado,
+        kds_name=data.kds_name if data.kds_name else data.nombre[:20]
     )
     db.add(platillo)
     db.commit()

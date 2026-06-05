@@ -55,7 +55,7 @@ const pedidosActivos = computed(() => {
     .map(p => {
       const articulosVisibles = (p.articulos_pedido || []).filter(a => 
         ['pendiente', 'preparando', 'listo'].includes(a.estado_item) &&
-        a.platillo?.categoria !== 'Bebidas'
+        !['Bebidas', 'Aguas', 'Refrescos'].includes(a.platillo?.categoria || '')
       )
       
       return {

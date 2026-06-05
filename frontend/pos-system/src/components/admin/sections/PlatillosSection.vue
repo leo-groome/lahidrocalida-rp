@@ -120,6 +120,8 @@ const getCategoryIcon = (categoria: string) => {
   const map: Record<string, string> = {
     'Pozole': '🍲',
     'Bebidas': '🥤',
+    'Aguas': '🥤',
+    'Refrescos': '🥤',
     'Antojitos': '🌮',
     'Postres': '🍰',
     'Extras': '🍽️',

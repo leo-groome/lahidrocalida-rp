@@ -44,16 +44,18 @@
             required
             class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md"
           >
-            <option value="pozoles">Pozoles</option>
-            <option value="flautas">Flautas</option>
-            <option value="tacos">Tacos</option>
-            <option value="sopes">Sopes</option>
-            <option value="enchiladas">Enchiladas</option>
-            <option value="tostadas">Tostadas</option>
-            <option value="tamales">Tamales</option>
-            <option value="postres">Postres</option>
-            <option value="bebidas">Bebidas</option>
-            <option value="extras">Extras</option>
+            <option value="Pozole">Pozole</option>
+            <option value="Flautas">Flautas</option>
+            <option value="Tacos">Tacos</option>
+            <option value="Sopes">Sopes</option>
+            <option value="Enchiladas">Enchiladas</option>
+            <option value="Tostadas">Tostadas</option>
+            <option value="Tamales">Tamales</option>
+            <option value="Postres">Postres</option>
+            <option value="Bebidas">Bebidas</option>
+            <option value="Aguas">Aguas</option>
+            <option value="Refrescos">Refrescos</option>
+            <option value="Extras">Extras</option>
           </select>
         </div>
         
@@ -206,7 +208,7 @@ const platilloForm = reactive({
   nombre: '',
   descripcion: '',
   precio: 0,
-  categoria: 'pozoles',
+  categoria: 'Pozole',
   kds_name: '',
   estado: 'disponible'
 })
@@ -235,7 +237,7 @@ const resetPlatilloForm = () => {
     nombre: '',
     descripcion: '',
     precio: 0,
-    categoria: 'pozoles',
+    categoria: 'Pozole',
     kds_name: '',
     estado: 'disponible'
   })
@@ -290,7 +292,7 @@ watch(() => props.editingPlatillo, (newVal) => {
   } else {
     resetPlatilloForm()
   }
-})
+}, { immediate: true })
 
 watch(() => props.editingUsuario, (newVal) => {
   if (newVal) {

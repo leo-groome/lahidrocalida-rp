@@ -117,7 +117,7 @@ const getArticuloEstadoClass = (estadoItem: string) => {
 }
 
 const esBebida = (articulo: any) => {
-  return articulo?.platillo?.categoria === 'Bebidas'
+  return ['Bebidas', 'Aguas', 'Refrescos'].includes(articulo?.platillo?.categoria || '')
 }
 
 const marcarBebidaEntregada = async (articuloId: number) => {
@@ -289,12 +289,13 @@ const categorias = computed(() => {
     .filter(p => p.categoria !== 'Pozole' && p.estado === 'disponible')
     .map(p => p.categoria))]
   
-  // Ordenamiento personalizado: Postres penúltimo, Bebidas último
+  // Ordenamiento personalizado: Postres penúltimo, Bebidas/Aguas/Refrescos al final
   const sortedCats = cats.sort((a, b) => {
-    if (a === 'Bebidas') return 1
-    if (b === 'Bebidas') return -1
-    if (a === 'Postres') return 1
-    if (b === 'Postres') return -1
+    const isBeverage = (x: string) => ['Bebidas', 'Aguas', 'Refrescos'].includes(x)
+    if (isBeverage(a) && !isBeverage(b)) return 1
+    if (!isBeverage(a) && isBeverage(b)) return -1
+    if (a === 'Postres' && !isBeverage(b)) return 1
+    if (b === 'Postres' && !isBeverage(a)) return -1
     return a.localeCompare(b)
   })
 
@@ -394,8 +395,11 @@ const currentOrderItemsCount = computed(() => {
 // Colores por categoría (mismo esquema que POS)
 const getCategoryColor = (category: string) => {
   const colors: Record<string, string> = {
+    'Pozole': 'bg-red-500 hover:bg-red-600',
     'Pozoles': 'bg-red-500 hover:bg-red-600',
     'Bebidas': 'bg-blue-500 hover:bg-blue-600',
+    'Aguas': 'bg-blue-500 hover:bg-blue-600',
+    'Refrescos': 'bg-cyan-500 hover:bg-cyan-600',
     'Antojitos': 'bg-green-500 hover:bg-green-600',
     'Postres': 'bg-yellow-500 hover:bg-yellow-600',
     'Extras': 'bg-purple-500 hover:bg-purple-600'
@@ -408,6 +412,8 @@ const getCategoryIcon = (categoria: string) => {
   const map: Record<string, string> = {
     'Pozole': '🍲',
     'Bebidas': '🥤',
+    'Aguas': '🥤',
+    'Refrescos': '🥤',
     'Antojitos': '🌮',
     'Postres': '🍰',
     'Extras': '🍽️',
