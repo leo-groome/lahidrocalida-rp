@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
   { path: '/mesero', name: 'mesero', component: MeseroView, meta: { requiresAuth: true, roles: ['mesero', 'administrador'] } },
   { path: '/caja', name: 'caja', component: CajaView, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
-  { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { public: true } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, roles: ['administrador'] } },
   { path: '/kds', name: 'kds', component: KDSView, meta: { public: true } },

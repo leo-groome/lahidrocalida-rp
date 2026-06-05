@@ -94,7 +94,7 @@ lahidrocalida-rp/
 | Tabla | Propósito | Campos clave |
 |-------|-----------|-------------|
 | **Sucursal** | Sucursal del restaurante | id, nombre, direccion |
-| **Usuario** | Cuentas de staff | id, nombre, rol, password (argon2), activo, sucursal_id |
+| **Usuario** | Cuentas de staff | id, nombre, rol, pin (argon2), activo, sucursal_id |
 | **Platillo** | Menú | id, nombre, precio, categoria, kds_name, estado (disponible/no_disponible) |
 | **Pedido** | Órdenes | id, numero_display, mesa, total, estado, metodo_pago, propina_efectivo, propina_tarjeta, tipo_orden, fecha_creacion, fecha_pago |
 | **ArticuloPedido** | Items en orden | id, pedido_id, platillo_id, cantidad, precio_cobrado, modificaciones, estado_item |
@@ -118,7 +118,9 @@ lahidrocalida-rp/
 ### Auth `/auth`
 | Método | Ruta | Función | Auth |
 |--------|------|---------|------|
-| POST | `/auth/login-simple` | Login JSON (user_id + password) | — |
+| POST | `/auth/login-simple` | Login staff JSON (`user_id` + `pin`) | — |
+| POST | `/auth/login-admin` | Login admin con usuario administrador + PIN (payload legado: `email`, `password`) | — |
+| POST | `/auth/asistencia` | Clock-in/out público con PIN | — |
 | POST | `/auth/login` | Login OAuth2 form | — |
 | GET | `/auth/me` | Usuario actual | Bearer |
 | GET | `/auth/users` | Lista usuarios para selector login | — |
@@ -128,7 +130,7 @@ lahidrocalida-rp/
 |--------|------|---------|-----|
 | POST | `/usuarios/` | Crear usuario | Admin |
 | GET | `/usuarios/` | Listar todos | Auth |
-| PUT | `/usuarios/{id}` | Actualizar | Admin |
+| PUT | `/usuarios/{id}` | Actualizar parcial; conserva campos omitidos y PIN vacío | Admin |
 | DELETE | `/usuarios/{id}` | Desactivar | Admin |
 
 ### Platillos `/platillos`
@@ -215,10 +217,12 @@ lahidrocalida-rp/
 
 ## 7. VISTAS DEL FRONTEND — ESTADO ACTUAL
 
-### Login.vue (77 lín) — COMPLETO 100%
-- Login con user_id numérico + password
+### Login.vue — COMPLETO 100%
+- Selector de rol por dispositivo (`localStorage.device_role`)
+- Grid de usuarios staff filtrado por rol; administradores excluidos
+- Login con PIN mediante keypad numérico
 - Redirect por rol al autenticar
-- Componente InstallPWA embebido
+- Links secundarios a `/admin-login` y `/checkin`
 
 ### MeseroView.vue (2,498 lín) — FUNCIONAL 95%
 - Catálogo de platillos con búsqueda y filtro por categoría
@@ -261,7 +265,7 @@ lahidrocalida-rp/
 - DashboardSection: KPIs y métricas con filtro por fecha
 - GastosSection: CRUD gastos + proveedores + categorías + artículos
 - PlatillosSection: CRUD menú
-- UsuariosSection: CRUD usuarios
+- UsuariosSection: CRUD usuarios; edición parcial con PIN opcional
 - ConfiguracionSection: Ajustes del sistema
 
 ---

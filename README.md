@@ -65,7 +65,8 @@ Todas las funcionalidades core están implementadas y probadas. El sistema manej
 ## 🎯 Funcionalidades Implementadas
 
 ### 1. Sistema de Autenticación
-- Login por ID numérico + contraseña
+- Login staff por ID numérico + PIN/NIP
+- Login administrador separado en `/admin-login` con usuario administrador + PIN
 - 4 roles con permisos específicos:
   - **Mesero**: Toma pedidos, gestiona entregas
   - **Cajero**: Procesa pagos pendientes
@@ -197,7 +198,7 @@ graph LR
 - `kds_name` (nombre corto para cocina)
 
 **Usuario**
-- `id`, `nombre`, `rol`, `password_hash`
+- `id`, `nombre`, `rol`, `pin` (hash Argon2)
 - `sucursal_id`, `activo`
 
 ### Características de BD
@@ -266,11 +267,21 @@ VITE_API_URL=http://localhost:8000
 
 ## 👥 Usuarios de Prueba
 
-| ID | Nombre | Rol | Password | Descripción |
+La migración actual `password → pin` resetea los accesos de desarrollo a PIN `1111`.
+
+| ID | Nombre | Rol | PIN | Ruta |
+|----|--------|-----|-----|------|
 |----|--------|-----|----------|-------------|
-| 3 | Admin | administrador | admin123 | Acceso completo |
-| 4 | Leo | cajero | cajero123 | Gestión de caja |
-| 5 | Mesero Test | mesero | mesero123 | Toma de pedidos |
+| 3 | Admin | administrador | 1111 | `/admin-login` |
+| 7 | Mesero Test | mesero | 1111 | `/login` |
+| 6 | Cocina Test | cocina | 1111 | `/login` |
+
+### Gestión de Usuarios
+
+- Crear usuario requiere `pin`.
+- Editar usuario usa `PUT /usuarios/{id}` con payload parcial: solo se actualizan los campos enviados.
+- Si `pin` se omite o se manda vacío, el PIN actual se conserva.
+- El PIN nunca se devuelve en respuestas; solo se almacena su hash.
 
 ## 🔧 Comandos Útiles
 
@@ -365,7 +376,7 @@ TOTAL: $285.00
 ## 🔒 Seguridad
 
 - Autenticación JWT con expiración
-- Hash de contraseñas con Argon2
+- Hash de PIN/NIP con Argon2
 - Validación de permisos por endpoint
 - Sanitización de inputs
 - CORS configurado para producción
