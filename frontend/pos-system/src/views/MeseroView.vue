@@ -52,7 +52,7 @@ const pedidosStore = usePedidosStore()
 
 // Búsqueda y filtrado
 const searchQuery = ref('')
-const activeCategory = ref('Todos')
+const activeCategory = ref<string | null>(null)
 
 // Referencias reactivas
   const platillos = ref<PlatilloResponse[]>([])
@@ -299,7 +299,7 @@ const categorias = computed(() => {
     return a.localeCompare(b)
   })
 
-  return ['Todos', ...sortedCats]
+  return sortedCats
 })
 
 // Platillos filtrados por búsqueda y categoría
@@ -309,7 +309,7 @@ const filteredPlatillos = computed(() => {
       p.nombre.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
       (p.kds_name && p.kds_name.toLowerCase().includes(searchQuery.value.toLowerCase()))
     
-    const matchesCategory = activeCategory.value === 'Todos' || p.categoria === activeCategory.value
+    const matchesCategory = activeCategory.value && p.categoria === activeCategory.value
     
     return p.estado === 'disponible' && matchesSearch && matchesCategory
   })
@@ -318,7 +318,6 @@ const filteredPlatillos = computed(() => {
 // Agrupar por categoría para el scroll (opcional para la nueva vista)
 const platillosPorCategoria = computed(() => {
   return categorias.value.reduce((acc, cat) => {
-    if (cat === 'Todos') return acc
     acc[cat] = filteredPlatillos.value.filter(p => p.categoria === cat)
     return acc
   }, {} as Record<string, PlatilloResponse[]>)
@@ -1260,22 +1259,41 @@ const guardarCambiosPedido = async () => {
               </div>
             </div>
 
-            <!-- Filters -->
-            <div class="mb-10 flex flex-col gap-6 px-1">
-              <div class="flex gap-4 overflow-x-auto pb-4 scrollbar-none items-center">
+            <!-- Filters & Navigation -->
+            <div class="mb-10 px-1">
+              <!-- Botón de Volver cuando hay una categoría seleccionada -->
+              <div v-if="activeCategory" class="animate-in fade-in slide-in-from-top-3 duration-200">
+                <button 
+                  @click="activeCategory = null" 
+                  class="group flex items-center gap-2 px-5 py-3 rounded-2xl border border-slate-200/60 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-200 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] font-bold text-xs uppercase tracking-wider"
+                >
+                  <ArrowLeft class="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+                  <span>Volver a Categorías</span>
+                </button>
+              </div>
+
+              <!-- Grid completo de categorías cuando no hay selección -->
+              <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 animate-in fade-in zoom-in-95 duration-200">
                 <button 
                   v-for="cat in categorias" 
                   :key="cat"
                   @click="activeCategory = cat"
                   :class="[
-                    'px-10 py-6 rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] transition-all whitespace-nowrap border shadow-sm',
+                    'flex items-center gap-3 p-4 rounded-2xl border text-left transition-all duration-300 transform-gpu hover:scale-[1.02] active:scale-[0.98]',
                     activeCategory === cat 
-                      ? 'bg-blue-600 border-blue-600 text-white shadow-xl shadow-blue-200 -translate-y-1' 
-                      : 'bg-white border-slate-200/60 text-slate-400 hover:border-blue-300 hover:text-blue-600 hover:shadow-md'
+                      ? 'bg-gradient-to-r from-blue-600 to-blue-500 border-blue-600 text-white shadow-lg shadow-blue-500/20' 
+                      : 'bg-slate-50/70 border-slate-200/50 text-slate-700 hover:bg-slate-100 hover:border-slate-300 shadow-sm'
                   ]"
                 >
-                  <span class="flex items-center gap-2">
-                    <span v-if="cat !== 'Todos'">{{ getCategoryIcon(cat) }}</span>
+                  <div 
+                    :class="[
+                      'w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-sm transition-colors duration-300 flex-shrink-0',
+                      activeCategory === cat ? 'bg-blue-700/40 text-white' : 'bg-white text-slate-800'
+                    ]"
+                  >
+                    {{ getCategoryIcon(cat) }}
+                  </div>
+                  <span class="font-bold text-sm tracking-wide uppercase truncate leading-none">
                     {{ cat }}
                   </span>
                 </button>
@@ -1284,15 +1302,16 @@ const guardarCambiosPedido = async () => {
 
             <!-- Menú por categorías -->
             <div class="space-y-12">
-              <div v-for="categoria in (activeCategory === 'Todos' ? categorias.filter(c => c !== 'Todos') : [activeCategory])" :key="categoria">
-                <div class="flex items-center gap-4 mb-6 px-2">
-                  <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
-                    <span class="text-xl opacity-80">{{ getCategoryIcon(categoria) }}</span>
+              <template v-if="activeCategory">
+                <div v-for="categoria in [activeCategory]" :key="categoria">
+                  <div class="flex items-center gap-4 mb-6 px-2">
+                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
+                      <span class="text-xl opacity-80">{{ getCategoryIcon(categoria) }}</span>
+                    </div>
+                    <h3 class="text-xl font-black text-slate-800 tracking-tight">{{ categoria }}</h3>
+                    <div class="h-px flex-1 bg-gradient-to-r from-slate-200/60 to-transparent"></div>
+                    <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest">{{ platillosPorCategoria[categoria]?.length || 0 }} items</span>
                   </div>
-                  <h3 class="text-xl font-black text-slate-800 tracking-tight">{{ categoria }}</h3>
-                  <div class="h-px flex-1 bg-gradient-to-r from-slate-200/60 to-transparent"></div>
-                  <span class="text-[10px] font-black text-slate-300 uppercase tracking-widest">{{ platillosPorCategoria[categoria]?.length || 0 }} items</span>
-                </div>
 
                 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                   <button
@@ -1338,7 +1357,17 @@ const guardarCambiosPedido = async () => {
                   </button>
                 </div>
               </div>
-            </div>
+            </template>
+            <template v-else>
+              <div class="flex flex-col items-center justify-center py-20 px-4 text-center bg-slate-50/50 rounded-[2rem] border border-dashed border-slate-200/80 animate-in fade-in duration-500">
+                <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
+                  <span class="text-2xl">🍽️</span>
+                </div>
+                <h4 class="text-base font-black text-slate-700 mb-1">Selecciona una Categoría</h4>
+                <p class="text-xs text-slate-400 max-w-xs leading-relaxed">Presiona cualquiera de los botones de arriba para ver los platillos disponibles.</p>
+              </div>
+            </template>
+          </div>
           </div>
         </section>
 
