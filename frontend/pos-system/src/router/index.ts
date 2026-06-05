@@ -46,7 +46,7 @@ router.beforeEach(async (to) => {
         case 'mesero':
           return { name: 'mesero' }
         case 'cocina':
-          return { name: 'kds-view' }
+          return { name: 'kds-manager' }
         case 'administrador':
           return { name: 'admin' }
         default:

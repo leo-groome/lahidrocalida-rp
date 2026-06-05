@@ -189,7 +189,7 @@ function routeByRole() {
   switch (auth.role) {
     case 'cajero': router.replace({ name: 'caja' }); break
     case 'mesero': router.replace({ name: 'mesero' }); break
-    case 'cocina': router.replace({ name: 'kds-view' }); break
+    case 'cocina': router.replace({ name: 'kds-manager' }); break
     case 'administrador': router.replace({ name: 'admin' }); break
     default: router.replace({ name: 'mesero' })
   }

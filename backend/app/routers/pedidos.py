@@ -484,6 +484,7 @@ async def dividir_cuenta(
             tipo_orden=pedido.tipo_orden,
             sucursal_id=pedido.sucursal_id,
             usuario_id=pedido.usuario_id,
+            turno_id=pedido.turno_id,
         )
 
         db.add(nuevo_pedido)
@@ -665,6 +666,7 @@ async def dividir_por_montos(
             tipo_orden=pedido.tipo_orden,
             sucursal_id=pedido.sucursal_id,
             usuario_id=pedido.usuario_id,
+            turno_id=pedido.turno_id,
         )
 
         db.add(nuevo_pedido)
@@ -801,6 +803,10 @@ async def update_pedido(
     # Registrar fecha de pago cuando se marca como pagado
     if data.estado == "pagado" and pedido.fecha_pago is None:
         pedido.fecha_pago = get_mexico_now()
+    if data.estado == "pagado" and pedido.turno_id is None:
+        turno_activo = _get_turno_activo(db, pedido.sucursal_id)
+        if turno_activo:
+            pedido.turno_id = turno_activo.id
     
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
     # EXCEPTO aquellos que ya están "entregado" (bebidas)

@@ -34,23 +34,32 @@
         <p class="text-white/60">No hay empleados registrados</p>
       </div>
 
-      <div v-else class="grid grid-cols-3 sm:grid-cols-4 gap-4 mt-2">
-        <button
-          v-for="user in users"
-          :key="user.id"
-          @click="selectUser(user)"
-          class="flex flex-col items-center gap-2.5 p-4 rounded-2xl bg-white/10 active:bg-white/20 transition-colors"
-        >
-          <div
-            class="w-16 h-16 rounded-full flex items-center justify-center text-xl font-black text-white flex-shrink-0"
-            :class="getColor(user.nombre)"
-          >
-            {{ getInitials(user.nombre) }}
+      <div v-else class="space-y-8">
+        <div v-for="role in ['cajero', 'mesero', 'cocina', 'administrador']" :key="role">
+          <div v-if="groupedUsers[role] && groupedUsers[role].length > 0">
+            <h2 class="text-white/40 text-xs font-black uppercase tracking-widest mb-3 px-2">
+              {{ role === 'cajero' ? '💰 Cajeros' : role === 'mesero' ? '🍽️ Meseros' : role === 'cocina' ? '👨‍🍳 Cocina' : '🔑 Administradores' }}
+            </h2>
+            <div class="grid grid-cols-3 sm:grid-cols-4 gap-4">
+              <button
+                v-for="user in groupedUsers[role]"
+                :key="user.id"
+                @click="selectUser(user)"
+                class="flex flex-col items-center gap-2.5 p-4 rounded-2xl bg-white/10 active:bg-white/20 transition-colors"
+              >
+                <div
+                  class="w-16 h-16 rounded-full flex items-center justify-center text-xl font-black text-white flex-shrink-0"
+                  :class="getColor(user.nombre)"
+                >
+                  {{ getInitials(user.nombre) }}
+                </div>
+                <span class="text-white text-xs font-semibold text-center leading-tight line-clamp-2">
+                  {{ user.nombre }}
+                </span>
+              </button>
+            </div>
           </div>
-          <span class="text-white text-xs font-semibold text-center leading-tight line-clamp-2">
-            {{ user.nombre }}
-          </span>
-        </button>
+        </div>
       </div>
     </main>
 
@@ -91,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
 import NipKeypad from '@/components/NipKeypad.vue'
 
@@ -118,6 +127,23 @@ const nipError = ref<string | null>(null)
 const loadingUsers = ref(false)
 const loadingNip = ref(false)
 const feedback = ref<Feedback | null>(null)
+
+const groupedUsers = computed(() => {
+  const groups: Record<string, StaffUser[]> = {
+    cajero: [],
+    mesero: [],
+    cocina: [],
+    administrador: [],
+  }
+  users.value.forEach(u => {
+    if (groups[u.rol]) {
+      groups[u.rol].push(u)
+    } else {
+      groups[u.rol] = [u]
+    }
+  })
+  return groups
+})
 
 function getInitials(nombre: string): string {
   return nombre.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
