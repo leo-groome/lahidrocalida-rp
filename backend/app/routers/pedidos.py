@@ -761,7 +761,7 @@ async def update_pedido(
     allowed_transitions = {
         "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
         "cajero": ["entregado", "cuenta_solicitada", "pagado", "cancelado"],  # Cajero puede cancelar pedidos
-        "cocina": ["pendiente", "preparando", "listo"],
+        "cocina": ["pendiente", "preparando", "listo", "entregado"],
         "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]
     }
     
