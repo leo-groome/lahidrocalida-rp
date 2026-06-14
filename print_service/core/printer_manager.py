@@ -40,19 +40,23 @@ class PrinterManager:
         """
         try:
             # Abrir conexión con la impresora
-            self.printer.open()
+            if hasattr(self.printer, 'open'):
+                self.printer.open()
             
             # Inicializar impresora
-            self.printer.init()
+            if hasattr(self.printer, 'init'):
+                self.printer.init()
             
             # Imprimir el ticket
             self._format_and_print_ticket(ticket_data)
             
             # Cortar papel
-            self.printer.cut()
+            if hasattr(self.printer, 'cut'):
+                self.printer.cut()
             
             # Cerrar conexión
-            self.printer.close()
+            if hasattr(self.printer, 'close'):
+                self.printer.close()
             
             self.logger.info("[OK] Ticket impreso exitosamente")
             return True
@@ -83,10 +87,13 @@ class PrinterManager:
     def test_printer(self):
         """Prueba la conexión con la impresora"""
         try:
-            self.printer.open()
+            if hasattr(self.printer, 'open'):
+                self.printer.open()
             self.printer.text("Test de impresora - La Hidrocálida\n")
-            self.printer.cut()
-            self.printer.close()
+            if hasattr(self.printer, 'cut'):
+                self.printer.cut()
+            if hasattr(self.printer, 'close'):
+                self.printer.close()
             self.logger.info("[OK] Test de impresora exitoso")
             return True
         except Exception as e:
