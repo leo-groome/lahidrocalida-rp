@@ -37,11 +37,9 @@ router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
 async def print_ticket_automatic(pedido_data):
     """
-    Envía ticket al servicio de impresión automática
+    Envía ticket al servicio de impresión automática (vía WebSocket para remoto y HTTP para local)
     """
     try:
-        print_service_url = "http://localhost:3001/print"
-
         # Preparar datos del ticket para impresión
         ticket_data = {
             "numero_display": pedido_data.get("numero_display", "N/A"),
@@ -62,24 +60,33 @@ async def print_ticket_automatic(pedido_data):
             "total": pedido_data.get("total", 0)
         }
 
-        # Enviar al servicio de impresión
-        response = requests.post(
-            print_service_url,
-            json=ticket_data,
-            timeout=10
-        )
+        # 1. Enviar vía WebSocket (Recomendado para servidores en la nube como Railway)
+        try:
+            from app.websocket_manager import websocket_manager
+            await websocket_manager.notify_print_ticket(ticket_data)
+            print(f"📡 Ticket #{ticket_data.get('numero_display', 'N/A')} notificado vía WebSocket para impresión remota")
+        except Exception as e:
+            print(f"⚠️ Error al transmitir ticket por WebSocket: {e}")
 
-        if response.status_code == 200:
-            result = response.json()
-            print(f"✅ Ticket #{pedido_data.get('numero_display', 'N/A')} enviado a impresión automática: {result}")
-        else:
-            print(f"⚠️  Error en impresión automática: {response.status_code} - {response.text}")
+        # 2. Enviar vía HTTP POST local (Fallback o desarrollo local)
+        try:
+            print_service_url = "http://localhost:3001/print"
+            response = requests.post(
+                print_service_url,
+                json=ticket_data,
+                timeout=5
+            )
+            if response.status_code == 200:
+                result = response.json()
+                print(f"✅ Ticket #{ticket_data.get('numero_display', 'N/A')} enviado a impresión automática local: {result}")
+            else:
+                print(f"⚠️ Error en impresión automática local: {response.status_code} - {response.text}")
+        except requests.exceptions.RequestException as e:
+            # Silenciar error de conexión local en producción ya que se usa el WebSocket
+            pass
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error de conexión con servicio de impresión: {e}")
-        # No fallar la transacción principal por error de impresión
     except Exception as e:
-        print(f"❌ Error en impresión automática: {e}")
+        print(f"❌ Error general en impresión de ticket: {e}")
         # No fallar la transacción principal por error de impresión
 
 

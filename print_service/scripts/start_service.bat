@@ -1,5 +1,6 @@
 @echo off
 title Iniciar Servicio de Impresión - La Hidrocálida
+cd /d "%~dp0\.."
 echo ==========================================
 echo   INICIAR SERVICIO DE IMPRESIÓN
 echo   Restaurante La Hidrocálida

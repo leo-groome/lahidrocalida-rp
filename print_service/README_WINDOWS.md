@@ -77,17 +77,22 @@ start_service.bat
 
 ## 🛠️ CONFIGURACIÓN AVANZADA
 
-### Cambiar Impresora
-Edite `config/settings.py`:
-```python
-PRINTER_NAME = "Nombre de su impresora"
-```
+### Configuración Personalizada (.env)
+Para simplificar la configuración sin tocar el código fuente, cree un archivo llamado `.env` en la raíz del servicio de impresión (puede copiar `.env.example` y renombrarlo).
 
-### Configurar Backend
-Edite `config/settings.py`:
-```python
-BACKEND_URL = "http://localhost:8000"
-WEBSOCKET_URL = "ws://localhost:8000/ws/orders"
+Edite el archivo `.env` con sus parámetros:
+```env
+# URL base de tu backend (local o dominio de Railway)
+BACKEND_URL=https://tu-backend-railway.up.railway.app
+
+# URL del WebSocket de caja para eventos en tiempo real
+WEBSOCKET_URL=wss://tu-backend-railway.up.railway.app/ws/caja
+
+# Token de acceso JWT de un usuario con rol 'cajero' o 'administrador'
+BACKEND_TOKEN=tu_token_de_acceso_aqui
+
+# Nombre exacto de tu impresora térmica en Windows
+PRINTER_NAME=Generic / Text Only
 ```
 
 ### Ver Logs

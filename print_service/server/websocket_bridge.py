@@ -25,65 +25,86 @@ class WebSocketBridge:
     async def connect(self):
         """Conecta al WebSocket del backend"""
         try:
-            print(f"[CONNECT] Conectando a WebSocket: {self.websocket_url}")
-            self.websocket = await websockets.connect(self.websocket_url)
-            self.is_running = True
+            from config.settings import TOKEN
+            url = self.websocket_url
+            if TOKEN:
+                if "?" in url:
+                    url += f"&token={TOKEN}"
+                else:
+                    url += f"?token={TOKEN}"
+            
+            # Ocultar token en los logs por seguridad
+            log_url = url.split("token=")[0] + "token=***" if TOKEN else url
+            print(f"[CONNECT] Conectando a WebSocket: {log_url}")
+            
+            self.websocket = await websockets.connect(url)
             print("[OK] Conectado al WebSocket del backend")
+            return True
         except Exception as e:
             print(f"[ERROR] Error de conexion WebSocket: {e}")
-            self.is_running = False
+            self.websocket = None
+            return False
 
     async def listen(self):
-        """Escucha mensajes del WebSocket"""
-        try:
-            while self.is_running and self.websocket:
+        """Escucha mensajes del WebSocket y maneja la reconexión"""
+        while self.is_running:
+            try:
+                if not self.websocket or self.websocket.closed:
+                    success = await self.connect()
+                    if not success:
+                        await asyncio.sleep(5)
+                        continue
+                
                 message = await self.websocket.recv()
                 await self.handle_message(message)
-        except Exception as e:
-            print(f"[ERROR] Error escuchando WebSocket: {e}")
+            except websockets.exceptions.ConnectionClosed:
+                print("[WARN] Conexión de WebSocket cerrada. Intentando reconectar en 5 segundos...")
+                self.websocket = None
+                await asyncio.sleep(5)
+            except Exception as e:
+                print(f"[ERROR] Error escuchando WebSocket: {e}")
+                self.websocket = None
+                await asyncio.sleep(5)
 
     async def handle_message(self, message):
         """
         Maneja un mensaje recibido del WebSocket
-
-        Args:
-            message (str): Mensaje JSON recibido
         """
         try:
             data = json.loads(message)
-            print(f"[MSG] Mensaje recibido: {data}")
+            event_type = data.get('type')
 
-            # Verificar si es un evento de cambio de estado
-            if isinstance(data, dict) and 'type' in data:
-                if data['type'] == 'pedido_status_changed':
-                    await self.handle_pedido_status_change(data)
+            if event_type == 'pedido_estado_changed':
+                event_data = data.get('data', {})
+                nuevo_estado = event_data.get('nuevo_estado')
+                if nuevo_estado == 'cuenta_solicitada':
+                    pedido = event_data.get('pedido', {})
+                    print(f"[PRINT] Solicitud de impresión automática para pedido #{pedido.get('numero_display', 'N/A')}")
+                    self.queue_and_print(pedido)
+
+            elif event_type == 'print_ticket':
+                event_data = data.get('data', {})
+                pedido = event_data.get('pedido', {})
+                print(f"[PRINT] Solicitud de impresión manual para pedido #{pedido.get('numero_display', 'N/A')}")
+                self.queue_and_print(pedido)
 
         except json.JSONDecodeError:
             print("[WARN] Mensaje no valido JSON")
         except Exception as e:
             print(f"[ERROR] Error manejando mensaje: {e}")
 
-    async def handle_pedido_status_change(self, data):
-        """
-        Maneja el cambio de estado de un pedido
-
-        Args:
-            data (dict): Datos del evento
-        """
+    def queue_and_print(self, pedido_data):
+        """Agrega el pedido a la cola y procesa la impresión"""
         try:
-            # Verificar si el estado es 'cuenta_solicitada'
-            if data.get('estado') == 'cuenta_solicitada':
-                pedido_data = data.get('pedido', {})
-                print(f"[PRINT] Solicitud de impresion para pedido #{pedido_data.get('numero_display', 'N/A')}")
-
-                # Agregar a la cola de impresión
-                print_queue.add_to_queue(pedido_data)
-
-                # Procesar cola inmediatamente
-                print_queue.process_queue(printer_manager)
-
+            if not pedido_data:
+                print("[WARN] Datos del pedido vacíos, ignorando impresión")
+                return
+            # Agregar a la cola de impresión
+            print_queue.add_to_queue(pedido_data)
+            # Procesar cola inmediatamente
+            print_queue.process_queue(printer_manager)
         except Exception as e:
-            print(f"[ERROR] Error manejando cambio de estado: {e}")
+            print(f"[ERROR] Error al encolar/imprimir ticket: {e}")
 
     def start(self):
         """Inicia el puente WebSocket en un hilo separado"""
@@ -93,8 +114,9 @@ class WebSocketBridge:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-                # Ejecutar conexión
-                loop.run_until_complete(self.connect())
+                self.is_running = True
+                # Ejecutar la escucha persistente
+                loop.run_until_complete(self.listen())
             except Exception as e:
                 print(f"[ERROR] Error en hilo WebSocket: {e}")
 

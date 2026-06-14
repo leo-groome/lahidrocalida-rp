@@ -5,12 +5,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Configuración del backend
-BACKEND_URL = "http://localhost:8000"  # URL por defecto del backend
-WEBSOCKET_URL = "ws://localhost:8000/ws/orders"  # WebSocket para eventos de pedidos
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000")  # URL del backend
+WEBSOCKET_URL = os.environ.get("WEBSOCKET_URL", "ws://localhost:8000/ws/caja")  # WebSocket para caja
+TOKEN = os.environ.get("BACKEND_TOKEN", "")  # Token JWT de acceso (cajero/admin)
 
 # Configuración de impresión
 PRINTER_TYPE = "win32"  # Tipo de impresora (win32, serial, network, etc.)
-PRINTER_NAME = "Generic / Text Only"  # Nombre de la impresora por defecto
+PRINTER_NAME = os.environ.get("PRINTER_NAME", "Generic / Text Only")  # Nombre de la impresora
 
 # Configuración de cola de impresión
 MAX_RETRY_ATTEMPTS = 5

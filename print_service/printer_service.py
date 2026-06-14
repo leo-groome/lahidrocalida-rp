@@ -5,6 +5,14 @@ Servicio de impresión principal para La Hidrocálida
 import os
 import sys
 import logging
+
+# Cargar variables de entorno desde archivo .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from config.settings import LOG_FILE, LOG_LEVEL
 from server.websocket_bridge import websocket_bridge
 from server.api_server import app

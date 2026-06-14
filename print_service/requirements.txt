@@ -6,3 +6,4 @@ pyusb==1.2.1
 requests==2.31.0
 websockets==11.0.3
 python-dateutil==2.8.2
+python-dotenv==1.0.0

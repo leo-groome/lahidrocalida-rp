@@ -68,22 +68,22 @@ Por defecto, el sistema usa:
 - **Impresora**: "Generic / Text Only"
 - **Backend**: `http://localhost:8000`
 
-### Configuración Avanzada (Opcional)
-Edite `config/settings.py` para personalizar:
+### Configuración Avanzada (.env)
+Para configurar el servicio sin modificar el código fuente, cree un archivo `.env` en la raíz de `print_service/` (basado en `.env.example`):
 
-```python
-# URL del backend
-BACKEND_URL = "http://localhost:8000"
+```env
+# URL base de tu backend (local o de producción en Railway)
+BACKEND_URL=https://tu-backend-railway.up.railway.app
 
-# Puerto del servicio de impresión
-DASHBOARD_PORT = 3001
+# URL del WebSocket de caja para eventos en tiempo real
+WEBSOCKET_URL=wss://tu-backend-railway.up.railway.app/ws/caja
 
-# Nombre de la impresora térmica
-PRINTER_NAME = "Generic / Text Only"
+# Token de acceso JWT de un usuario con rol 'cajero' o 'administrador'
+BACKEND_TOKEN=tu_token_de_acceso_aqui
+
+# Nombre exacto de tu impresora térmica en Windows
+PRINTER_NAME=Generic / Text Only
 ```
-
-### Configuración de Impresora
-Si usa una impresora diferente, modifique `PRINTER_NAME` en `config/settings.py`
 
 ---
 

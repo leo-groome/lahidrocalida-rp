@@ -253,6 +253,21 @@ class WebSocketManager:
         
         logger.info(f"Notified articulo estado changed: pedido={pedido_id}, articulo={articulo_id} -> {nuevo_estado}")
     
+    async def notify_print_ticket(self, pedido_data: dict):
+        """Notificar solicitud de impresión manual de ticket"""
+        message = {
+            "type": "print_ticket",
+            "data": {
+                "pedido_id": pedido_data.get("id"),
+                "pedido": pedido_data,
+                "timestamp": get_mexico_now().isoformat()
+            }
+        }
+        sucursal_id = pedido_data.get("sucursal_id")
+        # Enviar al grupo de caja para que el print_service local lo procese
+        await self._broadcast_to_group("caja", message, sucursal_id)
+        logger.info(f"Notified print ticket for order display #: {pedido_data.get('numero_display', 'N/A')}")
+    
     def get_connection_stats(self) -> dict:
         """Obtener estadísticas de conexiones activas"""
         stats = {}
