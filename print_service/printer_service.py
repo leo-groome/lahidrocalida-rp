@@ -36,8 +36,8 @@ def main():
     print("[START] Iniciando servicio de impresion La Hidrocalida...")
 
     try:
-        # Iniciar puente WebSocket para integración automática
-        websocket_bridge.start()
+        # Deshabilitado puente WS (las peticiones de impresión las realiza directamente la aplicación cliente)
+        # websocket_bridge.start()
 
         # Iniciar servidor API
         print("[API] Servicio disponible en: http://localhost:3001")

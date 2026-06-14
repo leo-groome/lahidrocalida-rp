@@ -331,6 +331,15 @@ const handlePedidoEvent = () => {
     }
 }
 
+// WebSocket Event Handler para cambios de estado de pedido (Impresión Automática desde la Caja)
+const handlePedidoEstadoChangedEvent = async (data: any) => {
+    handlePedidoEvent()
+    if (data && data.nuevo_estado === 'cuenta_solicitada' && data.pedido) {
+        console.log('🖨️ WebSocket detectó cuenta_solicitada. Auto-imprimiendo ticket...')
+        await imprimirTicket(data.pedido)
+    }
+}
+
 let timer: number | undefined
 let timerTurno: number | undefined
 
@@ -358,7 +367,7 @@ onMounted(async () => {
       
       // Suscribirse a eventos para actualizar analíticas
       websocketService.on('pedido_created', handlePedidoEvent)
-      websocketService.on('pedido_estado_changed', handlePedidoEvent)
+      websocketService.on('pedido_estado_changed', handlePedidoEstadoChangedEvent)
       websocketService.on('articulo_estado_changed', handlePedidoEvent)
       websocketService.on('pedido_pagado', handlePedidoEvent)
     } else {
@@ -454,7 +463,7 @@ onUnmounted(() => {
   
   // Limpiar listeners WebSocket
   websocketService.off('pedido_created', handlePedidoEvent)
-  websocketService.off('pedido_estado_changed', handlePedidoEvent)
+  websocketService.off('pedido_estado_changed', handlePedidoEstadoChangedEvent)
   websocketService.off('articulo_estado_changed', handlePedidoEvent)
   websocketService.off('pedido_pagado', handlePedidoEvent)
 
