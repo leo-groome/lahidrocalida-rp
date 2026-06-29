@@ -1629,18 +1629,11 @@ const confirmarCancelacion = async () => {
 // Solicitar cuenta para pedido entregado
 const solicitarCuenta = async (pedido: PedidoResponse) => {
   try {
-    // Primero imprimimos el ticket
-    const printed = await imprimirTicket(pedido)
-    if (!printed) {
-      return
-    }
- 
-    // Luego cambiamos el estado
     const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cuenta_solicitada')
 
     if (success) {
       const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-      showSuccessNotification(`Ticket impreso y cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+      showSuccessNotification(`Cuenta solicitada: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
 
       // Limpiar filtro después de acción completada
       searchQuery.value = ''

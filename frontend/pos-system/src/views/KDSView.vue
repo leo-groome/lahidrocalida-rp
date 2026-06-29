@@ -193,7 +193,10 @@ onUnmounted(() => {
 
           <!-- Header de la Card: número de orden + tipo -->
           <div class="px-4 py-2 flex items-center justify-between border-b border-white/10 bg-black/30">
-            <span class="text-xs font-black text-zinc-400 uppercase tracking-widest">ORD-{{ p.numero_display }}</span>
+            <div class="flex flex-col leading-tight">
+              <span class="text-xs font-black text-zinc-400 uppercase tracking-widest">ORD-{{ p.numero_display }}</span>
+              <span v-if="p.usuario_nombre" class="text-xs font-semibold text-amber-400 uppercase tracking-wide">{{ p.usuario_nombre }}</span>
+            </div>
             <div class="flex items-center gap-2">
               <div v-if="p.articulos_pedido.every(a => a.estado_item === 'listo')" class="flex items-center gap-1 bg-green-600 px-2 py-0.5 rounded text-white text-xs font-black uppercase">
                 <CheckCircle class="w-3 h-3" />
