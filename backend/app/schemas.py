@@ -144,6 +144,7 @@ class PedidoCreate(BaseModel):
     nombre_cliente: Optional[str] = None
     mesa: Optional[str] = None
     tipo_orden: str = "aqui"
+    metodo_pago: Optional[str] = None
     articulos: List[ArticuloPedidoCreate]
     client_request_id: Optional[str] = Field(default=None, max_length=36)
 
