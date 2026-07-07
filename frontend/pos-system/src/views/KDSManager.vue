@@ -252,6 +252,16 @@ onMounted(async () => {
     await pedidosStore.loadInitialData()
     await cargarPlatillos()
     await pedidosStore.initWebSocket('kds')
+    
+    // Polling de respaldo permanente: si el WS está caído refresca cada 5s;
+    // si está vivo, red de seguridad solo cuando no ha llegado tráfico en 45s
+    timer = window.setInterval(() => {
+      const staleMs = Date.now() - (pedidosStore.lastUpdate?.getTime() ?? 0)
+      if (!pedidosStore.wsConnected || staleMs > 45_000) {
+        pedidosStore.refreshPedidos()
+      }
+    }, 5000)
+
     timerInterval = window.setInterval(() => timerTick.value++, 1000)
   } catch (error) {
     console.error('❌ KDS Manager error:', error)

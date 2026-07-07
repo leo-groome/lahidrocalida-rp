@@ -57,6 +57,13 @@ const activeCategory = ref<string | null>(null)
 // Referencias reactivas
   const platillos = ref<PlatilloResponse[]>([])
   const carrito = ref<Array<{ platillo: PlatilloResponse; cantidad: number; modificaciones: string; comboKey?: string; proteina?: string; tamano?: string; tipo_pozole?: string }>>([])
+// Clave de idempotencia del carrito actual: se genera en el primer intento de envío
+// y se conserva entre reintentos para que un re-tap de "Enviar" no duplique el pedido
+const currentRequestId = ref<string | null>(null)
+
+// La clave representa el contenido exacto del carrito: si cambia, clave nueva
+// (si no, un reintento con carrito modificado replayería el pedido viejo sin los cambios)
+watch(carrito, () => { currentRequestId.value = null }, { deep: true })
 const loading = ref(false)
 const error = ref<string | null>(null)
 const successMessage = ref<string | null>(null)
@@ -197,6 +204,15 @@ onMounted(async () => {
     } else {
       console.warn('⚠️ Mesero View: WebSocket falló, datos sin tiempo real')
     }
+
+    // Polling de respaldo permanente: si el WS está caído refresca cada 5s;
+    // si está vivo, red de seguridad solo cuando no ha llegado tráfico en 45s
+    timer = window.setInterval(() => {
+      const staleMs = Date.now() - (pedidosStore.lastUpdate?.getTime() ?? 0)
+      if (!pedidosStore.wsConnected || staleMs > 45_000) {
+        pedidosStore.refreshPedidos()
+      }
+    }, 5000)
   } catch (error) {
     console.error('❌ Mesero View: Error en inicialización:', error)
     // Aunque falle, permitir abrir el modal (los pedidos pueden estar parcialmente cargados)
@@ -535,10 +551,15 @@ const enviarPedido = async () => {
     }))
 
     if (modoAgregarArticulos.value && pedidoExistenteId.value) {
+      if (!currentRequestId.value) {
+        currentRequestId.value = crypto.randomUUID()
+      }
+
       // Modo agregar artículos - usar endpoint PUT
       const response = await api.put(`/pedidos/${pedidoExistenteId.value}/agregar-articulos`, {
         articulos,
-        mesero_id: auth.user?.id
+        mesero_id: auth.user?.id,
+        client_request_id: currentRequestId.value
       })
       
       if (response.status === 200) {
@@ -553,26 +574,33 @@ const enviarPedido = async () => {
       
   } else {
     // Modo nuevo pedido - usar endpoint POST
+      // Reusar la clave si es un reintento del mismo carrito: el backend
+      // devuelve el pedido original si el intento anterior sí llegó
+      if (!currentRequestId.value) {
+        currentRequestId.value = crypto.randomUUID()
+      }
+
       const pedidoData: PedidoCreate = {
         nombre_cliente: (tipoOrden.value === 'llevar' || tipoOrden.value === 'uber_eats') ? nombreCliente.value : null,
         mesa: tipoOrden.value === 'aqui' ? mesa.value : null,
         tipo_orden: tipoOrden.value,
-        articulos
+        articulos,
+        client_request_id: currentRequestId.value
       }
 
       const nuevoPedido = await pedidosStore.createPedido(pedidoData)
-      
+
       if (nuevoPedido) {
         // Limpiar formulario y reiniciar flujo
         limpiarFormulario()
-        
-        const mensajeExito = tipoOrden.value === 'aqui' 
-          ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}` 
+
+        const mensajeExito = tipoOrden.value === 'aqui'
+          ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}`
           : `Pedido #${nuevoPedido.numero_display} ${tipoOrden.value === 'uber_eats' ? 'Uber Eats' : 'para llevar'} enviado a cocina (${nombreCliente.value})`
-        
+
         showSuccessNotification(mensajeExito)
       } else {
-        showErrorNotification(pedidosStore.error || 'Error al crear pedido')
+        showErrorNotification(pedidosStore.error || 'No se pudo enviar. Revisa tu conexión y vuelve a intentar — el pedido no se duplicará.')
       }
     }
     
@@ -607,6 +635,7 @@ const configurarTipoOrden = (tipo: 'aqui' | 'llevar' | 'uber_eats') => {
   pedidoExistenteId.value = null
   pedidoActual.value = null
   carrito.value = []
+  currentRequestId.value = null
 
   if (tipo === 'aqui') {
     // Si es "aquí", abrir modal de mesas
@@ -792,6 +821,7 @@ const limpiarCarrito = () => {
 // Limpiar formulario completo (nuevo pedido)
 const limpiarFormulario = () => {
   carrito.value = []
+  currentRequestId.value = null
   nombreCliente.value = ''
   mesa.value = ''
   pedidoConfigurado.value = false
@@ -804,6 +834,7 @@ const limpiarFormulario = () => {
 // Limpiar modo agregar artículos (mantiene mesa)
 const limpiarModoAgregar = () => {
   carrito.value = []
+  currentRequestId.value = null
   pedidoConfigurado.value = false
   showTipoOrdenModal.value = true
   modoAgregarArticulos.value = false

@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { parseSafeDate } from '@/utils/dateUtils'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
+import { websocketService } from '@/services/websocket'
 import { useRouter } from 'vue-router'
 import {
   Clock,
@@ -153,10 +154,17 @@ function ordenarArticulosPorEstado(articulos: any[]) {
 onMounted(async () => {
   try {
     await pedidosStore.loadInitialData()
-    const wsConnected = await pedidosStore.initWebSocket('kds')
-    if (!wsConnected) {
-      timer = window.setInterval(() => { pedidosStore.refreshPedidos() }, 5000)
-    }
+    await pedidosStore.initWebSocket('kds')
+
+    // Polling de respaldo permanente: si el WS está caído refresca cada 5s;
+    // si está vivo, red de seguridad solo cuando no ha llegado tráfico en 45s
+    timer = window.setInterval(() => {
+      const staleMs = Date.now() - (pedidosStore.lastUpdate?.getTime() ?? 0)
+      if (!pedidosStore.wsConnected || staleMs > 45_000) {
+        pedidosStore.refreshPedidos()
+      }
+    }, 5000)
+
     timerInterval = window.setInterval(() => { ahora.value = new Date() }, 1000)
   } catch (error) {
     console.error('❌ KDS View: Error en inicialización:', error)
@@ -170,10 +178,30 @@ onUnmounted(() => {
   if (timer) clearInterval(timer)
   if (timerInterval) clearInterval(timerInterval)
 })
+
+const handleReconnectClick = async () => {
+  if (websocketService.connectionStatus.value !== 'connected') {
+    await websocketService.reconnect()
+  }
+}
 </script>
 
 <template>
   <div class="min-h-screen bg-[#070b14] text-white p-2 overflow-x-hidden font-sans">
+
+    <!-- Indicador de conexión en tiempo real -->
+    <div
+      class="fixed top-2 right-2 z-50 flex items-center gap-1.5 px-2 py-1 rounded-full bg-black/60 backdrop-blur text-[10px] font-black uppercase tracking-widest cursor-pointer active:scale-95 hover:bg-black/80 transition-all duration-300"
+      :class="websocketService.connectionStatus.value === 'connected' ? 'text-green-400' : 'text-amber-400'"
+      :title="websocketService.connectionStatus.value !== 'connected' ? 'Haz clic para reconectar de inmediato' : 'Conexión activa'"
+      @click="handleReconnectClick"
+    >
+      <div
+        class="w-2 h-2 rounded-full"
+        :class="websocketService.connectionStatus.value === 'connected' ? 'bg-green-400' : 'bg-amber-400 animate-pulse'"
+      ></div>
+      <span v-if="websocketService.connectionStatus.value !== 'connected'">Reconectando</span>
+    </div>
 
     <!-- Grid de Comandas -->
     <div class="h-screen overflow-y-auto custom-scrollbar pb-2">

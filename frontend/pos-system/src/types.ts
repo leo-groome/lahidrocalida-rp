@@ -50,6 +50,8 @@ export interface PedidoCreate {
     modificaciones?: string;
     proteina?: string;
   }>;
+  // Clave de idempotencia: reintentar el envío con la misma clave no duplica el pedido
+  client_request_id?: string;
 }
 
 export interface PedidoResponse {

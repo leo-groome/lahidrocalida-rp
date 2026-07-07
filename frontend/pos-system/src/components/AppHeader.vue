@@ -15,6 +15,17 @@
 
         <!-- Right Side Actions -->
         <div class="flex items-center gap-3 sm:gap-6">
+          <!-- Estado de conexión en tiempo real -->
+          <div
+            class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-2xl border text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all duration-300 cursor-pointer active:scale-95 hover:shadow-sm"
+            :class="connectionBadge.classes"
+            :title="websocketService.connectionStatus.value !== 'connected' ? 'Haz clic para reconectar de inmediato' : connectionBadge.title"
+            @click="handleReconnectClick"
+          >
+            <div class="w-2 h-2 rounded-full flex-shrink-0" :class="connectionBadge.dotClasses"></div>
+            <span class="hidden sm:inline">{{ connectionBadge.label }}</span>
+          </div>
+
           <!-- User Profile -->
           <div class="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-1.5 sm:py-2 bg-slate-50 border border-slate-100 rounded-2xl group transition-all duration-300 hover:bg-white hover:border-blue-100">
             <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-blue-100 flex items-center justify-center group-hover:bg-blue-600 transition-colors duration-300">
@@ -46,8 +57,10 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { websocketService } from '@/services/websocket'
 import { User, LogOut } from 'lucide-vue-next'
 
 interface Props {
@@ -59,8 +72,41 @@ const props = defineProps<Props>()
 const router = useRouter()
 const auth = useAuthStore()
 
+const connectionBadge = computed(() => {
+  switch (websocketService.connectionStatus.value) {
+    case 'connected':
+      return {
+        label: 'En línea',
+        title: 'Conexión en tiempo real activa',
+        classes: 'bg-green-50 text-green-600 border-green-100',
+        dotClasses: 'bg-green-500'
+      }
+    case 'connecting':
+    case 'reconnecting':
+      return {
+        label: 'Reconectando',
+        title: 'Reconectando — los datos se actualizan periódicamente',
+        classes: 'bg-amber-50 text-amber-600 border-amber-100',
+        dotClasses: 'bg-amber-500 animate-pulse'
+      }
+    default:
+      return {
+        label: 'Sin conexión',
+        title: 'Sin conexión en tiempo real — verifica tu red',
+        classes: 'bg-red-50 text-red-600 border-red-100',
+        dotClasses: 'bg-red-500'
+      }
+  }
+})
+
 const handleLogout = () => {
   auth.logout()
   router.push({ name: 'login' })
+}
+
+const handleReconnectClick = async () => {
+  if (websocketService.connectionStatus.value !== 'connected') {
+    await websocketService.reconnect()
+  }
 }
 </script>

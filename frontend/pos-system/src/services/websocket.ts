@@ -124,6 +124,29 @@ export class WebSocketService {
   }
 
   /**
+   * Forzar reconexión manual inmediata
+   */
+  async reconnect(): Promise<boolean> {
+    if (!this.clientType) {
+      console.warn('WebSocket: No se puede reconectar, tipo de cliente no especificado')
+      return false
+    }
+    
+    console.log('WebSocket: Forzando reconexión manual...')
+    
+    // Limpiar temporizador de reconexión si existe
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    
+    // Resetear contador de intentos para que no use backoff exponencial largo en este intento
+    this.reconnectAttempts = 0
+    
+    return await this.connect(this.clientType)
+  }
+
+  /**
    * Desconectar WebSocket (intencional, no reconecta)
    */
   disconnect(): void {
@@ -244,6 +267,23 @@ export class WebSocketService {
     this.heartbeatTimer = window.setInterval(() => {
       this.sendPing()
     }, this.config.heartbeatInterval)
+
+    // Notificar a los listeners para que re-sincronicen estado tras (re)conexión
+    this.emit('connection_open', { clientType: this.clientType })
+  }
+
+  /**
+   * Emitir evento a los listeners suscritos
+   */
+  private emit(eventType: string, data: any): void {
+    if (!this.listeners.has(eventType)) return
+    this.listeners.get(eventType)!.forEach(callback => {
+      try {
+        callback(data)
+      } catch (error) {
+        console.error(`WebSocket: Error en callback de ${eventType}:`, error)
+      }
+    })
   }
 
   /**
@@ -268,26 +308,10 @@ export class WebSocketService {
       }
 
       // Emitir evento a listeners
-      if (this.listeners.has(message.type)) {
-        this.listeners.get(message.type)!.forEach(callback => {
-          try {
-            callback(message.data)
-          } catch (error) {
-            console.error('WebSocket: Error en callback:', error)
-          }
-        })
-      }
+      this.emit(message.type, message.data)
 
       // Emitir evento genérico
-      if (this.listeners.has('*')) {
-        this.listeners.get('*')!.forEach(callback => {
-          try {
-            callback(message)
-          } catch (error) {
-            console.error('WebSocket: Error en callback genérico:', error)
-          }
-        })
-      }
+      this.emit('*', message)
 
     } catch (error) {
       console.error('WebSocket: Error parseando mensaje:', error)

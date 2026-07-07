@@ -360,23 +360,23 @@ onMounted(async () => {
     await cargarTurnoActivo()
 
     // Inicializar WebSocket para caja
-    const wsConnected = await pedidosStore.initWebSocket('caja')
+    await pedidosStore.initWebSocket('caja')
 
-    if (wsConnected) {
-      console.log('✅ Caja View: WebSocket conectado, datos en tiempo real activos')
-      
-      // Suscribirse a eventos para actualizar analíticas
-      websocketService.on('pedido_created', handlePedidoEvent)
-      websocketService.on('pedido_estado_changed', handlePedidoEstadoChangedEvent)
-      websocketService.on('articulo_estado_changed', handlePedidoEvent)
-      websocketService.on('pedido_pagado', handlePedidoEvent)
-    } else {
-      console.warn('⚠️ Caja View: WebSocket falló, usando polling como fallback')
-      // Fallback: polling cada 5 segundos si WebSocket falla
-      timer = window.setInterval(() => {
+    // Suscribirse a eventos para actualizar analíticas (aunque el connect
+    // inicial falle, el servicio reconecta solo y los eventos llegarán)
+    websocketService.on('pedido_created', handlePedidoEvent)
+    websocketService.on('pedido_estado_changed', handlePedidoEstadoChangedEvent)
+    websocketService.on('articulo_estado_changed', handlePedidoEvent)
+    websocketService.on('pedido_pagado', handlePedidoEvent)
+
+    // Polling de respaldo permanente: si el WS está caído refresca cada 5s;
+    // si está vivo, red de seguridad solo cuando no ha llegado tráfico en 45s
+    timer = window.setInterval(() => {
+      const staleMs = Date.now() - (pedidosStore.lastUpdate?.getTime() ?? 0)
+      if (!pedidosStore.wsConnected || staleMs > 45_000) {
         pedidosStore.refreshPedidos()
-      }, 5000)
-    }
+      }
+    }, 5000)
 
     // No se necesita polling del turno: se carga al iniciar y el WebSocket maneja cambios en tiempo real
   } catch (error) {

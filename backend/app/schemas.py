@@ -119,6 +119,7 @@ class ArticuloPedidoUpdate(BaseModel):
 class ArticuloPedidoResponse(ArticuloPedidoBase):
     id: int
     platillo: PlatilloResponse
+    client_request_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -142,10 +143,9 @@ class PedidoBase(BaseModel):
 class PedidoCreate(BaseModel):
     nombre_cliente: Optional[str] = None
     mesa: Optional[str] = None
-    metodo_pago: Optional[str] = None  # Opcional para flujo mesero
     tipo_orden: str = "aqui"
     articulos: List[ArticuloPedidoCreate]
-    turno_id: Optional[int] = None  # Se inyecta automáticamente en el backend
+    client_request_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class PedidoUpdate(BaseModel):
@@ -158,6 +158,7 @@ class PedidoUpdate(BaseModel):
 class AgregarArticulosRequest(BaseModel):
     articulos: List[ArticuloPedidoCreate]
     mesero_id: Optional[int] = None
+    client_request_id: Optional[str] = None
 
 
 class PedidoResponse(PedidoBase):
@@ -166,6 +167,8 @@ class PedidoResponse(PedidoBase):
     fecha_pago: Optional[datetime] = None
     usuario_nombre: Optional[str] = None
     articulos_pedido: List[ArticuloPedidoResponse]
+    parent_pedido_id: Optional[int] = None
+    client_request_id: Optional[str] = None
 
     class Config:
         from_attributes = True

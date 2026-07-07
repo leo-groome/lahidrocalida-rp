@@ -12,9 +12,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const lastUpdate = ref<Date | null>(null)
-  const wsConnected = ref(false)
+  // Espejo reactivo del estado real de la conexión (antes era un ref que se
+  // congelaba en true tras la primera conexión y nunca volvía a false)
+  const wsConnected = computed(() => websocketService.isConnected.value)
   const isOutSoundThrottled = ref(false)
   const wsClientType = ref<WsClientType | null>(null)
+  const listenersRegistered = ref(false)
 
   // Getters computados
   const pedidosPorEstado = computed(() => {
@@ -130,9 +133,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       
       // Conectar al WebSocket
       const connected = await websocketService.connect(clientType)
-      
+
       if (connected) {
-        wsConnected.value = true
         console.log(`✅ WebSocket conectado para ${clientType}`)
         return true
       } else {
@@ -148,30 +150,38 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
   function setupWebSocketListeners(): void {
+    // Evitar acumular listeners duplicados si initWebSocket se llama varias veces
+    if (listenersRegistered.value) return
+    listenersRegistered.value = true
+
     console.log('📡 Configurando listeners de WebSocket...')
+
+    // Re-sincronizar en cada (re)conexión: la DB es la fuente de verdad y todo
+    // lo ocurrido durante una desconexión no se reenvía por WebSocket
+    websocketService.on('connection_open', () => {
+      console.log('🔁 WebSocket (re)conectado, re-sincronizando pedidos...')
+      loadInitialData(false)
+    })
 
     // Listener para nuevos pedidos
     websocketService.on('pedido_created', (data: any) => {
       console.log('🆕 Nuevo pedido recibido via WebSocket:', data.pedido)
+      lastUpdate.value = new Date()
       handlePedidoCreated(data.pedido)
     })
 
     // Listener para cambios de estado de pedidos
     websocketService.on('pedido_estado_changed', (data: any) => {
       console.log('🔄 Estado de pedido cambiado via WebSocket:', data)
+      lastUpdate.value = new Date()
       handlePedidoEstadoChanged(data.pedido_id, data.nuevo_estado, data.pedido)
     })
 
     // Listener para cambios de estado de artículos
     websocketService.on('articulo_estado_changed', (data: any) => {
       console.log('🍽️ Estado de artículo cambiado via WebSocket:', data)
-      handleArticuloEstadoChanged(data.pedido_id, data.articulo_id, data.nuevo_estado, data.pedido)
-    })
-
-    // Listener genérico para debugging
-    websocketService.on('*', (message: any) => {
-      console.log('📡 WebSocket message:', message)
       lastUpdate.value = new Date()
+      handleArticuloEstadoChanged(data.pedido_id, data.articulo_id, data.nuevo_estado, data.pedido)
     })
   }
 
@@ -299,7 +309,6 @@ export const usePedidosStore = defineStore('pedidos', () => {
 
   function disconnectWebSocket(): void {
     websocketService.disconnect()
-    wsConnected.value = false
     wsClientType.value = null
     console.log('👋 WebSocket desconectado desde store')
   }
@@ -403,14 +412,9 @@ export const usePedidosStore = defineStore('pedidos', () => {
     }
   }
 
-  // Función para refresh manual (fallback)
+  // Refresh manual/polling: siempre recarga — la DB es la fuente de verdad
   async function refreshPedidos(): Promise<void> {
-    if (!wsConnected.value) {
-      console.log('🔄 WebSocket desconectado, refrescando manualmente...')
-      await loadInitialData(false) // No mostrar loading en refrescos de polling
-    } else {
-      console.log('ℹ️ WebSocket activo, no es necesario refresh manual')
-    }
+    await loadInitialData(false) // No mostrar loading en refrescos de polling
   }
 
   // Reset del store
@@ -419,7 +423,6 @@ export const usePedidosStore = defineStore('pedidos', () => {
     loading.value = false
     error.value = null
     lastUpdate.value = null
-    wsConnected.value = false
     wsClientType.value = null
     disconnectWebSocket()
   }

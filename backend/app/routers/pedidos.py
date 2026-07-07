@@ -6,6 +6,8 @@ from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, date, timedelta
 from decimal import Decimal
+import asyncio
+import logging
 import requests
 
 from app.db.session import get_db
@@ -32,6 +34,8 @@ def _get_turno_activo(db: Session, sucursal_id: int) -> Optional[Turno]:
         Turno.sucursal_id == sucursal_id,
         Turno.estado == "abierto"
     ).first()
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
 
@@ -64,29 +68,30 @@ async def print_ticket_automatic(pedido_data):
         try:
             from app.websocket_manager import websocket_manager
             await websocket_manager.notify_print_ticket(ticket_data)
-            print(f"📡 Ticket #{ticket_data.get('numero_display', 'N/A')} notificado vía WebSocket para impresión remota")
+            logger.info("Ticket #%s notificado vía WebSocket para impresión remota", ticket_data.get('numero_display', 'N/A'))
         except Exception as e:
-            print(f"⚠️ Error al transmitir ticket por WebSocket: {e}")
+            logger.warning("Error al transmitir ticket #%s por WebSocket: %s", ticket_data.get('numero_display', 'N/A'), e)
 
         # 2. Enviar vía HTTP POST local (Fallback o desarrollo local)
         try:
             print_service_url = "http://localhost:3001/print"
-            response = requests.post(
-                print_service_url,
-                json=ticket_data,
-                timeout=5
+            # requests es síncrono: en executor para no congelar el event loop
+            # (hasta 5s bloqueando WebSockets y requests si el print_service está caído)
+            response = await asyncio.get_running_loop().run_in_executor(
+                None,
+                lambda: requests.post(print_service_url, json=ticket_data, timeout=5)
             )
             if response.status_code == 200:
                 result = response.json()
-                print(f"✅ Ticket #{ticket_data.get('numero_display', 'N/A')} enviado a impresión automática local: {result}")
+                logger.info("Ticket #%s enviado a impresión automática local: %s", ticket_data.get('numero_display', 'N/A'), result)
             else:
-                print(f"⚠️ Error en impresión automática local: {response.status_code} - {response.text}")
+                logger.warning("Error en impresión automática local del ticket #%s: %s - %s", ticket_data.get('numero_display', 'N/A'), response.status_code, response.text)
         except requests.exceptions.RequestException as e:
-            # Silenciar error de conexión local en producción ya que se usa el WebSocket
-            pass
+            # El ticket no se imprime; queda el endpoint de reimpresión manual como recuperación
+            logger.warning("Impresión local no disponible para ticket #%s: %s", ticket_data.get('numero_display', 'N/A'), e)
 
     except Exception as e:
-        print(f"❌ Error general en impresión de ticket: {e}")
+        logger.error("Error general en impresión de ticket: %s", e)
         # No fallar la transacción principal por error de impresión
 
 
@@ -134,6 +139,19 @@ async def create_pedido(
             status_code=403,
             detail="Solo cajeros, meseros y administradores pueden crear pedidos"
         )
+
+    # Idempotencia: si este client_request_id ya creó un pedido, devolverlo
+    # tal cual (el cliente está reintentando un POST que sí llegó)
+    if data.client_request_id:
+        pedido_existente = db.query(Pedido).filter(
+            Pedido.client_request_id == data.client_request_id
+        ).first()
+        if pedido_existente:
+            logger.info(
+                "Replay idempotente: client_request_id %s ya creó el pedido %s (#%s)",
+                data.client_request_id, pedido_existente.id, pedido_existente.numero_display
+            )
+            return pedido_existente
 
     # Verificar que hay turno activo — sin turno no se acepta ningún pedido
     turno_activo = _get_turno_activo(db, current_user.sucursal_id)
@@ -215,6 +233,7 @@ async def create_pedido(
                 sucursal_id=current_user.sucursal_id,
                 usuario_id=current_user.id,
                 turno_id=turno_activo.id,
+                client_request_id=data.client_request_id,
             )
 
             db.add(pedido)
@@ -274,13 +293,27 @@ async def create_pedido(
                 }
                 await websocket_manager.notify_pedido_created(pedido_data)
             except Exception as e:
-                # Log del error pero no fallar la creación del pedido
-                print(f"Error notifying pedido creation via WebSocket: {e}")
+                # Log del error pero no fallar la creación del pedido.
+                # El KDS lo recuperará vía polling/resync (la DB es la fuente de verdad).
+                logger.warning("Notificación WebSocket fallida al crear pedido %s (#%s): %s", pedido.id, pedido.numero_display, e)
             
             return pedido
         except IntegrityError:
-            # Colisión de unique (otra transacción tomó el número). Reintentar.
             db.rollback()
+            # Distinguir la causa: si otro request concurrente con el mismo
+            # client_request_id ya creó el pedido, devolver ese (no reintentar,
+            # el retry-loop crearía justo el duplicado que queremos evitar)
+            if data.client_request_id:
+                pedido_existente = db.query(Pedido).filter(
+                    Pedido.client_request_id == data.client_request_id
+                ).first()
+                if pedido_existente:
+                    logger.info(
+                        "Carrera idempotente: client_request_id %s ya creó el pedido %s",
+                        data.client_request_id, pedido_existente.id
+                    )
+                    return pedido_existente
+            # Colisión de unique de numero_display (otra transacción tomó el número). Reintentar.
             attempts += 1
     # Si no se pudo después de varios intentos, reportar error
     raise HTTPException(status_code=500, detail="No fue posible generar un numero_display único. Intenta de nuevo.")
@@ -420,6 +453,20 @@ async def dividir_cuenta(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
+    if pedido.estado == "dividido":
+        # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
+        cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
+        if cuentas_hijas:
+            logger.info("Replay idempotente: pedido %s ya dividido, retornando cuentas hijas", pedido_id)
+            return {
+                "pedido_original_id": pedido.id,
+                "cuentas": cuentas_hijas,
+            }
+        raise HTTPException(
+            status_code=400,
+            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas."
+        )
+
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
         raise HTTPException(
             status_code=400,
@@ -492,6 +539,7 @@ async def dividir_cuenta(
             sucursal_id=pedido.sucursal_id,
             usuario_id=pedido.usuario_id,
             turno_id=pedido.turno_id,
+            parent_pedido_id=pedido.id,
         )
 
         db.add(nuevo_pedido)
@@ -602,7 +650,7 @@ async def dividir_cuenta(
             await websocket_manager.notify_pedido_created(cuenta_data)
 
     except Exception as e:
-        print(f"Error notifying dividir cuenta via WebSocket: {e}")
+        logger.warning("Notificación WebSocket fallida en dividir cuenta del pedido %s: %s", pedido_id, e)
 
     return {
         "pedido_original_id": pedido.id,
@@ -625,6 +673,20 @@ async def dividir_por_montos(
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    if pedido.estado == "dividido":
+        # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
+        cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
+        if cuentas_hijas:
+            logger.info("Replay idempotente: pedido %s ya dividido por montos, retornando cuentas hijas", pedido_id)
+            return {
+                "pedido_original_id": pedido.id,
+                "cuentas": cuentas_hijas,
+            }
+        raise HTTPException(
+            status_code=400,
+            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas."
+        )
 
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
         raise HTTPException(
@@ -674,6 +736,7 @@ async def dividir_por_montos(
             sucursal_id=pedido.sucursal_id,
             usuario_id=pedido.usuario_id,
             turno_id=pedido.turno_id,
+            parent_pedido_id=pedido.id,
         )
 
         db.add(nuevo_pedido)
@@ -729,7 +792,7 @@ async def dividir_por_montos(
             await websocket_manager.notify_pedido_created(cuenta_data)
 
     except Exception as e:
-        print(f"Error notifying dividir_por_montos via WebSocket: {e}")
+        logger.warning("Notificación WebSocket fallida en dividir_por_montos del pedido %s: %s", pedido_id, e)
 
     return {
         "pedido_original_id": pedido.id,
@@ -884,12 +947,12 @@ async def update_pedido(
                 try:
                     await print_ticket_automatic(pedido_data)
                 except Exception as e:
-                    print(f"Error en impresión automática: {e}")
+                    logger.warning("Error en impresión automática del pedido %s: %s", pedido.id, e)
                     # No fallar la actualización del pedido por error de impresión
 
         except Exception as e:
             # Log del error pero no fallar la actualización del pedido
-            print(f"Error notifying pedido estado change via WebSocket: {e}")
+            logger.warning("Notificación WebSocket fallida en cambio de estado del pedido %s: %s", pedido.id, e)
     
     return pedido
 
@@ -1000,7 +1063,7 @@ async def update_articulo_estado(
                 
         except Exception as e:
             # Log del error pero no fallar la actualización del artículo
-            print(f"Error notifying articulo estado change via WebSocket: {e}")
+            logger.warning("Notificación WebSocket fallida en cambio de estado de artículo %s: %s", articulo_id, e)
     
     return {
         "articulo_id": articulo.id,
@@ -1044,6 +1107,19 @@ async def agregar_articulos_pedido(
             status_code=404,
             detail="Pedido no encontrado"
         )
+    
+    # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo
+    if data.client_request_id:
+        articulos_existentes = db.query(ArticuloPedido).filter(
+            ArticuloPedido.pedido_id == pedido_id,
+            ArticuloPedido.client_request_id == data.client_request_id
+        ).all()
+        if articulos_existentes:
+            logger.info(
+                "Replay idempotente: client_request_id %s ya agregó artículos al pedido %s",
+                data.client_request_id, pedido_id
+            )
+            return pedido
     
     # Validar que el pedido no esté en estados finales
     if pedido.estado in ["cuenta_solicitada", "pagado", "cancelado"]:
@@ -1114,7 +1190,8 @@ async def agregar_articulos_pedido(
             cantidad=articulo_data["cantidad"],
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
-            estado_item=estado_inicial
+            estado_item=estado_inicial,
+            client_request_id=data.client_request_id
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)
@@ -1129,7 +1206,9 @@ async def agregar_articulos_pedido(
     if pedido.estado == "entregado":
         pedido.estado = "pendiente"
         # REINICIAR TEMPORIZADOR: Actualizar fecha de creación para que vaya al final de la cola
-        pedido.fecha_creacion = datetime.now()
+        # get_mexico_now() y no datetime.now(): fecha_creacion participa en el unique
+        # constraint del numero_display diario y en la ventana del día del KDS
+        pedido.fecha_creacion = get_mexico_now()
     
     db.commit()
     db.refresh(pedido)
@@ -1171,7 +1250,7 @@ async def agregar_articulos_pedido(
         
     except Exception as e:
         # Log del error pero no fallar la operación
-        print(f"Error notifying articulos agregados via WebSocket: {e}")
+        logger.warning("Notificación WebSocket fallida al agregar artículos al pedido %s: %s", pedido_id, e)
     
     return pedido
 
@@ -1241,6 +1320,9 @@ async def actualizar_articulos_pedido(
         
         # Validar que el artículo pertenece a este pedido
         if articulo_id not in articulos_actuales:
+            if nueva_cantidad == 0:
+                # Ya fue eliminado en un intento previo, ignorar de forma idempotente
+                continue
             raise HTTPException(
                 status_code=400,
                 detail=f"Artículo con ID {articulo_id} no pertenece a este pedido"
@@ -1302,20 +1384,17 @@ async def actualizar_articulos_pedido(
             ]
         }
         
-        print(f"📡 SENDING WebSocket notification: pedido {pedido.id} actualizado")
         await websocket_manager.notify_pedido_estado_changed(
             pedido_id=pedido.id,
             nuevo_estado=pedido.estado,
             pedido_data=pedido_data
         )
-        print(f"✅ WebSocket notification sent successfully for pedido {pedido.id}")
-        
+        logger.info("Notificación WebSocket enviada: pedido %s actualizado", pedido.id)
+
     except Exception as e:
         # Log del error pero no fallar la operación
-        print(f"❌ Error notifying pedido actualizado via WebSocket: {e}")
-        import traceback
-        traceback.print_exc()
-    
+        logger.warning("Notificación WebSocket fallida al actualizar artículos del pedido %s: %s", pedido.id, e, exc_info=True)
+
     return pedido
 
 

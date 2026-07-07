@@ -17,6 +17,13 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+import logging
+
+# Sin esto, los logger.* de los módulos propios no salen en los logs del host
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 # Crear todas las tablas
 Base.metadata.create_all(bind=engine)

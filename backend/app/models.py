@@ -103,6 +103,9 @@ class Pedido(Base):
     tipo_orden = Column(String(20), default="aqui")  # 'aqui', 'llevar', 'uber_eats'
     fecha_creacion = Column(DateTime(timezone=True), default=get_local_datetime)
     fecha_pago = Column(DateTime(timezone=True), nullable=True)
+    # Clave de idempotencia generada por el cliente: reintentar el POST no duplica el pedido
+    client_request_id = Column(String(36), nullable=True, unique=True, index=True)
+    parent_pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     usuario_id = Column(Integer, ForeignKey("usuarios.id"))
     turno_id = Column(Integer, ForeignKey("turnos.id"), nullable=True)
@@ -112,6 +115,7 @@ class Pedido(Base):
     usuario = relationship("Usuario", back_populates="pedidos")
     turno = relationship("Turno", back_populates="pedidos")
     articulos_pedido = relationship("ArticuloPedido", back_populates="pedido")
+    parent_pedido = relationship("Pedido", remote_side="[Pedido.id]", backref="cuentas_hijas")
 
     @property
     def usuario_nombre(self):
@@ -131,6 +135,7 @@ class ArticuloPedido(Base):
     estado_item = Column(
         String(20), default="pendiente"
     )  # 'pendiente', 'preparando', 'listo', 'entregado'
+    client_request_id = Column(String(36), nullable=True, index=True)
 
     # Relaciones
     pedido = relationship("Pedido", back_populates="articulos_pedido")

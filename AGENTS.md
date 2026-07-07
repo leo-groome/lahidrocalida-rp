@@ -357,6 +357,14 @@ curl http://localhost:3001/health
 - Actualizado endpoint backend `/reportes/dia/tickets` para incluir campo `tipo_orden` en la respuesta.
 - Actualizadas interfaces TypeScript para incluir `tipo_orden` opcional en `ReporteDiaTicket`.
 
+**Mejoras de Resiliencia, Idempotencia y WebSocket (Enero 2026):**
+- **Polling de Respaldo Permanente Inteligente:** En `CajaView`, `KDSView`, `KDSManager` y `MeseroView` se implementó un polling permanente que refresca datos cada 5 segundos si el WebSocket está caído (`wsConnected == false`). Si el WebSocket está conectado, el polling funciona como red de seguridad y realiza un refresh preventivo solo si no se ha recibido tráfico en los últimos 45 segundos (evitando el estado "zombi" o "half-open" de conexión).
+- **Reconexión Manual en UI:** Se agregó un indicador visual del estado de conexión del WebSocket en la cabecera principal (`AppHeader.vue`) y de forma flotante en `KDSView.vue`. Cuando el estado no es "En línea", el usuario puede hacer clic en el indicador para disparar una reconexión inmediata en lugar de esperar el backoff exponencial del WebSocket.
+- **Idempotencia de Operaciones Clave:**
+  - **Creación de Pedidos y Adición de Artículos:** Se implementó protección con `client_request_id` (UUID generado por el cliente al enviar el carrito). Si el cliente sufre un corte de red y reintenta la petición, el backend intercepta el ID duplicado y retorna el pedido/artículos ya creados sin duplicar registros.
+  - **División de Cuentas:** Si una cuenta ya fue dividida (estado `dividido`), reintentar la acción de división retorna de forma idempotente las cuentas hijas previamente vinculadas (`parent_pedido_id`).
+  - **Edición/Actualización de Artículos:** Si se reintenta eliminar un artículo que ya fue borrado en un intento previo (cantidad 0), la petición no falla con error 400 y se procesa de forma idempotente.
+
 ---
 
 ## 📚 Key Files Reference
