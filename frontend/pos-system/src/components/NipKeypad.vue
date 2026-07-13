@@ -2,9 +2,42 @@
   <div class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm">
     <div class="bg-white rounded-2xl p-8 w-full max-w-sm mx-4 shadow-2xl">
       <!-- Header -->
-      <div class="text-center mb-6">
-        <div v-if="userName" class="text-lg font-bold text-[#00126D] mb-1">{{ userName }}</div>
-        <p class="text-sm text-slate-500">Ingresa tu NIP</p>
+      <div class="text-center mb-6 flex flex-col items-center">
+        <div v-if="userName" class="text-xl font-black text-[#00126D] mb-2">{{ userName }}</div>
+        
+        <!-- Status indicator badge -->
+        <div v-if="tieneTurnoActivo !== undefined" class="inline-flex items-center justify-center mb-4">
+          <span 
+            v-if="tieneTurnoActivo === true" 
+            class="px-3.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-600 border border-rose-200 animate-pulse shadow-sm"
+          >
+            🔴 CERRAR TURNO / SALIDA
+          </span>
+          <span 
+            v-else-if="tieneTurnoActivo === false" 
+            class="px-3.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-600 border border-emerald-200 shadow-sm"
+          >
+            🟢 INICIAR TURNO / ENTRADA
+          </span>
+          <span 
+            v-else 
+            class="px-3.5 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-400 border border-slate-200 animate-pulse shadow-sm"
+          >
+            Cargando estado...
+          </span>
+        </div>
+
+        <p class="text-sm text-slate-500 font-semibold tracking-wide">
+          <template v-if="tieneTurnoActivo === true">
+            Ingresa tu NIP para registrar tu salida
+          </template>
+          <template v-else-if="tieneTurnoActivo === false">
+            Ingresa tu NIP para registrar tu entrada
+          </template>
+          <template v-else>
+            Ingresa tu NIP
+          </template>
+        </p>
       </div>
 
       <!-- PIN dots -->
@@ -14,7 +47,9 @@
           :key="i"
           class="w-4 h-4 rounded-full border-2 transition-all duration-150"
           :class="digits.length >= i
-            ? 'bg-[#00126D] border-[#00126D] scale-110'
+            ? (tieneTurnoActivo === true 
+                ? 'bg-rose-500 border-rose-500 scale-110 shadow-lg shadow-rose-200' 
+                : 'bg-emerald-500 border-emerald-500 scale-110 shadow-lg shadow-emerald-200')
             : 'bg-transparent border-slate-300'"
         />
       </div>
@@ -56,8 +91,10 @@ const props = withDefaults(defineProps<{
   error?: string | null
   loading?: boolean
   maxDigits?: number
+  tieneTurnoActivo?: boolean | null
 }>(), {
-  maxDigits: 4
+  maxDigits: 4,
+  tieneTurnoActivo: undefined
 })
 
 const emit = defineEmits<{

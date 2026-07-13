@@ -176,3 +176,23 @@ async def list_public_users(
     if rol and rol in ROLES_STAFF:
         query = query.filter(Usuario.rol == rol)
     return query.order_by(Usuario.nombre).all()
+
+
+@router.get("/asistencia/status/{usuario_id}")
+async def check_asistencia_status(
+    usuario_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica si el usuario tiene un turno (registro de asistencia) activo (sin fecha_salida).
+    """
+    registro_abierto = db.query(RegistroAsistencia).filter(
+        RegistroAsistencia.usuario_id == usuario_id,
+        RegistroAsistencia.fecha_salida == None
+    ).first()
+
+    return {
+        "tiene_turno_activo": registro_abierto is not None,
+        "fecha_entrada": registro_abierto.fecha_entrada if registro_abierto else None
+    }
+
