@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, func
 
 from app.auth import get_current_active_user
+from app.core.cache import catalogos_cache
 from app.db.session import get_db
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
 from app.models import (
@@ -73,10 +74,19 @@ def list_proveedores(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
+    cache_key = f"proveedores:{current_user.sucursal_id}"
+    cached = catalogos_cache.get(cache_key)
+    if cached is not None:
+        return cached
     query = db.query(Proveedor)
     if current_user.sucursal_id is not None:
         query = query.filter(Proveedor.sucursal_id == current_user.sucursal_id)
-    return query.order_by(func.lower(Proveedor.nombre).asc()).all()
+    result = [
+        ProveedorResponse.model_validate(p)
+        for p in query.order_by(func.lower(Proveedor.nombre).asc()).all()
+    ]
+    catalogos_cache.set(cache_key, result)
+    return result
 
 
 @router.post("/proveedores", response_model=ProveedorResponse, status_code=status.HTTP_201_CREATED)
@@ -96,6 +106,7 @@ def create_proveedor(
     db.add(proveedor)
     db.commit()
     db.refresh(proveedor)
+    catalogos_cache.invalidate_prefix("proveedores:")
     return proveedor
 
 
@@ -118,6 +129,7 @@ def update_proveedor(
     proveedor.notas = data.notas
     db.commit()
     db.refresh(proveedor)
+    catalogos_cache.invalidate_prefix("proveedores:")
     return proveedor
 
 
@@ -126,7 +138,15 @@ def list_categorias_articulo(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
-    return db.query(CategoriaArticulo).order_by(func.lower(CategoriaArticulo.nombre).asc()).all()
+    cached = catalogos_cache.get("categorias_articulo")
+    if cached is not None:
+        return cached
+    result = [
+        CategoriaArticuloResponse.model_validate(c)
+        for c in db.query(CategoriaArticulo).order_by(func.lower(CategoriaArticulo.nombre).asc()).all()
+    ]
+    catalogos_cache.set("categorias_articulo", result)
+    return result
 
 
 @router.post("/categorias-articulo", response_model=CategoriaArticuloResponse, status_code=status.HTTP_201_CREATED)
@@ -143,6 +163,7 @@ def create_categoria_articulo(
     db.add(categoria)
     db.commit()
     db.refresh(categoria)
+    catalogos_cache.invalidate("categorias_articulo")
     return categoria
 
 
@@ -160,6 +181,7 @@ def update_categoria_articulo(
     categoria.nombre = data.nombre
     db.commit()
     db.refresh(categoria)
+    catalogos_cache.invalidate("categorias_articulo")
     return categoria
 
 
@@ -516,25 +538,31 @@ def get_historial_precios(
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
         
-    query = (
-        db.query(GastoDetalle)
+    rows = (
+        db.query(
+            Gasto.fecha_gasto,
+            GastoDetalle.precio_unitario,
+            Proveedor.nombre.label("proveedor_nombre"),
+            GastoDetalle.cantidad,
+        )
+        .select_from(GastoDetalle)
         .join(Gasto)
         .join(Proveedor)
         .filter(GastoDetalle.articulo_id == articulo_id)
         .order_by(Gasto.fecha_gasto.desc())
         .limit(limit)
+        .all()
     )
-    
-    items = []
-    for detalle in query.all():
-        items.append(
-            HistorialPrecioItem(
-                fecha=detalle.gasto.fecha_gasto,
-                precio_unitario=float(detalle.precio_unitario),
-                proveedor_nombre=detalle.gasto.proveedor.nombre,
-                cantidad_comprada=float(detalle.cantidad)
-            )
+
+    items = [
+        HistorialPrecioItem(
+            fecha=row.fecha_gasto,
+            precio_unitario=float(row.precio_unitario),
+            proveedor_nombre=row.proveedor_nombre,
+            cantidad_comprada=float(row.cantidad),
         )
+        for row in rows
+    ]
         
     return HistorialPreciosResponse(
         articulo_id=articulo.id,

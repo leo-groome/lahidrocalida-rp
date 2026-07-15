@@ -7,7 +7,7 @@ from app.core.config import settings
 # El engine es como el "conductor" que maneja la conexión a PostgreSQL
 engine = create_engine(
     settings.DATABASE_URL,  # URL de tu base de datos Neon
-    echo=True,  # Muestra las consultas SQL en consola (útil para debug)
+    echo=False,  # No loguear SQL: expone datos de clientes y ensucia logs en Railway
     pool_pre_ping=True,  # Verifica que la conexión esté viva antes de usarla
     pool_recycle=300,  # Renueva conexiones cada 5 minutos
 )

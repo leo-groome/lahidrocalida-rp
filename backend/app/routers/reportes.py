@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, case, extract, func, or_
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,11 @@ router = APIRouter(prefix="/reportes", tags=["reportes"])
 @router.get("/dia/tickets")
 def tickets_del_dia(
     turno_id: Optional[int] = None,
+    # Default alto a propósito: CajaView calcula los totales del cierre de
+    # caja sumando estos tickets sin paginar — truncar corrompe las cifras.
+    # El limit es un cap defensivo, no paginación por default.
+    limit: int = Query(1000, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -47,8 +52,26 @@ def tickets_del_dia(
         ).first()
         tid = turno_activo.id if turno_activo else None
 
+    # Proyección de columnas: evita traer el modelo completo y el N+1 de
+    # usuario_nombre (property que lazy-loadea Pedido.usuario por fila)
+    query = db.query(
+        Pedido.id,
+        Pedido.numero_display,
+        Pedido.mesa,
+        Pedido.nombre_cliente,
+        Pedido.estado,
+        Pedido.metodo_pago,
+        Pedido.total,
+        Pedido.propina_efectivo,
+        Pedido.propina_tarjeta,
+        Pedido.fecha_pago,
+        Pedido.fecha_creacion,
+        Pedido.tipo_orden,
+        Usuario.nombre.label("mesero_nombre"),
+    ).outerjoin(Usuario, Pedido.usuario_id == Usuario.id)
+
     if tid:
-        query = db.query(Pedido).filter(
+        query = query.filter(
             Pedido.turno_id == tid,
             Pedido.estado.in_(["pagado", "cancelado"]),
         )
@@ -58,7 +81,7 @@ def tickets_del_dia(
         today_local = now_local.date()
         start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
         end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
-        query = db.query(Pedido).filter(
+        query = query.filter(
             or_(
                 and_(
                     Pedido.estado == "pagado",
@@ -77,33 +100,30 @@ def tickets_del_dia(
     if user.rol == "cajero":
         query = query.filter(Pedido.sucursal_id == user.sucursal_id)
 
-    pedidos = query.order_by(fecha_evento_expr.desc()).all()
+    rows = query.order_by(fecha_evento_expr.desc()).limit(limit).offset(offset).all()
 
-    def _serialize_ticket(pedido: Pedido) -> dict[str, Any]:
-        p = cast(Any, pedido)
-        fecha_pago = cast(Any, p).fecha_pago
-        fecha_creacion = cast(Any, p).fecha_creacion
-        fecha_evento = fecha_pago if p.estado == "pagado" else fecha_creacion
+    def _serialize_ticket(row: Any) -> dict[str, Any]:
+        fecha_evento = row.fecha_pago if row.estado == "pagado" else row.fecha_creacion
 
         return {
-            "id": p.id,
-            "numero_display": p.numero_display,
-            "mesa": p.mesa,
-            "nombre_cliente": p.nombre_cliente,
-            "estado": p.estado,
-            "metodo_pago": p.metodo_pago,
-            "total": float(getattr(p, "total", 0) or 0),
-            "propina_efectivo": float(getattr(p, "propina_efectivo", 0) or 0),
-            "propina_tarjeta": float(getattr(p, "propina_tarjeta", 0) or 0),
-            "propina_total": float((getattr(p, "propina_efectivo", 0) or 0) + (getattr(p, "propina_tarjeta", 0) or 0)),
-            "fecha_pago": fecha_pago.isoformat() if fecha_pago is not None else None,
-            "fecha_creacion": fecha_creacion.isoformat() if fecha_creacion is not None else None,
+            "id": row.id,
+            "numero_display": row.numero_display,
+            "mesa": row.mesa,
+            "nombre_cliente": row.nombre_cliente,
+            "estado": row.estado,
+            "metodo_pago": row.metodo_pago,
+            "total": float(row.total or 0),
+            "propina_efectivo": float(row.propina_efectivo or 0),
+            "propina_tarjeta": float(row.propina_tarjeta or 0),
+            "propina_total": float((row.propina_efectivo or 0) + (row.propina_tarjeta or 0)),
+            "fecha_pago": row.fecha_pago.isoformat() if row.fecha_pago is not None else None,
+            "fecha_creacion": row.fecha_creacion.isoformat() if row.fecha_creacion is not None else None,
             "fecha_evento": fecha_evento.isoformat() if fecha_evento is not None else None,
-            "mesero_nombre": p.usuario_nombre,
-            "tipo_orden": p.tipo_orden,
+            "mesero_nombre": row.mesero_nombre,
+            "tipo_orden": row.tipo_orden,
         }
 
-    return [_serialize_ticket(p) for p in pedidos]
+    return [_serialize_ticket(r) for r in rows]
 
 
 @router.get("/dia/analytics")

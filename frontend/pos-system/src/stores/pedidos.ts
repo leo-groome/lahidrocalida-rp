@@ -102,12 +102,15 @@ export const usePedidosStore = defineStore('pedidos', () => {
   })
 
   // Acciones
+  let lastFullSync = 0
+
   async function loadInitialData(showLoading = true): Promise<void> {
     if (showLoading) loading.value = true
     error.value = null
 
     try {
       console.log('🔄 Cargando datos de pedidos...')
+      lastFullSync = Date.now()
       const { data } = await api.get<PedidoResponse[]>('/pedidos')
       pedidos.value = data
       lastUpdate.value = new Date()
@@ -157,8 +160,14 @@ export const usePedidosStore = defineStore('pedidos', () => {
     console.log('📡 Configurando listeners de WebSocket...')
 
     // Re-sincronizar en cada (re)conexión: la DB es la fuente de verdad y todo
-    // lo ocurrido durante una desconexión no se reenvía por WebSocket
+    // lo ocurrido durante una desconexión no se reenvía por WebSocket.
+    // Debounce de 10s: con WS inestable (flapping) evita re-fetchear la lista
+    // completa en cada reconexión
     websocketService.on('connection_open', () => {
+      if (Date.now() - lastFullSync < 10_000) {
+        console.log('🔁 WebSocket (re)conectado, sync reciente — se omite re-fetch')
+        return
+      }
       console.log('🔁 WebSocket (re)conectado, re-sincronizando pedidos...')
       loadInitialData(false)
     })

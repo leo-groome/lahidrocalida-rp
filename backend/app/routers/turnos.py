@@ -543,7 +543,7 @@ def listar_turnos(
     # Ordenar por fecha de apertura descendente
     query = query.order_by(Turno.fecha_apertura.desc())
 
-    turnos = query.all()
+    turnos = query.limit(200).all()
 
     # Formatear respuesta
     respuesta = []

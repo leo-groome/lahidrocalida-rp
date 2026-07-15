@@ -140,46 +140,59 @@ def get_detalle_propinas(
     start_dt = datetime.combine(target_date, datetime.min.time(), tzinfo=MEXICO_TZ)
     end_dt = datetime.combine(target_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
     
-    # Construir consulta
-    query = db.query(Pedido).filter(
+    # Proyección de columnas con join: evita traer el modelo completo y el
+    # N+1 de pedido.usuario dentro del loop
+    query = db.query(
+        Pedido.id,
+        Pedido.numero_display,
+        Pedido.mesa,
+        Pedido.nombre_cliente,
+        Pedido.usuario_id,
+        Usuario.nombre.label("mesero_nombre"),
+        Pedido.total,
+        Pedido.propina_efectivo,
+        Pedido.propina_tarjeta,
+        Pedido.metodo_pago,
+        Pedido.fecha_creacion,
+    ).outerjoin(Usuario, Pedido.usuario_id == Usuario.id).filter(
         Pedido.fecha_creacion >= start_dt,
         Pedido.fecha_creacion < end_dt,
         Pedido.estado == "pagado"
     )
-    
+
     # Filtro por sucursal para cajeros
     if current_user.rol == "cajero":
         query = query.filter(Pedido.sucursal_id == current_user.sucursal_id)
-    
+
     # Filtro por mesero si se especifica
     if mesero_id is not None:
         query = query.filter(Pedido.usuario_id == mesero_id)
-    
+
     # Ordenar por fecha
     query = query.order_by(Pedido.fecha_creacion.desc())
-    
-    pedidos = query.all()
-    
+
+    rows = query.all()
+
     # Formatear respuesta
     detalle = []
-    for pedido in pedidos:
+    for row in rows:
         detalle.append({
-            "pedido_id": pedido.id,
-            "numero_display": pedido.numero_display,
-            "mesa": pedido.mesa,
-            "nombre_cliente": pedido.nombre_cliente,
-            "mesero_id": pedido.usuario_id,
-            "mesero_nombre": pedido.usuario.nombre if pedido.usuario else "N/A",
-            "total_pedido": float(pedido.total),
-            "propina_efectivo": float(pedido.propina_efectivo),
-            "propina_tarjeta": float(pedido.propina_tarjeta),
-            "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
-            "metodo_pago": pedido.metodo_pago,
-            "fecha_pago": pedido.fecha_creacion.isoformat()
+            "pedido_id": row.id,
+            "numero_display": row.numero_display,
+            "mesa": row.mesa,
+            "nombre_cliente": row.nombre_cliente,
+            "mesero_id": row.usuario_id,
+            "mesero_nombre": row.mesero_nombre or "N/A",
+            "total_pedido": float(row.total or 0),
+            "propina_efectivo": float(row.propina_efectivo or 0),
+            "propina_tarjeta": float(row.propina_tarjeta or 0),
+            "propina_total": float((row.propina_efectivo or 0) + (row.propina_tarjeta or 0)),
+            "metodo_pago": row.metodo_pago,
+            "fecha_pago": row.fecha_creacion.isoformat()
         })
-    
+
     return {
         "fecha": target_date.isoformat(),
-        "total_pedidos": len(pedidos),
+        "total_pedidos": len(rows),
         "detalle": detalle
     }

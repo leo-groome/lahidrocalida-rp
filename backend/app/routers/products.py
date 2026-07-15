@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models import Platillo, Usuario, Pedido, ArticuloPedido
 from app.schemas import PlatilloCreate, PlatilloResponse
 from app.auth import get_current_active_user
+from app.core.cache import platillos_cache
 
 router = APIRouter(prefix="/platillos", tags=["platillos"])
 
@@ -17,7 +18,12 @@ def list_platillos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user)
 ):
-    return db.query(Platillo).all()
+    cached = platillos_cache.get("platillos")
+    if cached is not None:
+        return cached
+    result = [PlatilloResponse.model_validate(p) for p in db.query(Platillo).all()]
+    platillos_cache.set("platillos", result)
+    return result
 
 
 @router.post("/", response_model=PlatilloResponse, status_code=status.HTTP_201_CREATED)
@@ -41,6 +47,7 @@ def create_platillo(
     db.add(platillo)
     db.commit()
     db.refresh(platillo)
+    platillos_cache.invalidate("platillos")
     return platillo
 
 
@@ -124,6 +131,7 @@ def update_platillo(
 
     db.commit()
     db.refresh(platillo)
+    platillos_cache.invalidate("platillos")
     return platillo
 
 
@@ -163,7 +171,8 @@ def toggle_disponibilidad_platillo(
     
     db.commit()
     db.refresh(platillo)
-    
+    platillos_cache.invalidate("platillos")
+
     print(f"✅ Platillo '{platillo.nombre}' cambiado de '{estado_anterior}' a '{nuevo_estado}' por {current_user.nombre}")
     
     return platillo
@@ -189,11 +198,13 @@ def delete_platillo(
         # En lugar de eliminar, cambiar estado a no_disponible
         platillo.estado = "no_disponible"
         db.commit()
+        platillos_cache.invalidate("platillos")
         return {"message": "Platillo marcado como no disponible (tiene pedidos asociados)"}
-    
+
     # Si no tiene pedidos, eliminar completamente
     db.delete(platillo)
     db.commit()
+    platillos_cache.invalidate("platillos")
     return {"message": "Platillo eliminado correctamente"}
 
 

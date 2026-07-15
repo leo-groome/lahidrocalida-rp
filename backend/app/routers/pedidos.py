@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, and_, cast
 from sqlalchemy import Integer as SAInteger
 from typing import List, Optional
@@ -26,6 +26,15 @@ from app.schemas import (
 from app.auth import get_current_active_user, get_optional_current_user
 from app.websocket_manager import websocket_manager
 from app.core.config import settings
+
+
+def _query_pedidos_eager(db: Session):
+    """Query base de pedidos con eager loading: evita el N+1 de artículos,
+    platillos y usuario (usuario_nombre) al serializar PedidoResponse."""
+    return db.query(Pedido).options(
+        selectinload(Pedido.articulos_pedido).selectinload(ArticuloPedido.platillo),
+        joinedload(Pedido.usuario),
+    )
 
 
 def _get_turno_activo(db: Session, sucursal_id: int) -> Optional[Turno]:
@@ -342,27 +351,27 @@ def list_pedidos(
     if current_user is None:
         # Modo KDS público — pedidos activos sin filtro de fecha ni sucursal
         estados_kds = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada"]
-        query = db.query(Pedido)
+        query = _query_pedidos_eager(db)
         if estado and estado in estados_kds:
             query = query.filter(Pedido.estado == estado)
         else:
             query = query.filter(Pedido.estado.in_(estados_kds))
-        return query.order_by(Pedido.fecha_creacion.asc()).all()
+        return query.order_by(Pedido.fecha_creacion.asc()).limit(200).all()
 
     # Con autenticación — filtro por turno
     if turno_id:
-        query = db.query(Pedido).filter(Pedido.turno_id == turno_id)
+        query = _query_pedidos_eager(db).filter(Pedido.turno_id == turno_id)
     else:
         turno_activo = _get_turno_activo(db, current_user.sucursal_id)
         if turno_activo:
-            query = db.query(Pedido).filter(Pedido.turno_id == turno_activo.id)
+            query = _query_pedidos_eager(db).filter(Pedido.turno_id == turno_activo.id)
         else:
             # Sin turno activo: fallback a pedidos del día actual
             now_local = get_mexico_now()
             today_local = now_local.date()
             start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
             end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
-            query = db.query(Pedido).filter(
+            query = _query_pedidos_eager(db).filter(
                 Pedido.fecha_creacion >= start_dt,
                 Pedido.fecha_creacion < end_dt
             )
@@ -374,7 +383,7 @@ def list_pedidos(
     if estado:
         query = query.filter(Pedido.estado == estado)
 
-    return query.order_by(Pedido.fecha_creacion.desc()).all()
+    return query.order_by(Pedido.fecha_creacion.desc()).limit(500).all()
 
 
 @router.get("/pendientes-pago/lista", response_model=List[PedidoResponse])
@@ -394,14 +403,14 @@ def get_pedidos_pendientes_pago(
             detail="Solo cajeros y administradores pueden ver pedidos pendientes de pago"
         )
     
-    query = db.query(Pedido).filter(Pedido.estado == "cuenta_solicitada")
-    
+    query = _query_pedidos_eager(db).filter(Pedido.estado == "cuenta_solicitada")
+
     # Filtro por sucursal para cajeros
     if current_user.rol == "cajero":
         query = query.filter(Pedido.sucursal_id == current_user.sucursal_id)
-    
+
     # Ordenar por fecha de creación
-    return query.order_by(Pedido.fecha_creacion.asc()).all()
+    return query.order_by(Pedido.fecha_creacion.asc()).limit(200).all()
 
 
 @router.get("/{pedido_id}", response_model=PedidoResponse)
@@ -415,8 +424,7 @@ def get_pedido(
     Público para KDS (sin auth). Con auth: cajeros solo ven su sucursal.
     """
     pedido = (
-        db.query(Pedido)
-        .options(joinedload(Pedido.articulos_pedido).joinedload(ArticuloPedido.platillo))
+        _query_pedidos_eager(db)
         .filter(Pedido.id == pedido_id)
         .first()
     )

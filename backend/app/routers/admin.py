@@ -1,6 +1,6 @@
 # type: ignore
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func, and_, extract
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date, timedelta
@@ -459,10 +459,13 @@ def get_dashboard_metrics(
     ).group_by(Platillo.id, Platillo.nombre
     ).order_by(func.sum(ArticuloPedido.cantidad).desc()).limit(5).all()
 
-    # Pedidos del turno (para lista en dashboard)
+    # Pedidos del turno (para lista en dashboard). selectinload evita el
+    # producto cartesiano del JOIN por el wire; limit 200 como cap defensivo —
+    # el dashboard muestra la lista completa del turno y los agregados vienen
+    # de las otras queries.
     pedidos_del_dia = db.query(Pedido).options(
-        joinedload(Pedido.articulos_pedido).joinedload(ArticuloPedido.platillo)
-    ).filter(_fp()).order_by(Pedido.fecha_creacion.desc()).all()
+        selectinload(Pedido.articulos_pedido).selectinload(ArticuloPedido.platillo)
+    ).filter(_fp()).order_by(Pedido.fecha_creacion.desc()).limit(200).all()
 
     # Ticket promedio
     total_ingresos = efectivo_total + tarjeta_total + transferencia_total
