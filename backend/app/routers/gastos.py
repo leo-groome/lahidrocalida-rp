@@ -261,7 +261,12 @@ def _build_gasto_detalles(
     for detalle in detalles_data:
         cantidad = _normalize_decimal(detalle.cantidad)
         precio_unitario = _normalize_decimal(detalle.precio_unitario)
-        subtotal_linea = _normalize_decimal(cantidad * precio_unitario)
+        # Respetar el total de línea si el cliente lo envía (permite ajustes
+        # manuales "por si hay algún cambio"); si no, calcularlo.
+        if getattr(detalle, "subtotal_linea", None) is not None:
+            subtotal_linea = _normalize_decimal(detalle.subtotal_linea)
+        else:
+            subtotal_linea = _normalize_decimal(cantidad * precio_unitario)
         subtotal += subtotal_linea
         detalles.append(
             GastoDetalle(

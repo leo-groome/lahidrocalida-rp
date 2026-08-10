@@ -105,6 +105,11 @@ watch(() => route.query.tab, (newTab) => {
 
 // Función para cambiar de pestaña actualizando la URL
 const selectTab = (id: string) => {
+  // 'compras' es una vista dedicada standalone, no una sección interna.
+  if (id === 'compras') {
+    router.push('/compras')
+    return
+  }
   activeTab.value = id
   router.push({ query: { ...route.query, tab: id } })
 }

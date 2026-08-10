@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -85,4 +85,18 @@ const handleBlur = () => {
 const filterOptions = () => {
   showOptions.value = true
 }
+
+// Reflejar el valor seleccionado en el input (útil al editar registros
+// existentes o cuando el valor llega después de cargar las opciones).
+const syncLabelFromValue = () => {
+  if (props.modelValue === null || props.modelValue === undefined) {
+    searchTerm.value = ''
+    return
+  }
+  const selected = (props.options as any[]).find(o => o.id === props.modelValue)
+  if (selected) searchTerm.value = selected.nombre
+}
+
+watch(() => props.modelValue, syncLabelFromValue)
+watch(() => props.options, syncLabelFromValue, { immediate: true })
 </script>

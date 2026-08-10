@@ -68,45 +68,75 @@
       </div>
 
       <!-- ══════════════════════════════════
-           PASO 2 — Monto + Keypad
+           PASO 2 — Monto (rápido o desglose)
       ═════════════════════════════════════ -->
       <div v-else-if="step === 2" class="flex flex-col">
-        <!-- Amount display -->
-        <div class="px-6 py-8 text-center bg-slate-50 border-b border-slate-100">
-          <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Paso 2 de 3 — Monto</p>
-          <div class="flex items-baseline justify-center gap-2">
-            <span class="text-2xl font-black text-slate-400">$</span>
-            <span
-              class="text-5xl font-black tracking-tighter transition-all"
-              :class="amountDisplay === '0' ? 'text-slate-300' : 'text-slate-800'"
-            >
-              {{ formatAmount(amountDisplay) }}
-            </span>
+        <!-- Toggle modo (no aplica a nómina) -->
+        <div v-if="tipoGasto !== 'nomina'" class="px-4 pt-4">
+          <div class="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+            <button
+              @click="modoDetalle = false"
+              class="py-2.5 rounded-xl text-xs font-black transition-all"
+              :class="!modoDetalle ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
+            >Monto rápido</button>
+            <button
+              @click="enableDesglose"
+              class="py-2.5 rounded-xl text-xs font-black transition-all"
+              :class="modoDetalle ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
+            >Desglose de artículos</button>
           </div>
-          <p class="text-xs text-slate-400 mt-2 font-semibold">
-            {{ tiposGasto.find(t => t.id === tipoGasto)?.label }}
-          </p>
         </div>
 
-        <!-- Keypad -->
-        <div class="p-4 grid grid-cols-3 gap-2">
-          <button
-            v-for="key in amountKeys"
-            :key="key.label"
-            @click="handleAmountKey(key.action)"
-            class="flex items-center justify-center min-h-[56px] rounded-2xl text-xl font-black transition-all active:scale-95 select-none"
-            :class="key.variant === 'action'
-              ? 'bg-slate-100 text-slate-600 active:bg-slate-200'
-              : key.variant === 'clear'
-                ? 'bg-red-50 text-red-400 active:bg-red-100'
-                : 'bg-slate-50 text-slate-700 active:bg-slate-200'"
-          >
-            <svg v-if="key.label === '⌫'" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12H3M3 12l4-4M3 12l4 4"/>
-            </svg>
-            <span v-else>{{ key.label }}</span>
-          </button>
-        </div>
+        <!-- ── Modo desglose ── -->
+        <template v-if="modoDetalle && tipoGasto !== 'nomina'">
+          <div class="p-4 max-h-[55vh] overflow-y-auto">
+            <GastoDetallesEditor
+              v-model:detalles="detalles"
+              v-model:total-manual="totalManualDetalle"
+              :articulos="articulos"
+            />
+          </div>
+        </template>
+
+        <!-- ── Modo monto rápido (keypad) ── -->
+        <template v-else>
+          <!-- Amount display -->
+          <div class="px-6 py-8 text-center bg-slate-50 border-b border-slate-100">
+            <p class="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Paso 2 de 3 — Monto</p>
+            <div class="flex items-baseline justify-center gap-2">
+              <span class="text-2xl font-black text-slate-400">$</span>
+              <span
+                class="text-5xl font-black tracking-tighter transition-all"
+                :class="amountDisplay === '0' ? 'text-slate-300' : 'text-slate-800'"
+              >
+                {{ formatAmount(amountDisplay) }}
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-2 font-semibold">
+              {{ tiposGasto.find(t => t.id === tipoGasto)?.label }}
+            </p>
+          </div>
+
+          <!-- Keypad -->
+          <div class="p-4 grid grid-cols-3 gap-2">
+            <button
+              v-for="key in amountKeys"
+              :key="key.label"
+              @click="handleAmountKey(key.action)"
+              class="flex items-center justify-center min-h-[56px] rounded-2xl text-xl font-black transition-all active:scale-95 select-none"
+              :class="key.variant === 'action'
+                ? 'bg-slate-100 text-slate-600 active:bg-slate-200'
+                : key.variant === 'clear'
+                  ? 'bg-red-50 text-red-400 active:bg-red-100'
+                  : 'bg-slate-50 text-slate-700 active:bg-slate-200'"
+            >
+              <svg v-if="key.label === '⌫'" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12H3M3 12l4-4M3 12l4 4"/>
+              </svg>
+              <span v-else>{{ key.label }}</span>
+            </button>
+          </div>
+        </template>
 
         <div class="px-4 pb-4 flex gap-3">
           <button
@@ -144,7 +174,8 @@
               </div>
             </div>
             <div class="text-right">
-              <p class="text-2xl font-black text-[#00126D]">${{ formatAmount(amountDisplay) }}</p>
+              <p class="text-2xl font-black text-[#00126D]">${{ amountFormatted }}</p>
+              <p v-if="modoDetalle && detalles.length" class="text-[10px] text-slate-400 font-bold">{{ detalles.length }} artículo(s)</p>
             </div>
           </div>
 
@@ -236,6 +267,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
+import GastoDetallesEditor from './GastoDetallesEditor.vue'
 
 const props = defineProps<{
   turnoId?: number | null
@@ -260,12 +292,45 @@ const tiposGasto = [
 
 function selectTipo(id: string) {
   tipoGasto.value = id
+  // Nómina nunca lleva desglose de artículos.
+  if (id === 'nomina') modoDetalle.value = false
+}
+
+// ── Step 2 — Modo desglose de artículos ──────────
+const modoDetalle = ref(false)
+const detalles = ref<any[]>([])
+const totalManualDetalle = ref<number | null>(null)
+const articulos = ref<any[]>([])
+
+const sumaDetalles = computed(() =>
+  detalles.value.reduce((sum, d) => {
+    const linea = d.subtotal_linea != null
+      ? Number(d.subtotal_linea)
+      : (Number(d.cantidad) || 0) * (Number(d.precio_unitario) || 0)
+    return sum + (Number(linea) || 0)
+  }, 0)
+)
+
+function enableDesglose() {
+  modoDetalle.value = true
+  if (detalles.value.length === 0) {
+    detalles.value.push({ articulo_id: null, cantidad: 1, precio_unitario: 0, subtotal_linea: 0, _editadoManual: false })
+  }
 }
 
 // ── Step 2 — Currency keypad ─────────────────────
 const amountDisplay = ref('0')
 
-const amountValue = computed(() => parseFloat(amountDisplay.value) || 0)
+const amountValue = computed(() => {
+  if (modoDetalle.value && tipoGasto.value !== 'nomina') {
+    return totalManualDetalle.value != null ? Number(totalManualDetalle.value) : sumaDetalles.value
+  }
+  return parseFloat(amountDisplay.value) || 0
+})
+
+const amountFormatted = computed(() =>
+  amountValue.value.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+)
 
 const amountKeys = [
   { label: '1', action: '1', variant: 'digit' },
@@ -350,6 +415,16 @@ async function submit() {
     submitError.value = 'Selecciona un proveedor'
     return
   }
+  const usaDesglose = modoDetalle.value && tipoGasto.value !== 'nomina'
+  const detallesValidos = detalles.value.filter(d => d.articulo_id)
+  if (usaDesglose && detallesValidos.length === 0) {
+    submitError.value = 'Agrega al menos un artículo o usa monto rápido'
+    return
+  }
+  if (amountValue.value <= 0) {
+    submitError.value = 'El monto debe ser mayor a 0'
+    return
+  }
   submitting.value = true
   submitError.value = null
   try {
@@ -357,10 +432,19 @@ async function submit() {
       proveedor_id: proveedorId.value,
       tipo_gasto: tipoGasto.value,
       metodo_pago: metodoPago.value,
-      total_manual: amountValue.value,
+      // Con desglose, el total sale de la suma (o del total manual ajustado);
+      // en monto rápido se manda el valor del keypad como total_manual.
+      total_manual: usaDesglose ? (totalManualDetalle.value ?? null) : amountValue.value,
       notas: notas.value || null,
       descripcion: notas.value || null,
-      detalles: [],
+      detalles: usaDesglose
+        ? detallesValidos.map(d => ({
+            articulo_id: d.articulo_id,
+            cantidad: d.cantidad,
+            precio_unitario: d.precio_unitario,
+            subtotal_linea: d.subtotal_linea,
+          }))
+        : [],
       fecha_gasto: new Date().toISOString(),
       turno_id: props.turnoId ?? null,
     }
@@ -375,8 +459,12 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    const { data } = await api.get('/gastos/proveedores')
-    proveedores.value = data
+    const [provs, arts] = await Promise.all([
+      api.get('/gastos/proveedores'),
+      api.get('/gastos/articulos'),
+    ])
+    proveedores.value = provs.data
+    articulos.value = arts.data
   } catch { /* silently ignore */ }
 })
 </script>

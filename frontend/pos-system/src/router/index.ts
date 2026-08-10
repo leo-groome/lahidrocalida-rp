@@ -9,6 +9,7 @@ const CajaView = () => import('../views/CajaView.vue')
 const KDSView = () => import('../views/KDSView.vue')
 const KDSManager = () => import('../views/KDSManager.vue')
 const AdminView = () => import('../views/AdminView.vue')
+const ComprasView = () => import('../views/ComprasView.vue')
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/login' },
@@ -18,6 +19,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { public: true } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, roles: ['administrador'] } },
+  { path: '/compras', name: 'compras', component: ComprasView, meta: { requiresAuth: true, roles: ['compras', 'administrador'] } },
   { path: '/kds', name: 'kds', component: KDSView, meta: { public: true } },
   { path: '/admin-login', name: 'admin-login', component: AdminLogin, meta: { public: true } },
   { path: '/checkin', name: 'checkin', component: ClockInView, meta: { public: true } },
@@ -47,6 +49,8 @@ router.beforeEach(async (to) => {
           return { name: 'mesero' }
         case 'cocina':
           return { name: 'kds-manager' }
+        case 'compras':
+          return { name: 'compras' }
         case 'administrador':
           return { name: 'admin' }
         default:

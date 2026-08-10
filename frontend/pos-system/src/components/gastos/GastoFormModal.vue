@@ -125,87 +125,12 @@
           </div>
 
           <!-- SECCIÓN DETALLES (Si no es nómina) -->
-          <div v-if="form.tipo_gasto !== 'nomina'" class="space-y-6">
-             <div class="flex justify-between items-center px-2">
-               <div class="space-y-1">
-                 <h3 class="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Desglose de Artículos</h3>
-                 <p class="text-[10px] text-slate-300 font-bold">Listado detallado de insumos adquiridos</p>
-               </div>
-               <button 
-                type="button" 
-                @click="addDetalle" 
-                class="px-5 py-2.5 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-2"
-               >
-                 <Plus class="w-3.5 h-3.5" /> Agregar Artículo
-               </button>
-             </div>
-             
-             <div class="bg-slate-50/50 rounded-[2.5rem] border border-slate-100 overflow-hidden">
-                <div class="p-2 space-y-2">
-                   <div v-for="(detalle, idx) in form.detalles" :key="idx" class="flex items-center gap-3 bg-white p-3 rounded-[1.5rem] shadow-sm animate-in zoom-in-95">
-                      <div class="flex-1 min-w-[240px]">
-                         <SearchableSelect 
-                           v-model="detalle.articulo_id" 
-                           :options="articulos" 
-                           placeholder="Buscar artículo..."
-                           class="w-full"
-                         />
-                      </div>
-                      <div class="w-28 space-y-1">
-                         <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1">Cantidad</label>
-                         <input type="number" step="0.01" v-model.number="detalle.cantidad" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-2 text-sm font-black text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-center">
-                      </div>
-                      <div class="w-32 space-y-1">
-                         <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1">P. Unitario</label>
-                         <div class="relative">
-                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-300">$</span>
-                            <input type="number" step="0.01" v-model.number="detalle.precio_unitario" class="w-full bg-slate-50 border-0 rounded-xl pl-6 pr-4 py-2 text-sm font-black text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-right">
-                         </div>
-                      </div>
-                      <div class="w-36 text-right px-4 space-y-0.5">
-                         <p class="text-[8px] font-black text-slate-300 uppercase tracking-widest">Subtotal</p>
-                         <p class="text-sm font-black text-slate-900 tracking-tighter">
-                            ${{ formatCurrency(detalle.cantidad * detalle.precio_unitario) }}
-                         </p>
-                      </div>
-                      <button 
-                        type="button" 
-                        @click="removeDetalle(idx)" 
-                        class="w-10 h-10 flex items-center justify-center rounded-xl text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-all"
-                      >
-                        <Trash2 class="w-4 h-4" />
-                      </button>
-                   </div>
-                </div>
-
-                <!-- Summary Row inside table-like container -->
-                <div class="bg-indigo-50/50 p-6 flex flex-col md:flex-row justify-between items-center gap-6 border-t border-indigo-100">
-                    <div class="flex items-center gap-4">
-                      <div class="p-3 bg-white rounded-2xl shadow-sm text-indigo-600">
-                        <ShoppingBag class="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p class="text-[10px] font-black tracking-widest text-indigo-400 uppercase">Suma de Artículos</p>
-                        <p class="text-lg font-black text-indigo-900 tracking-tighter">${{ formatCurrency(sumaDetalles) }}</p>
-                      </div>
-                    </div>
-
-                    <div class="relative w-full md:w-auto">
-                       <label class="absolute -top-3 left-4 bg-white px-2 text-[8px] font-black text-indigo-400 uppercase tracking-widest rounded-full border border-indigo-100 shadow-sm">Total Manual Ajustado</label>
-                       <div class="flex items-center gap-3">
-                          <span class="text-lg font-black text-slate-300">$</span>
-                          <input 
-                            type="number" 
-                            step="0.01" 
-                            v-model.number="form.total_manual" 
-                            class="w-48 bg-white border-2 border-indigo-200 rounded-2xl px-6 py-3.5 text-xl font-black text-indigo-900 focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none text-right shadow-lg shadow-indigo-100/50"
-                            placeholder="0.00"
-                          >
-                       </div>
-                       <p class="text-[9px] text-indigo-400 font-bold mt-2 text-right">Dejar en blanco para usar la suma automática</p>
-                    </div>
-                </div>
-             </div>
+          <div v-if="form.tipo_gasto !== 'nomina'">
+             <GastoDetallesEditor
+               v-model:detalles="form.detalles"
+               v-model:total-manual="form.total_manual"
+               :articulos="articulos"
+             />
           </div>
 
           <!-- SECCIÓN NOMINA (Solo total manual) -->
@@ -277,9 +202,10 @@
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import api from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
-import { 
-  X, Plus, Trash2, Calendar, Truck, CreditCard, Banknote, 
-  Hash, ShoppingBag, Calculator, Users, Check
+import GastoDetallesEditor from './GastoDetallesEditor.vue'
+import {
+  X, Calendar, Truck, Banknote,
+  Hash, Calculator, Users, Check
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -326,7 +252,12 @@ watch(pagadoDesdeCaja, (val) => {
 const isEditing = computed(() => !!form.id)
 
 const sumaDetalles = computed(() => {
-  return form.detalles.reduce((sum, d) => sum + (d.cantidad * d.precio_unitario), 0)
+  return form.detalles.reduce((sum, d) => {
+    const linea = d.subtotal_linea != null
+      ? Number(d.subtotal_linea)
+      : (Number(d.cantidad) || 0) * (Number(d.precio_unitario) || 0)
+    return sum + (Number(linea) || 0)
+  }, 0)
 })
 
 const loadCatalogos = async () => {
@@ -340,25 +271,23 @@ const loadCatalogos = async () => {
   } catch (e) { console.error(e) }
 }
 
-const addDetalle = () => {
-  form.detalles.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 })
-}
-
-const removeDetalle = (idx: number) => {
-  form.detalles.splice(idx, 1)
-}
-
 const submitForm = async () => {
   try {
     if (!form.proveedor_id) return alert('Selecciona un proveedor')
-    
+
+    const detalles = form.tipo_gasto === 'nomina'
+      ? []
+      : form.detalles.map((d: any) => ({
+          articulo_id: d.articulo_id,
+          cantidad: d.cantidad,
+          precio_unitario: d.precio_unitario,
+          subtotal_linea: d.subtotal_linea,
+        }))
+
     const payload = {
        ...form,
+       detalles,
        fecha_gasto: form.fecha_gasto ? new Date(form.fecha_gasto).toISOString() : null
-    }
-
-    if (form.tipo_gasto === 'nomina') {
-       payload.detalles = []
     }
 
     if (isEditing.value) {
@@ -399,14 +328,20 @@ onMounted(() => {
     }
     
     if (d.detalles) {
-       form.detalles = d.detalles.map((det: any) => ({
-          articulo_id: det.articulo_id,
-          cantidad: Number(det.cantidad),
-          precio_unitario: Number(det.precio_unitario)
-       }))
+       form.detalles = d.detalles.map((det: any) => {
+          const cantidad = Number(det.cantidad)
+          const precio_unitario = Number(det.precio_unitario)
+          const subtotal_linea = det.subtotal_linea != null
+             ? Number(det.subtotal_linea)
+             : Number((cantidad * precio_unitario).toFixed(2))
+          // Marcar como editado manualmente si no cuadra con cantidad×unitario,
+          // para no sobreescribir el ajuste al reeditar la línea.
+          const _editadoManual = Math.abs(subtotal_linea - cantidad * precio_unitario) > 0.005
+          return { articulo_id: det.articulo_id, cantidad, precio_unitario, subtotal_linea, _editadoManual }
+       })
     }
   } else {
-     addDetalle()
+     form.detalles.push({ articulo_id: null, cantidad: 1, precio_unitario: 0, subtotal_linea: 0, _editadoManual: false })
   }
 })
 </script>
