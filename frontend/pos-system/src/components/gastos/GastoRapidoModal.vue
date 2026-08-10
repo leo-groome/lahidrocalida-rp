@@ -284,10 +284,10 @@ const step = ref(1)
 // ── Step 1 ──────────────────────────────────────
 const tipoGasto = ref<string | null>(null)
 
+// Nómina se paga en el módulo de Compras (tanda de empleados), no desde caja.
 const tiposGasto = [
   { id: 'directo', label: 'Insumos', emoji: '🛒', desc: 'Compras de materia prima y suministros' },
   { id: 'indirecto', label: 'Servicios', emoji: '🔧', desc: 'Mantenimiento, luz, agua, internet' },
-  { id: 'nomina', label: 'Nómina', emoji: '👥', desc: 'Pago de sueldos y salarios' },
 ]
 
 function selectTipo(id: string) {

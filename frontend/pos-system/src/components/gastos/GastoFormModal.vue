@@ -58,7 +58,6 @@
                <select v-model="form.tipo_gasto" class="w-full bg-slate-50 border-0 rounded-2xl px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none cursor-pointer">
                  <option value="directo">Directo (Insumos)</option>
                  <option value="indirecto">Indirecto (Servicios)</option>
-                 <option value="nomina">Nómina</option>
                </select>
              </div>
              <div class="space-y-4">
@@ -124,40 +123,13 @@
             <textarea v-model="form.descripcion" rows="3" class="w-full bg-slate-50 border-0 rounded-[1.5rem] px-6 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none resize-none" placeholder="Escribe aquí cualquier detalle extra del gasto..."></textarea>
           </div>
 
-          <!-- SECCIÓN DETALLES (Si no es nómina) -->
-          <div v-if="form.tipo_gasto !== 'nomina'">
+          <!-- SECCIÓN DETALLES (artículos) -->
+          <div>
              <GastoDetallesEditor
                v-model:detalles="form.detalles"
                v-model:total-manual="form.total_manual"
                :articulos="articulos"
              />
-          </div>
-
-          <!-- SECCIÓN NOMINA (Solo total manual) -->
-          <div v-else class="animate-in slide-in-from-top-4">
-             <div class="bg-indigo-600 rounded-[2.5rem] p-10 flex flex-col items-center text-center space-y-6 shadow-2xl shadow-indigo-200 relative overflow-hidden">
-               <div class="absolute inset-0 bg-gradient-to-br from-indigo-500 to-indigo-700 opacity-50"></div>
-               <div class="relative z-10 w-20 h-20 bg-white/20 rounded-full flex items-center justify-center text-white mb-2">
-                 <Users class="w-10 h-10" />
-               </div>
-               <div class="relative z-10 space-y-1">
-                 <h3 class="text-xs font-black text-white/70 uppercase tracking-[0.3em]">Nómina de Personal</h3>
-                 <p class="text-2xl font-black text-white tracking-tight">Ingrese el monto total del pago</p>
-               </div>
-               
-               <div class="relative z-10 w-full max-w-sm">
-                  <span class="absolute left-6 top-1/2 -translate-y-1/2 text-3xl font-black text-white/40">$</span>
-                  <input 
-                    type="number" 
-                    step="0.01" 
-                    v-model.number="form.total_manual" 
-                    class="w-full bg-white/10 border-2 border-white/20 rounded-[1.5rem] px-12 py-6 text-4xl font-black text-white placeholder:text-white/20 focus:ring-4 focus:ring-white/20 focus:border-white transition-all outline-none text-center shadow-inner" 
-                    placeholder="0.00"
-                    required
-                  >
-               </div>
-               <p class="relative z-10 text-[10px] text-white/60 font-black tracking-widest uppercase">Este monto será registrado directamente como egreso.</p>
-             </div>
           </div>
 
         </form>
@@ -205,7 +177,7 @@ import SearchableSelect from './SearchableSelect.vue'
 import GastoDetallesEditor from './GastoDetallesEditor.vue'
 import {
   X, Calendar, Truck, Banknote,
-  Hash, Calculator, Users, Check
+  Hash, Calculator, Check
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -303,6 +275,12 @@ const submitForm = async () => {
 }
 
 onMounted(() => {
+  // La nómina se gestiona en el módulo de Compras (tanda de empleados).
+  if (props.initialData?.tipo_gasto === 'nomina') {
+    alert('La nómina se edita desde el módulo de Compras. Para cambiarla, elimínala y créala de nuevo.')
+    emit('close')
+    return
+  }
   loadCatalogos()
   if (props.initialData) {
     const d = props.initialData

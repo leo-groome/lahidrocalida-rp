@@ -275,8 +275,36 @@ class GastoDetalleResponse(GastoDetalleBase):
         from_attributes = True
 
 
+class NominaEmpleado(BaseModel):
+    id: int
+    nombre: str
+    rol: str
+
+    class Config:
+        from_attributes = True
+
+
+class NominaDetalleBase(BaseModel):
+    usuario_id: int
+    monto: Decimal = Field(..., ge=0)
+    notas: Optional[str] = None
+
+
+class NominaDetalleCreate(NominaDetalleBase):
+    pass
+
+
+class NominaDetalleResponse(NominaDetalleBase):
+    id: int
+    usuario: NominaEmpleado
+
+    class Config:
+        from_attributes = True
+
+
 class GastoBase(BaseModel):
-    proveedor_id: int
+    # Opcional: la nómina no lleva proveedor.
+    proveedor_id: Optional[int] = None
     tipo_gasto: str
     metodo_pago: str
     descripcion: Optional[str] = None
@@ -288,6 +316,7 @@ class GastoBase(BaseModel):
 
 class GastoCreate(GastoBase):
     detalles: List[GastoDetalleCreate] = []
+    nomina_detalles: List[NominaDetalleCreate] = []
     fecha_gasto: Optional[datetime] = None
 
 
@@ -296,8 +325,9 @@ class GastoResponse(GastoBase):
     subtotal: Decimal
     total: Decimal
     fecha_gasto: datetime
-    proveedor: ProveedorResponse
+    proveedor: Optional[ProveedorResponse] = None
     detalles: List[GastoDetalleResponse]
+    nomina_detalles: List[NominaDetalleResponse] = []
 
     class Config:
         from_attributes = True

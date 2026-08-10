@@ -57,6 +57,7 @@ class Usuario(Base):
     sucursal = relationship("Sucursal", back_populates="usuarios")
     pedidos = relationship("Pedido", back_populates="usuario")
     registros_asistencia = relationship("RegistroAsistencia", back_populates="usuario")
+    pagos_nomina = relationship("NominaDetalle", back_populates="usuario")
 
 
 class Platillo(Base):
@@ -185,7 +186,8 @@ class Gasto(Base):
     __tablename__ = "gastos"
 
     id = Column(Integer, primary_key=True, index=True)
-    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=False)
+    # Nullable: la nómina no lleva proveedor (se paga a empleados).
+    proveedor_id = Column(Integer, ForeignKey("proveedores.id"), nullable=True)
     tipo_gasto = Column(
         Enum("directo", "indirecto", "nomina", name="tipo_gasto_enum"),
         nullable=False,
@@ -211,6 +213,9 @@ class Gasto(Base):
     detalles = relationship(
         "GastoDetalle", back_populates="gasto", cascade="all, delete-orphan"
     )
+    nomina_detalles = relationship(
+        "NominaDetalle", back_populates="gasto", cascade="all, delete-orphan"
+    )
 
 
 class GastoDetalle(Base):
@@ -226,6 +231,21 @@ class GastoDetalle(Base):
     # Relaciones
     gasto = relationship("Gasto", back_populates="detalles")
     articulo = relationship("Articulo", back_populates="detalles_gasto")
+
+
+class NominaDetalle(Base):
+    """Una línea de pago a un empleado dentro de una tanda de nómina (Gasto tipo='nomina')."""
+    __tablename__ = "nomina_detalles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="CASCADE"), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    monto = Column(DECIMAL(10, 2), nullable=False)
+    notas = Column(Text, nullable=True)
+
+    # Relaciones
+    gasto = relationship("Gasto", back_populates="nomina_detalles")
+    usuario = relationship("Usuario", back_populates="pagos_nomina")
 
 
 class Turno(Base):

@@ -137,7 +137,11 @@
             <!-- Info Content -->
             <div class="flex-1 space-y-3">
               <div class="flex flex-wrap items-center gap-3">
-                <h3 class="text-xl font-black text-slate-900 tracking-tight">{{ gasto.proveedor?.nombre || 'Proveedor Desconocido' }}</h3>
+                <h3 class="text-xl font-black text-slate-900 tracking-tight">
+                  {{ gasto.tipo_gasto === 'nomina'
+                    ? 'Pago de Nómina'
+                    : (gasto.proveedor?.nombre || 'Proveedor Desconocido') }}
+                </h3>
                 <div class="flex gap-2">
                   <span :class="[
                     'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm',
@@ -160,6 +164,21 @@
                 </div>
                 <div v-if="gasto.descripcion" class="flex items-center gap-2 text-xs font-bold text-slate-500 italic max-w-md truncate">
                   <span class="text-slate-300">"</span>{{ gasto.descripcion }}<span class="text-slate-300">"</span>
+                </div>
+              </div>
+
+              <!-- Empleados de la nómina -->
+              <div v-if="gasto.nomina_detalles && gasto.nomina_detalles.length > 0" class="flex flex-wrap gap-2 pt-1">
+                <div
+                  v-for="nd in gasto.nomina_detalles.slice(0, 4)"
+                  :key="nd.id"
+                  class="bg-purple-50 border border-purple-100 px-3 py-1 rounded-xl flex items-center gap-2"
+                >
+                  <span class="text-[10px] font-bold text-purple-700">{{ nd.usuario?.nombre }}</span>
+                  <span class="text-[10px] font-black text-purple-600">${{ formatCurrency(nd.monto) }}</span>
+                </div>
+                <div v-if="gasto.nomina_detalles.length > 4" class="px-2 py-1 flex items-center">
+                  <span class="text-[10px] font-black text-slate-300">+{{ gasto.nomina_detalles.length - 4 }} más</span>
                 </div>
               </div>
 

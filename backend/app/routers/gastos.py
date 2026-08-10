@@ -3,7 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import and_, func
 
 from app.auth import get_current_active_user
@@ -15,6 +15,7 @@ from app.models import (
     CategoriaArticulo,
     Gasto,
     GastoDetalle,
+    NominaDetalle,
     Proveedor,
     Usuario,
     get_local_datetime,
@@ -35,6 +36,7 @@ from app.schemas import (
     PaginatedGastosResponse,
     ProveedorCreate,
     ProveedorResponse,
+    UsuarioResponse,
 )
 
 router = APIRouter(prefix="/gastos", tags=["gastos"])
@@ -67,6 +69,54 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
         raise HTTPException(status_code=400, detail="Tipo de gasto inválido")
     if data.metodo_pago not in METODOS_PAGO:
         raise HTTPException(status_code=400, detail="Método de pago inválido")
+    if data.tipo_gasto == "nomina":
+        if data.detalles:
+            raise HTTPException(status_code=400, detail="Nómina no lleva detalles de artículos")
+        if not data.nomina_detalles:
+            raise HTTPException(status_code=400, detail="Se requiere al menos un empleado en la nómina")
+    else:
+        if data.nomina_detalles:
+            raise HTTPException(status_code=400, detail="Solo la nómina lleva empleados")
+        if data.proveedor_id is None:
+            raise HTTPException(status_code=400, detail="Proveedor requerido")
+        if not data.detalles:
+            raise HTTPException(status_code=400, detail="Se requiere al menos un artículo")
+
+
+def _build_nomina_detalles(
+    detalles_data: List,
+    db: Session,
+    sucursal_id: int,
+) -> tuple[list[NominaDetalle], Decimal]:
+    """Valida empleados (misma sucursal, activos) y arma las líneas de nómina."""
+    usuario_ids = [d.usuario_id for d in detalles_data]
+    if len(usuario_ids) != len(set(usuario_ids)):
+        raise HTTPException(status_code=400, detail="Empleado repetido en la nómina")
+    usuarios = (
+        db.query(Usuario)
+        .filter(
+            Usuario.id.in_(usuario_ids),
+            Usuario.sucursal_id == sucursal_id,
+            Usuario.activo == True,  # noqa: E712
+        )
+        .all()
+    )
+    if len(usuarios) != len(set(usuario_ids)):
+        raise HTTPException(status_code=400, detail="Hay empleados inválidos, inactivos o de otra sucursal")
+    detalles = []
+    total = Decimal("0.00")
+    for d in detalles_data:
+        monto = _normalize_decimal(d.monto)
+        if monto <= 0:
+            raise HTTPException(status_code=400, detail="El monto de cada empleado debe ser mayor a 0")
+        total += monto
+        detalles.append(
+            NominaDetalle(usuario_id=d.usuario_id, monto=monto, notas=d.notas)
+        )
+    total = _normalize_decimal(total)
+    if total <= 0:
+        raise HTTPException(status_code=400, detail="El total de la nómina debe ser mayor a 0")
+    return detalles, total
 
 
 @router.get("/proveedores", response_model=List[ProveedorResponse])
@@ -280,6 +330,24 @@ def _build_gasto_detalles(
     return detalles, subtotal
 
 
+@router.get("/empleados", response_model=List[UsuarioResponse])
+def list_empleados_nomina(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Empleados activos de la sucursal del usuario, para armar la nómina."""
+    _ensure_can_manage_gastos(current_user)
+    return (
+        db.query(Usuario)
+        .filter(
+            Usuario.sucursal_id == current_user.sucursal_id,
+            Usuario.activo == True,  # noqa: E712
+        )
+        .order_by(Usuario.nombre)
+        .all()
+    )
+
+
 @router.post("/", response_model=GastoResponse, status_code=status.HTTP_201_CREATED)
 def create_gasto(
     data: GastoCreate,
@@ -289,23 +357,22 @@ def create_gasto(
     _ensure_can_manage_gastos(current_user)
     _validate_gasto_inputs(data)
 
-    proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-    if not proveedor:
-        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-    if proveedor.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+    detalles: list[GastoDetalle] = []
+    nomina_detalles: list[NominaDetalle] = []
+    proveedor_id = None
 
     if data.tipo_gasto == "nomina":
-        if data.detalles:
-            raise HTTPException(status_code=400, detail="Nómina no lleva detalles de artículos")
-        if data.total_manual is None:
-            raise HTTPException(status_code=400, detail="Total manual requerido para nómina")
-        subtotal = _normalize_decimal(data.total_manual)
+        nomina_detalles, subtotal = _build_nomina_detalles(
+            data.nomina_detalles, db, current_user.sucursal_id
+        )
         total = subtotal
-        detalles = []
     else:
-        if not data.detalles:
-            raise HTTPException(status_code=400, detail="Se requiere al menos un artículo")
+        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+        if not proveedor:
+            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        if proveedor.sucursal_id != current_user.sucursal_id:
+            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+        proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -313,7 +380,7 @@ def create_gasto(
     fecha_gasto = data.fecha_gasto if data.fecha_gasto else get_local_datetime()
 
     gasto = Gasto(
-        proveedor_id=data.proveedor_id,
+        proveedor_id=proveedor_id,
         tipo_gasto=data.tipo_gasto,
         metodo_pago=data.metodo_pago,
         descripcion=data.descripcion,
@@ -324,8 +391,9 @@ def create_gasto(
         fecha_gasto=fecha_gasto,
         notas=data.notas,
         sucursal_id=current_user.sucursal_id,
-        turno_id=data.turno_id,
+        turno_id=data.turno_id if data.tipo_gasto != "nomina" else None,
         detalles=detalles,
+        nomina_detalles=nomina_detalles,
     )
     db.add(gasto)
     db.commit()
@@ -390,6 +458,7 @@ def list_gastos(
             joinedload(Gasto.detalles)
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
+            selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
         )
         .order_by(Gasto.fecha_gasto.desc())
         .offset((page - 1) * page_size)
@@ -589,6 +658,7 @@ def get_gasto(
             joinedload(Gasto.detalles)
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
+            selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
         )
         .filter(Gasto.id == gasto_id)
         .first()
@@ -618,27 +688,26 @@ def update_gasto(
     if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
         raise HTTPException(status_code=403, detail="No autorizado para editar este gasto")
 
-    proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-    if not proveedor:
-        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-    if proveedor.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+    detalles: list[GastoDetalle] = []
+    nomina_detalles: list[NominaDetalle] = []
+    proveedor_id = None
 
     if data.tipo_gasto == "nomina":
-        if data.detalles:
-            raise HTTPException(status_code=400, detail="Nómina no lleva detalles de artículos")
-        if data.total_manual is None:
-            raise HTTPException(status_code=400, detail="Total manual requerido para nómina")
-        subtotal = _normalize_decimal(data.total_manual)
+        nomina_detalles, subtotal = _build_nomina_detalles(
+            data.nomina_detalles, db, current_user.sucursal_id
+        )
         total = subtotal
-        detalles = []
     else:
-        if not data.detalles:
-            raise HTTPException(status_code=400, detail="Se requiere al menos un artículo")
+        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+        if not proveedor:
+            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        if proveedor.sucursal_id != current_user.sucursal_id:
+            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+        proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
-    gasto.proveedor_id = data.proveedor_id
+    gasto.proveedor_id = proveedor_id
     gasto.tipo_gasto = data.tipo_gasto
     gasto.metodo_pago = data.metodo_pago
     gasto.descripcion = data.descripcion
@@ -649,11 +718,15 @@ def update_gasto(
     if data.fecha_gasto:
         gasto.fecha_gasto = data.fecha_gasto
     gasto.notas = data.notas
-    gasto.turno_id = data.turno_id
+    gasto.turno_id = data.turno_id if data.tipo_gasto != "nomina" else None
 
     gasto.detalles.clear()
     for detalle in detalles:
         gasto.detalles.append(detalle)
+
+    gasto.nomina_detalles.clear()
+    for nd in nomina_detalles:
+        gasto.nomina_detalles.append(nd)
 
     db.commit()
     db.refresh(gasto)
