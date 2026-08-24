@@ -1,6 +1,6 @@
 # La Hidrocálida v2 — Tablero de sprints
 
-**Rama base:** `flujo-mesero` · **Última actualización:** 2026-08-24 (S0 cerrado)
+**Rama base:** `main` (antes `flujo-mesero`, promovida el 2026-08-24) · **Última actualización:** 2026-08-24 (S0 cerrado + monorepo migrado)
 
 Documento vivo. El alcance y el *por qué* de cada bloque están en [PLAN_V2.md](./PLAN_V2.md); la
 foto del sistema tal como funciona hoy está en [ESTADO_ACTUAL.md](./ESTADO_ACTUAL.md). Este archivo
@@ -169,6 +169,23 @@ las tareas a los agentes.**
 **Las 6 divergencias `models.py` vs. schema real** (sección "Hallazgos de 0.1/0.2" arriba) siguen
 sin resolver y son ahora la entrada más concreta para arrancar S1 — en particular
 `turnos.diferencia`, que es un bug de negocio activo (se calcula, nunca se guarda).
+
+**Repo Cleanup (2026-08-24, post-S0):** inmediatamente después de cerrar S0 se hizo el cleanup de
+repo que lleva tiempo pendiente:
+
+- **Monorepo `apps/`:** `backend/` → `apps/backend/`, `frontend/pos-system/` → `apps/frontend/`,
+  `print_service/` → `apps/print-service/` (usando `git mv` para preservar historial).
+  `alembic/` y `alembic.ini` movidos dentro de `apps/backend/` — el backend ahora es auto-contenido.
+- **Rama única:** `flujo-mesero` promovida a `main` via force-push. Ramas eliminadas del remoto:
+  `flujo-mesero`, `feat/caja-ui-test`, `perf/neon-egress`. Solo queda `main`.
+- **GitHub Actions activados:** 3 workflows operativos —
+  `backend-ci.yml` (ruff + pytest), `frontend-ci.yml` (vue-tsc + build), `security-sast.yml`
+  (Gitleaks semanal). Notificaciones vía Telegram (secrets `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`
+  configurados en el repo).
+- **`pyproject.toml` + `uv.lock` generados** en `apps/backend/` para que `uv sync --frozen`
+  funcione en CI. `ruff` agregado como dev dependency. 51 auto-fixes de estilo aplicados.
+- **`pnpm-workspace.yaml`** en raíz y `package.json` root para habilitar `pnpm --filter frontend`.
+- **`print_service.zip`** eliminado.
 
 ---
 

@@ -1,6 +1,6 @@
 # La Hidrocálida POS — Estado actual del sistema
 
-**Última revisión:** 2026-08-24 · rama `flujo-mesero`, commit `1fb6e94` (post-S0).
+**Última revisión:** 2026-08-24 · rama `main`, commit `db6e440` (post-S0, monorepo migrado).
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
 a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en
@@ -49,33 +49,45 @@ pantallas de cocina, e impresión térmica desde un servicio local.
 
 ```
 lahidrocalida-rp/
-├── README.md                   # Cómo levantar el proyecto
+├── README.md
 ├── AGENTS.md                   # Guía de contribución
+├── package.json                # Root monorepo (pnpm workspace)
+├── pnpm-workspace.yaml         # Apunta a apps/frontend
+├── docker-compose.yml          # app + Postgres, dev local reproducible
+├── .github/
+│   └── workflows/
+│       ├── backend-ci.yml      # uv sync + ruff + pytest en cada push a apps/backend/**
+│       ├── frontend-ci.yml     # pnpm + vue-tsc + build en cada push a apps/frontend/**
+│       └── security-sast.yml   # Gitleaks cada lunes + push a main; alerta Telegram
 ├── docs/
 │   ├── ESTADO_ACTUAL.md        # Este archivo
 │   ├── PLAN_V2.md              # Plan de la siguiente versión
 │   └── SPRINTS.md              # Tablero de avance por sprint
-├── backend/
-│   ├── app/
-│   │   ├── main.py             # App init, CORS, /health
-│   │   ├── models.py           # 14 modelos ORM (332 lín)
-│   │   ├── schemas.py          # Pydantic (449 lín)
-│   │   ├── auth.py             # JWT + hashing (121 lín)
-│   │   ├── websocket_manager.py / websocket_routes.py
-│   │   ├── core/{config.py, cache.py}
-│   │   ├── db/session.py
-│   │   ├── utils/timezone.py
-│   │   └── routers/            # 10 routers, 5 313 líneas
-│   ├── tests/                  # pytest — solo test_network_optimizations.py
-│   ├── .env.example
-│   └── Dockerfile               # multi-stage, usuario no-root, healthcheck
-├── frontend/pos-system/src/
-│   ├── views/                  # 9 vistas (8 712 líneas)
-│   ├── components/             # ~30 componentes
-│   ├── stores/ services/ api/ router/ utils/ types.ts
-├── print_service/              # Servicio impresora térmica (Windows)
-├── docker-compose.yml           # app + Postgres, dev local reproducible
-└── alembic/versions/           # 1 migración baseline (colapsada de 6, S0)
+└── apps/
+    ├── backend/
+    │   ├── app/
+    │   │   ├── main.py             # App init, CORS, /health
+    │   │   ├── models.py           # 14 modelos ORM (332 lín)
+    │   │   ├── schemas.py          # Pydantic (449 lín)
+    │   │   ├── auth.py             # JWT + hashing (121 lín)
+    │   │   ├── websocket_manager.py / websocket_routes.py
+    │   │   ├── core/{config.py, cache.py}
+    │   │   ├── db/session.py
+    │   │   ├── utils/timezone.py
+    │   │   └── routers/            # 10 routers, 5 313 líneas
+    │   ├── alembic/versions/       # 1 migración baseline (colapsada de 6, S0)
+    │   ├── alembic.ini
+    │   ├── tests/                  # pytest — solo test_network_optimizations.py
+    │   ├── pyproject.toml          # uv project + ruff config + pytest config
+    │   ├── uv.lock
+    │   ├── .env.example
+    │   └── Dockerfile              # multi-stage, usuario no-root, healthcheck
+    ├── frontend/
+    │   └── src/
+    │       ├── views/              # 9 vistas (8 712 líneas)
+    │       ├── components/         # ~30 componentes
+    │       └── stores/ services/ api/ router/ utils/ types.ts
+    └── print-service/              # Servicio impresora térmica (Windows → rewrite Go pendiente)
 ```
 
 Tamaño de los routers: `pedidos.py` 1 464 · `turnos.py` 965 · `admin.py` 880 · `gastos.py` 752 ·
@@ -232,12 +244,16 @@ silencio para no bloquear el cobro. Cola con reintentos (máx. 5).
 | Backend | Docker → Railway | Activo, Dockerfile multi-stage, no-root, healthcheck |
 | DB | Neon Cloud (AWS us-east-2) | Activo — instancia nueva, migrada de Azure el 2026-08-24 (S0) |
 | Redis | Railway | Provisionado, sin uso hasta S2 |
-| Migraciones | Alembic (1 baseline colapsado, head `1af66464b276`) | Completas — reconstruye el esquema completo sobre base vacía, verificado byte a byte contra prod |
-| Tests | pytest — 1 archivo | Cobertura casi nula |
-| CI/CD backend | — | No configurado |
-| docker-compose | `docker-compose.yml` (raíz) | `docker compose up` levanta app + Postgres desde cero |
+| Migraciones | Alembic (1 baseline colapsado, head `1af66464b276`) en `apps/backend/alembic/` | Completas |
+| Tests | pytest — 8 tests, cobertura mínima | `apps/backend/tests/` |
+| CI/CD backend | GitHub Actions `backend-ci.yml` | ✅ Activo — ruff + pytest en cada push a `apps/backend/**` |
+| CI/CD frontend | GitHub Actions `frontend-ci.yml` | ✅ Activo — vue-tsc + build en cada push a `apps/frontend/**` |
+| Seguridad | GitHub Actions `security-sast.yml` | ✅ Activo — Gitleaks cada lunes, alerta Telegram |
+| docker-compose | `docker-compose.yml` (raíz) | `docker compose up` levanta app + Postgres; context `./apps/backend` |
 
-**Ramas:** `main` (producción) · `flujo-mesero` (desarrollo activo).
+**Ramas:** solo `main` (producción y desarrollo). `flujo-mesero` fue promovida a `main` el 2026-08-24.
+
+**Estructura:** monorepo bajo `apps/` — `apps/backend/`, `apps/frontend/`, `apps/print-service/`.
 
 **Detalle de la migración de infraestructura (S0)** en
 [SPRINTS.md](./SPRINTS.md#s0--migración-de-infraestructura): por qué el baseline se generó por
@@ -268,7 +284,6 @@ query string de los WS).
 | N+1 en `resumen_asistencia` | Media | `asistencia.py:142-151` |
 | `CajaView.vue` 4 093 líneas · `MeseroView.vue` 2 580 | Media | `views/` |
 | `print()` como logging | Baja | Routers |
-| Sin CI/CD backend | Media | Infraestructura — `docker-compose.yml` ya existe (S0) |
 
 El plan v2 ataca todos los de severidad alta. Detalle y orden en [PLAN_V2.md](./PLAN_V2.md).
 
