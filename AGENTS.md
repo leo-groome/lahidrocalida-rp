@@ -1,21 +1,30 @@
 # AGENTS.md - Development Guidelines for AI Agents like Gemini, ChatGPT, etc.
 
+> **Contexto primero:** lee [docs/ESTADO_ACTUAL.md](docs/ESTADO_ACTUAL.md) para saber cómo funciona
+> el sistema hoy, [docs/PLAN_V2.md](docs/PLAN_V2.md) para lo que se está construyendo, y
+> [docs/SPRINTS.md](docs/SPRINTS.md) para saber en qué sprint va el trabajo y qué tarea sigue. Este
+> archivo cubre solo convenciones y comandos.
+
 ## 🚀 Build, Lint & Test Commands
 
 ### Backend (FastAPI/Python)
 
-**Environment Setup:**
+**Environment Setup:** siempre `uv` — nunca `pip`, `venv` manual ni `poetry`.
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
-pip install -r requirements.txt
+uv sync
+cp .env.example .env   # editar DATABASE_URL y SECRET_KEY
 ```
 
 **Development Server:**
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+**Migraciones (solo Alembic, nunca `create_all` en producción):**
+```bash
+uv run alembic upgrade head
+uv run alembic revision --autogenerate -m "descripcion"
 ```
 
 **Database Health Check:**
@@ -27,13 +36,14 @@ curl http://localhost:8000/health/database
 - Auto-generated docs: `http://localhost:8000/docs`
 - Alternative docs: `http://localhost:8000/redoc`
 
-**Run Single Test File:**
+**Tests:** `pytest` está configurado; los tests viven en `backend/tests/`. La cobertura hoy es
+mínima (un solo archivo), pero el framework existe y todo lo nuevo debe traer test.
 ```bash
-# No automated test framework configured
-# Run individual test files manually:
-python print_service/scripts/test_printer.bat
-python print_service/scripts/test_full_system.bat
+cd backend
+uv run pytest                                   # toda la suite
+uv run pytest tests/test_network_optimizations.py -v   # un archivo
 ```
+Endpoints se prueban con `httpx.AsyncClient`. Mínimo por cambio: happy path + un caso de error.
 
 ### Frontend (Vue.js/TypeScript)
 
@@ -141,9 +151,11 @@ VITE_API_URL=http://localhost:8000
 
 ## 🧪 Testing Strategy
 
-- No automated test framework configured.
-- Manual testing via API endpoints and UI.
-- Utility test scripts in `print_service/scripts/` (run individually).
+- `pytest` configurado en el backend (`backend/tests/`). Cobertura actual mínima — todo lo nuevo
+  debe traer test de happy path + al menos un caso de error.
+- Frontend sin framework de tests todavía. Recomendado: Vitest / Playwright.
+- Testing manual complementario vía API y UI.
+- Scripts de utilería en `print_service/scripts/` (se corren individualmente).
 - Frontend UI Guidelines:
 - - Pozole button: ensure desktop grid alignment; color green; increased padding and height adjustments as implemented.
 - - Ensure consistency across responsive breakpoints; mobile keeps the existing modal behavior.
@@ -155,7 +167,6 @@ VITE_API_URL=http://localhost:8000
 - Tras guardar, se recarga el pedido completo con GET /pedidos/{id} para reflejar los cambios, sin modificar el estado del pedido.
 - Se añadió la opción de imprimir adelantadamente el ticket desde la tarjeta (POST /pedidos/{id}/imprimir).
 - En la UI, la zona de edición de artículos es scrollable cuando hay más de 3 artículos para evitar desplazar el resto de la tarjeta.
-- Recommended future setup: pytest (backend), Vitest/Playwright (frontend).
 
 ## 🖨️ Sistema de Impresión Automática
 
@@ -239,7 +250,7 @@ curl http://localhost:3001/health
 
 ## 🚨 Critical Patterns to Follow
 
-1. **Always use virtual environment** for Python development.
+1. **Always use `uv`** for Python (`uv sync`, `uv add`, `uv run`). Never `pip` or manual venvs.
 2. **Always use pnpm** instead of npm for frontend dependencies.
 3. **Validate user permissions** on all protected endpoints.
 4. **Use proper TypeScript typing** throughout the frontend.

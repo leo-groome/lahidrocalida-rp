@@ -33,6 +33,12 @@ import app.models  # noqa: F401,E402
 # Use model metadata for autogenerate
 target_metadata = Base.metadata
 
+# DATABASE_URL de entorno tiene prioridad sobre alembic.ini: evita que un
+# `alembic upgrade`/`stamp` corrido en Docker o Railway se conecte por accidente
+# a la URL que haya quedado hardcodeada en el .ini.
+if os.environ.get("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")

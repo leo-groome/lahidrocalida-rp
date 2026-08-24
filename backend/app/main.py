@@ -1,6 +1,6 @@
 from app import websocket_routes
-from app.db.session import engine, get_db
-from app.models import Base
+from app.core.config import settings
+from app.db.session import get_db
 from app.routers import (
     admin,
     asistencia,
@@ -25,21 +25,12 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-# Crear todas las tablas
-Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="La Hidrocálida POS API")
 
-# Configurar CORS
+# CORS: orígenes declarados en CORS_ORIGINS (env), nunca hardcodeados en el código.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Para servidor de desarrollo Vite local
-        "http://localhost:5174",  # Puerto alternativo si 5173 está ocupado
-        "https://lahidrocalida.vercel.app",
-        "http://192.168.2.69:5173",
-        # Agregar URLs de producción más tarde, ej. "https://yourapp.com"
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,31 +55,18 @@ def root():
     return {"message": "La Hidrocálida POS API"}
 
 
+@app.get("/health")
+def health():
+    """Healthcheck simple, sin tocar la DB. Lo usan Docker y Railway."""
+    return {"status": "ok"}
+
+
 @app.get("/health/database")
 def check_database_connection(db: Session = Depends(get_db)):
-    """
-    Endpoint para verificar la conexión a la base de datos.
-    Ejecuta una consulta simple para confirmar que todo funciona.
-    """
+    """Verifica la conexión a la base de datos sin exponer host ni credenciales."""
     try:
-        # Ejecutar una consulta simple
-        result = db.execute(text("SELECT 5 as test"))
-        test_value = result.fetchone()
-
-        # Obtener el host para depuración (seguro, sin credenciales)
-        db_host = str(engine.url).split('@')[-1] if engine.url else "unknown"
-
-        return {
-            "status": "success",
-            "message": "Conexión a la base de datos exitosa",
-            "database": "PostgreSQL (Neon)",
-            "host": db_host,
-            "test_query": "SELECT 5",
-            "result": test_value[0] if test_value else None,
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": "Error al conectar con la base de datos",
-            "error": str(e),
-        }
+        db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception:
+        logging.getLogger(__name__).exception("Fallo de conexión a la base de datos")
+        return {"status": "error"}

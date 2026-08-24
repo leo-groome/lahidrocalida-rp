@@ -1,0 +1,283 @@
+# La Hidrocálida POS — Estado actual del sistema
+
+**Última revisión:** 2026-08-24 · rama `flujo-mesero`, commit `09bb815`.
+
+Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
+a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en
+[SPRINTS.md](./SPRINTS.md).
+
+---
+
+## 1. Qué es
+
+POS para pozolería en producción. Flujo: **mesero toma orden → cocina prepara → cajero cobra**.
+Cinco roles con interfaces dedicadas, tiempo real por WebSocket, PWA instalable en tablets y
+pantallas de cocina, e impresión térmica desde un servicio local.
+
+- Frontend: https://lahidrocalida.vercel.app (Vercel, CI/CD por push a GitHub)
+- Backend: Docker → Railway
+- DB: PostgreSQL en Neon Cloud
+
+---
+
+## 2. Stack
+
+| Capa | Tecnología | Versión |
+|---|---|---|
+| Frontend | Vue 3 + TypeScript | 3.5.21 / 5.8.3 |
+| CSS | Tailwind CSS | 4.1.13 |
+| Estado | Pinia | 3.0.3 |
+| Router | Vue Router | 4.6.3 |
+| HTTP | Axios | 1.12.2 |
+| Charts | Chart.js + vue-chartjs | 4.5.1 / 5.3.3 |
+| Build | Vite | 7.1.7 |
+| PWA | vite-plugin-pwa | 1.2.0 |
+| Backend | FastAPI | 0.117.1 |
+| ORM | SQLAlchemy (**síncrono**, psycopg2) | 2.0.43 |
+| Migraciones | Alembic | 1.13.2 |
+| Auth | JWT HS256 (python-jose) + Argon2 | — |
+| WebSocket | websockets | 11.0.3 |
+| Paquetes | pnpm (front) · uv (back) | — |
+
+> El backend usa SQLAlchemy **síncrono** dentro de endpoints `async def`. Es una desviación
+> consciente del estándar del equipo (async end-to-end) y hoy es la causa de los timeouts de
+> WebSocket. Se corrige en el Bloque 1 del plan v2.
+
+---
+
+## 3. Estructura del repo
+
+```
+lahidrocalida-rp/
+├── README.md                   # Cómo levantar el proyecto
+├── AGENTS.md                   # Guía de contribución
+├── docs/
+│   ├── ESTADO_ACTUAL.md        # Este archivo
+│   ├── PLAN_V2.md              # Plan de la siguiente versión
+│   └── SPRINTS.md              # Tablero de avance por sprint
+├── backend/
+│   ├── app/
+│   │   ├── main.py             # App init, CORS, /health
+│   │   ├── models.py           # 14 modelos ORM (332 lín)
+│   │   ├── schemas.py          # Pydantic (449 lín)
+│   │   ├── auth.py             # JWT + hashing (121 lín)
+│   │   ├── websocket_manager.py / websocket_routes.py
+│   │   ├── core/{config.py, cache.py}
+│   │   ├── db/session.py
+│   │   ├── utils/timezone.py
+│   │   └── routers/            # 10 routers, 5 313 líneas
+│   ├── tests/                  # pytest — solo test_network_optimizations.py
+│   └── Dockerfile
+├── frontend/pos-system/src/
+│   ├── views/                  # 9 vistas (8 712 líneas)
+│   ├── components/             # ~30 componentes
+│   ├── stores/ services/ api/ router/ utils/ types.ts
+├── print_service/              # Servicio impresora térmica (Windows)
+└── alembic/versions/           # 6 migraciones, cadena lineal
+```
+
+Tamaño de los routers: `pedidos.py` 1 464 · `turnos.py` 965 · `admin.py` 880 · `gastos.py` 752 ·
+`reportes.py` 325 · `products.py` 210 · `auth.py` 198 · `propinas.py` 197 · `asistencia.py` 180 ·
+`users.py` 141.
+
+---
+
+## 4. Modelo de datos
+
+14 tablas en `backend/app/models.py`:
+
+| Tabla | Propósito | Notas |
+|---|---|---|
+| `sucursales` | Sucursal | Clave de aislamiento (`sucursal_id`) |
+| `usuarios` | Staff | `pin` con Argon2; soft delete vía `activo` |
+| `platillos` | Menú | `kds_name`, `estado` (disponible/no_disponible) |
+| `pedidos` | Órdenes | `numero_display`, `total`, `estado`, `metodo_pago`, propinas, `tipo_orden`, `turno_id`, `client_request_id`, `parent_pedido_id` |
+| `articulos_pedido` | Líneas de orden | `estado_item`; **sin timestamps propios** |
+| `proveedores` | Proveedores | |
+| `categorias_articulo` | Categorías de gasto | |
+| `articulos` | Insumos | `unidad`, `costo_estandar`; **sin stock** |
+| `gastos` | Cabecera de compra | `tipo_gasto`, `metodo_pago`, `turno_id` |
+| `gasto_detalles` | Líneas de compra | |
+| `nomina_detalles` | Pago de nómina por empleado | Gasto tipo `nomina`, sin proveedor |
+| `turnos` | Turno de caja | Índice único parcial: 1 turno `abierto` por sucursal |
+| `turno_denominaciones` | Conteo de efectivo | Tipo inicial/final |
+| `registros_asistencia` | Check-in/out | **Sin `sucursal_id`, `turno_id` ni snapshot de rol** |
+
+**Relaciones clave:** `Turno → Pedido` y `Turno → Gasto` (el turno es la unidad contable, no la
+fecha); `Pedido → ArticuloPedido` y `Gasto → GastoDetalle` con cascade delete.
+
+**Lo que no existe:** stock ni movimientos de inventario, relación platillo→insumo (BOM), campos
+fiscales (`subtotal`/`iva`/`rfc`), bitácora de eventos de pedido, tabla de aprobaciones.
+
+---
+
+## 5. Endpoints
+
+### `/auth`
+| Método | Ruta | Auth |
+|---|---|---|
+| POST | `/auth/login-simple` — login staff (`user_id` + `pin`) | — |
+| POST | `/auth/login-admin` — admin (payload legado `email`/`password`) | — |
+| POST | `/auth/asistencia` — check-in/out público con PIN | — |
+| POST | `/auth/login` — OAuth2 form | — |
+| GET | `/auth/me` | Bearer |
+| GET | `/auth/users` — lista para el selector de login | **sin auth** |
+
+### `/pedidos` (núcleo, 1 464 líneas)
+`POST /` · `GET /` · `GET /{id}` · `PUT /{id}` (estado) · `PUT /{id}/agregar-articulos` ·
+`PUT /{id}/actualizar-articulos` · `PUT /articulos/{id}` (estado de ítem) · `POST /{id}/dividir` ·
+`POST /{id}/dividir_por_montos` · `POST /{id}/imprimir`.
+
+**Estados:** `pendiente → preparando → listo → entregado → cuenta_solicitada → pagado`, más
+`cancelado` y `dividido`.
+
+**Transiciones por rol** (hoy es una whitelist rol→destino; **no valida el estado de origen**):
+mesero `entregado`/`cuenta_solicitada` · cocina `preparando`/`listo` · cajero `pagado`/`cancelado` ·
+admin cualquiera.
+
+### Resto
+- `/usuarios` — CRUD (el `GET` no valida rol)
+- `/platillos` — CRUD + `PATCH /{id}/disponibilidad` + `/ordenados-popularidad`
+- `/turnos` — `iniciar`, `activo`, `{id}/resumen`, `{id}/cerrar`, `historial`
+- `/gastos` — CRUD de gastos, proveedores, categorías, artículos; nómina por tanda
+- `/propinas` — `/reporte`, `/detalle`
+- `/reportes` — `/dia/tickets`, `/dia/analytics`
+- `/asistencia` — `/`, `/usuario/{id}`, `/resumen` (solo admin)
+- `/admin` — `/analytics` por rango
+- WS `/ws/{client_type}?token={JWT}` · `GET /ws/stats` (**sin auth**)
+- `/health`, `/health/database` (**expone el host de la DB**)
+
+---
+
+## 6. Roles
+
+| Rol | Frontend | Backend |
+|---|---|---|
+| `mesero` | `/mesero` | Crear pedidos, agregar ítems, marcar entregado |
+| `cajero` | `/caja` | Cobrar, propinas, reportes del día, turnos |
+| `cocina` | `/kds-view`, `/kds-manager` | Marcar preparando/listo, toggle disponibilidad |
+| `administrador` | Todo | Lo anterior + usuarios, analytics, dividir cuenta |
+| `compras` | `/compras` | Gestión de gastos y compras |
+
+Los checks de rol están **inline en cada endpoint** (~30 repeticiones) con cuatro helpers
+duplicados: `_ensure_admin_access` (admin), `_ensure_admin` (asistencia), `_validar_permisos_turnos`
+(turnos), `_ensure_can_manage_gastos` (gastos). Ya divergen entre sí.
+
+---
+
+## 7. Flujo operativo de una orden
+
+```
+1. Mesero → MeseroView, arma el carrito (modal de variantes para Pozole)
+2. POST /pedidos/ → estado "pendiente"
+   └── backend valida turno activo → inyecta turno_id (sin turno: 400)
+   └── WebSocket → KDS y Caja
+3. Cocina ve la orden en KDSView (pantalla grande, solo lectura)
+4. KDSManager (tablet): Preparando → Listo por ítem
+   └── WebSocket → Mesero y Caja
+5. Mesero marca "entregado" (bebidas se marcan aparte, no se auto-entregan)
+6. Mesero solicita cuenta → "cuenta_solicitada"
+   └── auto-imprime ticket (print_service:3001)
+7. Cajero cobra: método de pago, propina, cambio en efectivo
+   └── admin puede dividir cuenta (por artículos o por montos)
+8. Orden → "pagado" → WebSocket a todos → entra en analytics del día
+```
+
+---
+
+## 8. Tiempo real (WebSocket)
+
+`src/services/websocket.ts` — reconexión con backoff exponencial (3 s → 30 s máx), integrado con
+`visibilitychange` y `online`, heartbeat cada 30 s.
+
+**Eventos:** `pedido_created`, `pedido_estado_changed`, `articulo_estado_changed`,
+`connection_established`.
+
+**Backend** (`websocket_manager.py`): broadcast por tipo de cliente + sucursal, **estado en memoria
+del proceso** (no escala a más de un worker), limpieza de zombies a los 120 s sin ping.
+
+**Red de seguridad:** las cuatro vistas operativas (`CajaView`, `KDSView`, `KDSManager`,
+`MeseroView`) hacen polling cada 5 s cuando el WS está caído, y un refresh preventivo si no hubo
+tráfico en 45 s. Es lo que hoy salva los eventos perdidos.
+
+---
+
+## 9. Impresión
+
+`print_service/` — servicio Python + Flask + ESC/POS en Windows, puerto 3001, impresora Easytime
+SP-POS891ED (80 mm). El backend hace POST automático al marcar `cuenta_solicitada`; falla en
+silencio para no bloquear el cobro. Cola con reintentos (máx. 5).
+
+---
+
+## 10. Autenticación
+
+- JWT HS256, **expiración 24 h** (`ACCESS_TOKEN_EXPIRE_MINUTES = 1440`), payload `sub` + `exp`.
+- Sin `jti`, sin refresh, sin blacklist → **no hay forma de invalidar una sesión**.
+- PIN con Argon2, retrocompatible con bcrypt.
+- `verify_password` acepta texto plano si el hash no empieza con `$` (fallback legado).
+- Sin rate limiting en ningún endpoint de login.
+- Aislamiento por `sucursal_id`.
+
+---
+
+## 11. Infraestructura
+
+| Servicio | Plataforma | Estado |
+|---|---|---|
+| Frontend | Vercel | Activo |
+| Backend | Docker → Railway | Activo, Dockerfile single-stage |
+| DB | Neon Cloud | Activo |
+| Migraciones | Alembic (6, cadena lineal, head `c4d5e6f7a8b9`) | **Incompletas** |
+| Tests | pytest — 1 archivo | Cobertura casi nula |
+| CI/CD backend | — | No configurado |
+| docker-compose | — | No existe |
+
+**Advertencia sobre Alembic:** `main.py` llama `Base.metadata.create_all()` en el arranque, y solo
+2 de las 6 migraciones crean tablas. Las 10 tablas núcleo no tienen migración: `alembic upgrade
+head` sobre una base vacía **no** reconstruye el esquema. Se corrige en el Bloque 0 del plan v2.
+
+**Ramas:** `main` (producción) · `flujo-mesero` (desarrollo activo).
+
+---
+
+## 12. Deuda técnica conocida
+
+| Issue | Severidad | Dónde |
+|---|---|---|
+| Endpoints `async def` con sesión síncrona → bloqueo del event loop | Alta | `routers/*.py` |
+| WS manager en memoria; no soporta >1 worker | Alta | `websocket_manager.py` |
+| Sin máquina de estados (whitelist rol→destino) | Alta | `pedidos.py:839-844` |
+| Carrera en `update_articulo_estado` (check-then-act, 2 commits) | Alta | `pedidos.py:1005,1018` |
+| Alembic incompleto + `create_all()` | Alta | `main.py:29` |
+| Sin rate limiting en logins | Alta | `routers/auth.py` |
+| Fallback de password en texto plano | Alta | `auth.py:35-38` |
+| Cobertura de tests casi nula | Alta | Todo el proyecto |
+| Check-in por NIP ignora la fecha del registro abierto | Alta | `routers/auth.py:114-128` |
+| Turno sin cerrar bloquea el siguiente y sigue capturando pedidos | Alta | `turnos.py:179-184` |
+| Fechas naive comparadas contra `TIMESTAMPTZ` | Media | `asistencia.py:42-50,127-128` |
+| N+1 en `resumen_asistencia` | Media | `asistencia.py:142-151` |
+| `CajaView.vue` 4 093 líneas · `MeseroView.vue` 2 580 | Media | `views/` |
+| CORS con IP de LAN quemada | Media | `main.py:38` |
+| `print()` como logging | Baja | Routers |
+| Sin CI/CD backend ni docker-compose | Media | Infraestructura |
+
+El plan v2 ataca todos los de severidad alta. Detalle y orden en [PLAN_V2.md](./PLAN_V2.md).
+
+---
+
+## 13. Fuera de alcance hoy
+
+Descuentos y promociones · mapa visual de mesas · perfil o historial de clientes · cambio de
+sucursal desde la UI · precios dinámicos · sistema genérico de variantes (solo Pozole) · emisión de
+CFDI · inventario y stock (llega en el plan v2).
+
+---
+
+## 14. Referencia rápida
+
+**Numeración de mesas:** piso 1 → 11-15 · piso 2 → 21-25 · piso 3 → 31-35.
+
+**Colores corporativos:** `#00126D` (azul) · `#FDB700` (amarillo).
+
+**Puertos:** backend 8000 · frontend 5173 · print service 3001.
