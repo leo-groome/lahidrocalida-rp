@@ -1,23 +1,22 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session, selectinload
+
 from app.auth import get_current_active_user
-from app.core.config import settings
 from app.db.session import get_db
-from app.models import Gasto, Pedido, Sucursal, Turno, TurnoDenominacion, Usuario
-from app.utils.timezone import get_mexico_now, MEXICO_TZ
+from app.models import Gasto, Pedido, Turno, TurnoDenominacion, Usuario
 from app.schemas import (
-    ConteoRequest,
     DenominacionBase,
     TurnoCierreRequest,
     TurnoCreate,
     TurnoResponse,
     TurnoUpdate,
 )
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import and_, func, or_
-from sqlalchemy.orm import Session, selectinload
+from app.utils.timezone import MEXICO_TZ, get_mexico_now
 
 router = APIRouter(prefix="/turnos", tags=["turnos"])
 
@@ -42,9 +41,7 @@ def _get_turno_diferencia(turno: Turno) -> Optional[float]:
 def _obtener_turno_activo_sucursal(db: Session, sucursal_id: int) -> Optional[Turno]:
     """Obtener el turno activo de una sucursal"""
     return (
-        db.query(Turno)
-        .filter(Turno.sucursal_id == sucursal_id, Turno.estado == "abierto")
-        .first()
+        db.query(Turno).filter(Turno.sucursal_id == sucursal_id, Turno.estado == "abierto").first()
     )
 
 
@@ -64,9 +61,7 @@ def _validar_puede_editar_turno(usuario: Usuario, turno: Turno):
 
     # Cajeros solo pueden editar sus propios turnos
     if usuario.rol == "cajero" and turno.usuario_id != usuario.id:
-        raise HTTPException(
-            status_code=403, detail="Solo puedes gestionar tus propios turnos"
-        )
+        raise HTTPException(status_code=403, detail="Solo puedes gestionar tus propios turnos")
 
 
 def _calcular_totales_denominaciones(denominaciones_data: List[dict]) -> Decimal:
@@ -78,9 +73,7 @@ def _calcular_totales_denominaciones(denominaciones_data: List[dict]) -> Decimal
     return total
 
 
-def _guardar_denominaciones(
-    db: Session, turno_id: int, tipo: str, denominaciones_data: List[dict]
-):
+def _guardar_denominaciones(db: Session, turno_id: int, tipo: str, denominaciones_data: List[dict]):
     """Guardar denominaciones para un turno"""
     for denom_data in denominaciones_data:
         denom = TurnoDenominacion(
@@ -88,8 +81,7 @@ def _guardar_denominaciones(
             tipo=tipo,
             denominacion=denom_data["denominacion"],
             cantidad=denom_data["cantidad"],
-            subtotal=Decimal(denom_data["denominacion"])
-            * Decimal(denom_data["cantidad"]),
+            subtotal=Decimal(denom_data["denominacion"]) * Decimal(denom_data["cantidad"]),
         )
         db.add(denom)
     db.flush()
@@ -113,9 +105,7 @@ def _calcular_movimientos_efectivo(
         else fecha_apertura
     )
     cierre_local = (
-        fecha_cierre.replace(tzinfo=MEXICO_TZ)
-        if fecha_cierre.tzinfo is None
-        else fecha_cierre
+        fecha_cierre.replace(tzinfo=MEXICO_TZ) if fecha_cierre.tzinfo is None else fecha_cierre
     )
 
     # Consultar pedidos pagados en efectivo — por turno_id si está disponible
@@ -220,9 +210,7 @@ def iniciar_turno(
         db=db,
         turno_id=turno.id,
         tipo="inicial",
-        denominaciones_data=[
-            d.dict() for d in turno_data.conteo_inicial.denominaciones
-        ],
+        denominaciones_data=[d.dict() for d in turno_data.conteo_inicial.denominaciones],
     )
 
     db.commit()
@@ -275,9 +263,7 @@ def obtener_turno_activo(
 
     turno = _obtener_turno_activo_sucursal(db, current_user.sucursal_id)
     if not turno:
-        raise HTTPException(
-            status_code=404, detail="No hay turno activo en esta sucursal"
-        )
+        raise HTTPException(status_code=404, detail="No hay turno activo en esta sucursal")
 
     # Cargar relaciones
     turno = (
@@ -330,15 +316,11 @@ def obtener_turno_activo(
         total_inicial=float(turno.total_inicial),
         total_final=float(turno.total_final) if turno.total_final else None,
         ventas_efectivo=float(turno.ventas_efectivo) if turno.ventas_efectivo else None,
-        propinas_efectivo=float(turno.propinas_efectivo)
-        if turno.propinas_efectivo
-        else None,
+        propinas_efectivo=float(turno.propinas_efectivo) if turno.propinas_efectivo else None,
         fondo_anterior=fondo_anterior,
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
-        denominaciones_finales=denominaciones_finales
-        if denominaciones_finales
-        else None,
+        denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
     )
@@ -399,7 +381,7 @@ def cerrar_turno(
         + movs_info["propinas_efectivo"]
         - movs_info["gastos"]
     )
-    
+
     # Actualizar turno
     turno.fecha_cierre = fecha_cierre
     turno.estado = "cerrado"
@@ -572,18 +554,14 @@ def listar_turnos(
                 estado=turno.estado,
                 total_inicial=float(turno.total_inicial),
                 total_final=float(turno.total_final) if turno.total_final else None,
-                ventas_efectivo=float(turno.ventas_efectivo)
-                if turno.ventas_efectivo
-                else None,
+                ventas_efectivo=float(turno.ventas_efectivo) if turno.ventas_efectivo else None,
                 propinas_efectivo=float(turno.propinas_efectivo)
                 if turno.propinas_efectivo
                 else None,
                 diferencia=_get_turno_diferencia(turno),
                 observaciones=turno.observaciones,
                 denominaciones_iniciales=denominaciones_iniciales,
-                denominaciones_finales=denominaciones_finales
-                if denominaciones_finales
-                else None,
+                denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
                 usuario_nombre=turno.usuario.nombre if turno.usuario else None,
                 sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
             )
@@ -607,13 +585,8 @@ def obtener_turno(
 
     # Validar permisos para ver este turno
     if current_user.rol == "cajero":
-        if (
-            turno.sucursal_id != current_user.sucursal_id
-            or turno.usuario_id != current_user.id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Solo puedes ver tus propios turnos"
-            )
+        if turno.sucursal_id != current_user.sucursal_id or turno.usuario_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Solo puedes ver tus propios turnos")
 
     # Cargar relaciones
     turno = (
@@ -650,15 +623,11 @@ def obtener_turno(
         total_inicial=float(turno.total_inicial),
         total_final=float(turno.total_final) if turno.total_final else None,
         ventas_efectivo=float(turno.ventas_efectivo) if turno.ventas_efectivo else None,
-        propinas_efectivo=float(turno.propinas_efectivo)
-        if turno.propinas_efectivo
-        else None,
+        propinas_efectivo=float(turno.propinas_efectivo) if turno.propinas_efectivo else None,
         diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
-        denominaciones_finales=denominaciones_finales
-        if denominaciones_finales
-        else None,
+        denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
     )
@@ -681,9 +650,7 @@ def editar_turno(
     _validar_puede_editar_turno(current_user, turno)
 
     if turno.estado == "cerrado":
-        raise HTTPException(
-            status_code=400, detail="No se puede editar un turno cerrado"
-        )
+        raise HTTPException(status_code=400, detail="No se puede editar un turno cerrado")
 
     # Actualizar observaciones si se proporcionan
     if update_data.observaciones is not None:
@@ -721,9 +688,7 @@ def editar_turno(
             db=db,
             turno_id=turno_id,
             tipo="inicial",
-            denominaciones_data=[
-                d.dict() for d in update_data.conteo_inicial.denominaciones
-            ],
+            denominaciones_data=[d.dict() for d in update_data.conteo_inicial.denominaciones],
         )
 
     # Actualizar conteo final si se proporciona (raro, pero posible)
@@ -758,9 +723,7 @@ def editar_turno(
             db=db,
             turno_id=turno_id,
             tipo="final",
-            denominaciones_data=[
-                d.dict() for d in update_data.conteo_final.denominaciones
-            ],
+            denominaciones_data=[d.dict() for d in update_data.conteo_final.denominaciones],
         )
 
         # Recalcular diferencia si ya hay ventas calculadas
@@ -807,15 +770,11 @@ def editar_turno(
         total_inicial=float(turno.total_inicial),
         total_final=float(turno.total_final) if turno.total_final else None,
         ventas_efectivo=float(turno.ventas_efectivo) if turno.ventas_efectivo else None,
-        propinas_efectivo=float(turno.propinas_efectivo)
-        if turno.propinas_efectivo
-        else None,
+        propinas_efectivo=float(turno.propinas_efectivo) if turno.propinas_efectivo else None,
         diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
-        denominaciones_finales=denominaciones_finales
-        if denominaciones_finales
-        else None,
+        denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
     )
@@ -837,13 +796,8 @@ def obtener_resumen_turno(
 
     # Validar permisos para ver este turno
     if current_user.rol == "cajero":
-        if (
-            turno.sucursal_id != current_user.sucursal_id
-            or turno.usuario_id != current_user.id
-        ):
-            raise HTTPException(
-                status_code=403, detail="Solo puedes ver tus propios turnos"
-            )
+        if turno.sucursal_id != current_user.sucursal_id or turno.usuario_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Solo puedes ver tus propios turnos")
 
     # Cargar relaciones
     turno = (
@@ -890,9 +844,7 @@ def obtener_resumen_turno(
             "desglose": desglose_final if desglose_final else None,
         },
         "movimientos": {
-            "ventas_efectivo": float(turno.ventas_efectivo)
-            if turno.ventas_efectivo
-            else None,
+            "ventas_efectivo": float(turno.ventas_efectivo) if turno.ventas_efectivo else None,
             "propinas_efectivo": float(turno.propinas_efectivo)
             if turno.propinas_efectivo
             else None,
@@ -903,9 +855,7 @@ def obtener_resumen_turno(
     # Determinar rango para reporte
     fecha_inicio = turno.fecha_apertura
     fecha_fin = (
-        get_mexico_now()
-        if turno.estado == "abierto"
-        else (turno.fecha_cierre or get_mexico_now())
+        get_mexico_now() if turno.estado == "abierto" else (turno.fecha_cierre or get_mexico_now())
     )
 
     # Movimientos en efectivo en el rango

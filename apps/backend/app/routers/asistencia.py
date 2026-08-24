@@ -2,14 +2,12 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user
 from app.db.session import get_db
 from app.models import RegistroAsistencia, Usuario
 from app.schemas import AsistenciaResumenItem, AsistenciaResumenResponse, RegistroAsistenciaResponse
-from app.utils.timezone import get_mexico_now
 
 router = APIRouter(prefix="/asistencia", tags=["asistencia"])
 
@@ -25,7 +23,7 @@ def _ensure_admin(user: Usuario) -> None:
 def list_registros(
     usuario_id: Optional[int] = None,
     fecha_inicio: Optional[str] = None,  # YYYY-MM-DD
-    fecha_fin: Optional[str] = None,     # YYYY-MM-DD
+    fecha_fin: Optional[str] = None,  # YYYY-MM-DD
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -42,7 +40,9 @@ def list_registros(
             dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
             query = query.filter(RegistroAsistencia.fecha_entrada >= dt_inicio)
         except ValueError:
-            raise HTTPException(status_code=400, detail="fecha_inicio inválida. Formato: YYYY-MM-DD")
+            raise HTTPException(
+                status_code=400, detail="fecha_inicio inválida. Formato: YYYY-MM-DD"
+            )
 
     if fecha_fin:
         try:
@@ -59,15 +59,17 @@ def list_registros(
         if r.fecha_salida:
             delta = r.fecha_salida - r.fecha_entrada
             horas = round(delta.total_seconds() / 3600, 2)
-        result.append(RegistroAsistenciaResponse(
-            id=r.id,
-            usuario_id=r.usuario_id,
-            fecha_entrada=r.fecha_entrada,
-            fecha_salida=r.fecha_salida,
-            notas=r.notas,
-            usuario_nombre=r.usuario.nombre if r.usuario else None,
-            horas_trabajadas=horas,
-        ))
+        result.append(
+            RegistroAsistenciaResponse(
+                id=r.id,
+                usuario_id=r.usuario_id,
+                fecha_entrada=r.fecha_entrada,
+                fecha_salida=r.fecha_salida,
+                notas=r.notas,
+                usuario_nombre=r.usuario.nombre if r.usuario else None,
+                horas_trabajadas=horas,
+            )
+        )
 
     return result
 
@@ -100,15 +102,17 @@ def historial_usuario(
         if r.fecha_salida:
             delta = r.fecha_salida - r.fecha_entrada
             horas = round(delta.total_seconds() / 3600, 2)
-        result.append(RegistroAsistenciaResponse(
-            id=r.id,
-            usuario_id=r.usuario_id,
-            fecha_entrada=r.fecha_entrada,
-            fecha_salida=r.fecha_salida,
-            notas=r.notas,
-            usuario_nombre=usuario.nombre,
-            horas_trabajadas=horas,
-        ))
+        result.append(
+            RegistroAsistenciaResponse(
+                id=r.id,
+                usuario_id=r.usuario_id,
+                fecha_entrada=r.fecha_entrada,
+                fecha_salida=r.fecha_salida,
+                notas=r.notas,
+                usuario_nombre=usuario.nombre,
+                horas_trabajadas=horas,
+            )
+        )
 
     return result
 
@@ -116,7 +120,7 @@ def historial_usuario(
 @router.get("/resumen", response_model=AsistenciaResumenResponse)
 def resumen_asistencia(
     fecha_inicio: str,  # YYYY-MM-DD
-    fecha_fin: str,     # YYYY-MM-DD
+    fecha_fin: str,  # YYYY-MM-DD
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -133,10 +137,9 @@ def resumen_asistencia(
         raise HTTPException(status_code=400, detail="fecha_inicio debe ser anterior a fecha_fin")
 
     # Usuarios no-admin activos
-    usuarios = db.query(Usuario).filter(
-        Usuario.activo == True,
-        Usuario.rol.notin_(ROLES_ADMIN)
-    ).all()
+    usuarios = (
+        db.query(Usuario).filter(Usuario.activo == True, Usuario.rol.notin_(ROLES_ADMIN)).all()
+    )
 
     empleados_resumen = []
     for usuario in usuarios:
@@ -163,15 +166,17 @@ def resumen_asistencia(
             if r.fecha_salida and (ultima_salida is None or r.fecha_salida > ultima_salida):
                 ultima_salida = r.fecha_salida
 
-        empleados_resumen.append(AsistenciaResumenItem(
-            usuario_id=usuario.id,
-            usuario_nombre=usuario.nombre,
-            rol=usuario.rol,
-            total_registros=len(registros),
-            horas_totales=round(horas_totales, 2),
-            ultima_entrada=ultima_entrada,
-            ultima_salida=ultima_salida,
-        ))
+        empleados_resumen.append(
+            AsistenciaResumenItem(
+                usuario_id=usuario.id,
+                usuario_nombre=usuario.nombre,
+                rol=usuario.rol,
+                total_registros=len(registros),
+                horas_totales=round(horas_totales, 2),
+                ultima_entrada=ultima_entrada,
+                ultima_salida=ultima_salida,
+            )
+        )
 
     return AsistenciaResumenResponse(
         fecha_inicio=dt_inicio,

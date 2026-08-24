@@ -1,22 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, desc
-from typing import List
 from datetime import date, timedelta
+from typing import List
 
-from app.db.session import get_db
-from app.models import Platillo, Usuario, Pedido, ArticuloPedido
-from app.schemas import PlatilloCreate, PlatilloResponse
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import and_, desc, func
+from sqlalchemy.orm import Session
+
 from app.auth import get_current_active_user
 from app.core.cache import platillos_cache
+from app.db.session import get_db
+from app.models import ArticuloPedido, Pedido, Platillo, Usuario
+from app.schemas import PlatilloCreate, PlatilloResponse
 
 router = APIRouter(prefix="/platillos", tags=["platillos"])
 
 
 @router.get("", response_model=List[PlatilloResponse])
 def list_platillos(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)
 ):
     cached = platillos_cache.get("platillos")
     if cached is not None:
@@ -30,7 +30,7 @@ def list_platillos(
 def create_platillo(
     data: PlatilloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede crear platillos inicialmente
     if current_user.rol != "administrador":
@@ -42,7 +42,7 @@ def create_platillo(
         precio=data.precio,
         categoria=data.categoria,
         estado=data.estado,
-        kds_name=data.kds_name if data.kds_name else data.nombre[:20]
+        kds_name=data.kds_name if data.kds_name else data.nombre[:20],
     )
     db.add(platillo)
     db.commit()
@@ -55,36 +55,38 @@ def create_platillo(
 def get_platillos_ordenados_popularidad(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
-    dias: int = 30  # Últimos 30 días por defecto
+    dias: int = 30,  # Últimos 30 días por defecto
 ):
     """
     Obtener platillos ordenados por popularidad (últimos N días)
     Usa datos de ventas reales para optimizar la experiencia del mesero
     """
     fecha_limite = date.today() - timedelta(days=dias)
-    
+
     # Query para obtener platillos con su popularidad
-    platillos_con_popularidad = db.query(
-        Platillo,
-        func.coalesce(func.sum(ArticuloPedido.cantidad), 0).label('total_vendido')
-    ).outerjoin(
-        ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id
-    ).outerjoin(
-        Pedido, and_(
-            ArticuloPedido.pedido_id == Pedido.id,
-            Pedido.estado == "pagado",
-            func.date(Pedido.fecha_creacion) >= fecha_limite,
-            Pedido.sucursal_id == current_user.sucursal_id
+    platillos_con_popularidad = (
+        db.query(
+            Platillo, func.coalesce(func.sum(ArticuloPedido.cantidad), 0).label("total_vendido")
         )
-    ).filter(
-        Platillo.estado == "disponible"
-    ).group_by(
-        Platillo.id
-    ).order_by(
-        desc('total_vendido'),  # Más vendidos primero
-        Platillo.nombre         # Alfabético como fallback
-    ).all()
-    
+        .outerjoin(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
+        .outerjoin(
+            Pedido,
+            and_(
+                ArticuloPedido.pedido_id == Pedido.id,
+                Pedido.estado == "pagado",
+                func.date(Pedido.fecha_creacion) >= fecha_limite,
+                Pedido.sucursal_id == current_user.sucursal_id,
+            ),
+        )
+        .filter(Platillo.estado == "disponible")
+        .group_by(Platillo.id)
+        .order_by(
+            desc("total_vendido"),  # Más vendidos primero
+            Platillo.nombre,  # Alfabético como fallback
+        )
+        .all()
+    )
+
     # Retornar solo los objetos Platillo
     return [platillo for platillo, _ in platillos_con_popularidad]
 
@@ -93,7 +95,7 @@ def get_platillos_ordenados_popularidad(
 def get_platillo(
     platillo_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
     if not platillo:
@@ -106,7 +108,7 @@ def update_platillo(
     platillo_id: int,
     data: PlatilloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede actualizar platillos
     if current_user.rol != "administrador":
@@ -122,9 +124,9 @@ def update_platillo(
     platillo.precio = data.precio
     platillo.categoria = data.categoria
     platillo.estado = data.estado
-    
+
     # Generar kds_name si no se proporciona
-    if hasattr(data, 'kds_name') and data.kds_name:
+    if hasattr(data, "kds_name") and data.kds_name:
         platillo.kds_name = data.kds_name
     else:
         platillo.kds_name = data.nombre[:20]  # Truncar a 20 caracteres
@@ -140,7 +142,7 @@ def toggle_disponibilidad_platillo(
     platillo_id: int,
     data: dict,  # {"estado": "disponible" | "no_disponible"}
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Cambiar disponibilidad de un platillo.
@@ -149,8 +151,7 @@ def toggle_disponibilidad_platillo(
     # Validar permisos - cocina y admin pueden cambiar disponibilidad
     if current_user.rol not in ["cocina", "administrador"]:
         raise HTTPException(
-            status_code=403, 
-            detail="Solo cocina y administradores pueden cambiar disponibilidad"
+            status_code=403, detail="Solo cocina y administradores pueden cambiar disponibilidad"
         )
 
     platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
@@ -161,20 +162,21 @@ def toggle_disponibilidad_platillo(
     nuevo_estado = data.get("estado")
     if nuevo_estado not in ["disponible", "no_disponible"]:
         raise HTTPException(
-            status_code=400, 
-            detail="Estado inválido. Use 'disponible' o 'no_disponible'"
+            status_code=400, detail="Estado inválido. Use 'disponible' o 'no_disponible'"
         )
 
     # Actualizar solo el estado
     estado_anterior = platillo.estado
     platillo.estado = nuevo_estado
-    
+
     db.commit()
     db.refresh(platillo)
     platillos_cache.invalidate("platillos")
 
-    print(f"✅ Platillo '{platillo.nombre}' cambiado de '{estado_anterior}' a '{nuevo_estado}' por {current_user.nombre}")
-    
+    print(
+        f"✅ Platillo '{platillo.nombre}' cambiado de '{estado_anterior}' a '{nuevo_estado}' por {current_user.nombre}"
+    )
+
     return platillo
 
 
@@ -182,7 +184,7 @@ def toggle_disponibilidad_platillo(
 def delete_platillo(
     platillo_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede eliminar platillos
     if current_user.rol != "administrador":
@@ -193,7 +195,9 @@ def delete_platillo(
         raise HTTPException(status_code=404, detail="Platillo no encontrado")
 
     # Verificar si tiene pedidos asociados
-    pedidos_count = db.query(ArticuloPedido).filter(ArticuloPedido.platillo_id == platillo_id).count()
+    pedidos_count = (
+        db.query(ArticuloPedido).filter(ArticuloPedido.platillo_id == platillo_id).count()
+    )
     if pedidos_count > 0:
         # En lugar de eliminar, cambiar estado a no_disponible
         platillo.estado = "no_disponible"
@@ -206,5 +210,3 @@ def delete_platillo(
     db.commit()
     platillos_cache.invalidate("platillos")
     return {"message": "Platillo eliminado correctamente"}
-
-

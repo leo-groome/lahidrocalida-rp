@@ -53,7 +53,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: ./apps/backend
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
       - name: Ruff Linter Check
         working-directory: ./apps/backend

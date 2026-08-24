@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from typing import List
 
-from app.db.session import get_db
-from app.models import Usuario, Sucursal
-from app.schemas import UsuarioCreate, UsuarioUpdate, UsuarioResponse
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
 from app.auth import get_current_active_user, get_password_hash
+from app.db.session import get_db
+from app.models import Usuario
+from app.schemas import UsuarioCreate, UsuarioResponse, UsuarioUpdate
 
 router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 def create_usuario(
     data: UsuarioCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """Crear un usuario (requiere usuario autenticado)."""
     # Validar rol del creador (solo administrador puede crear)
@@ -36,8 +37,7 @@ def create_usuario(
 
 @router.get("/", response_model=List[UsuarioResponse])
 def list_usuarios(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)
 ):
     """Listar usuarios (requiere usuario autenticado)."""
     return db.query(Usuario).all()
@@ -52,16 +52,16 @@ def get_me(current_user: Usuario = Depends(get_current_active_user)):
 def get_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede ver usuarios específicos
     if current_user.rol != "administrador":
         raise HTTPException(status_code=403, detail="No autorizado")
-    
+
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     return usuario
 
 
@@ -70,12 +70,12 @@ def update_usuario(
     usuario_id: int,
     data: UsuarioUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede actualizar usuarios
     if current_user.rol != "administrador":
         raise HTTPException(status_code=403, detail="No autorizado")
-    
+
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -86,16 +86,19 @@ def update_usuario(
     nombre = update_data.get("nombre", usuario.nombre)
     sucursal_id = update_data.get("sucursal_id", usuario.sucursal_id)
     if "nombre" in update_data or "sucursal_id" in update_data:
-        existing_user = db.query(Usuario).filter(
-            Usuario.nombre == nombre,
-            Usuario.sucursal_id == sucursal_id,
-            Usuario.id != usuario_id
-        ).first()
+        existing_user = (
+            db.query(Usuario)
+            .filter(
+                Usuario.nombre == nombre,
+                Usuario.sucursal_id == sucursal_id,
+                Usuario.id != usuario_id,
+            )
+            .first()
+        )
 
         if existing_user:
             raise HTTPException(
-                status_code=400,
-                detail="Ya existe otro usuario con ese nombre en esta sucursal"
+                status_code=400, detail="Ya existe otro usuario con ese nombre en esta sucursal"
             )
 
     if "nombre" in update_data:
@@ -108,10 +111,10 @@ def update_usuario(
         usuario.sucursal_id = update_data["sucursal_id"]
     if update_data.get("pin"):
         usuario.pin = get_password_hash(update_data["pin"])
-    
+
     db.commit()
     db.refresh(usuario)
-    
+
     return usuario
 
 
@@ -119,23 +122,22 @@ def update_usuario(
 def delete_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     # Solo admin puede eliminar usuarios
     if current_user.rol != "administrador":
         raise HTTPException(status_code=403, detail="No autorizado")
-    
+
     # No permitir que se elimine a sí mismo
     if usuario_id == current_user.id:
         raise HTTPException(status_code=400, detail="No puedes eliminar tu propio usuario")
-    
+
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
+
     # En lugar de eliminar, marcar como inactivo para preservar integridad
     usuario.activo = False
     db.commit()
-    
-    return {"message": "Usuario desactivado correctamente"}
 
+    return {"message": "Usuario desactivado correctamente"}

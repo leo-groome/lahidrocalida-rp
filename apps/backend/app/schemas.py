@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 
 # ===== SCHEMAS PARA USUARIOS =====
@@ -47,14 +47,17 @@ class GastoTimeline(BaseModel):
     fecha: str
     total: float
 
+
 class GastoPorCategoria(BaseModel):
     categoria: str
     total: float
+
 
 class GastoTopProveedor(BaseModel):
     id: int
     nombre: str
     total: float
+
 
 class GastosResumenResponse(BaseModel):
     total_gastado: float
@@ -63,17 +66,18 @@ class GastosResumenResponse(BaseModel):
     top_proveedor: Optional[GastoTopProveedor] = None
     timeline: List[GastoTimeline]
 
+
 class HistorialPrecioItem(BaseModel):
     fecha: datetime
     precio_unitario: float
     proveedor_nombre: str
     cantidad_comprada: float
 
+
 class HistorialPreciosResponse(BaseModel):
     articulo_id: int
     articulo_nombre: str
     historial: List[HistorialPrecioItem]
-
 
 
 # ===== SCHEMAS PARA PLATILLOS =====
@@ -199,7 +203,6 @@ class DividirPorMontoCuenta(BaseModel):
 
 class DividirPorMontoRequest(BaseModel):
     cuentas: List[DividirPorMontoCuenta]
-
 
 
 # ===== SCHEMAS PARA GASTOS =====

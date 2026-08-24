@@ -1,31 +1,31 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import func, and_, cast
-from sqlalchemy import Integer as SAInteger
-from typing import List, Optional
-from sqlalchemy.exc import IntegrityError
-from datetime import datetime, date, timedelta
-from decimal import Decimal
 import asyncio
 import logging
-import requests
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import List, Optional
 
+import requests
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from sqlalchemy import Integer as SAInteger
+from sqlalchemy import cast, func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload, selectinload
+
+from app.auth import get_current_active_user, get_optional_current_user
 from app.db.session import get_db
-from app.models import Pedido, ArticuloPedido, Platillo, Usuario, Turno
-from app.utils.timezone import get_mexico_now, MEXICO_TZ
+from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
-    PedidoCreate,
-    PedidoResponse,
-    PedidoUpdate,
-    ArticuloPedidoUpdate,
     AgregarArticulosRequest,
+    ArticuloPedidoUpdate,
     DividirCuentaRequest,
     DividirCuentaResponse,
     DividirPorMontoRequest,
+    PedidoCreate,
+    PedidoResponse,
+    PedidoUpdate,
 )
-from app.auth import get_current_active_user, get_optional_current_user
+from app.utils.timezone import MEXICO_TZ, get_mexico_now
 from app.websocket_manager import websocket_manager
-from app.core.config import settings
 
 
 def _query_pedidos_eager(db: Session):
@@ -39,14 +39,15 @@ def _query_pedidos_eager(db: Session):
 
 def _get_turno_activo(db: Session, sucursal_id: int) -> Optional[Turno]:
     """Obtener el turno activo de una sucursal."""
-    return db.query(Turno).filter(
-        Turno.sucursal_id == sucursal_id,
-        Turno.estado == "abierto"
-    ).first()
+    return (
+        db.query(Turno).filter(Turno.sucursal_id == sucursal_id, Turno.estado == "abierto").first()
+    )
+
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pedidos", tags=["pedidos"])
+
 
 async def print_ticket_automatic(pedido_data):
     """
@@ -66,20 +67,28 @@ async def print_ticket_automatic(pedido_data):
                     "cantidad": articulo.get("cantidad", 1),
                     "nombre": articulo.get("platillo", {}).get("nombre", "Producto"),
                     "precio": articulo.get("precio_cobrado", 0),
-                    "modificaciones": articulo.get("modificaciones")
+                    "modificaciones": articulo.get("modificaciones"),
                 }
                 for articulo in pedido_data.get("articulos_pedido", [])
             ],
-            "total": pedido_data.get("total", 0)
+            "total": pedido_data.get("total", 0),
         }
 
         # 1. Enviar vía WebSocket (Recomendado para servidores en la nube como Railway)
         try:
             from app.websocket_manager import websocket_manager
+
             await websocket_manager.notify_print_ticket(ticket_data)
-            logger.info("Ticket #%s notificado vía WebSocket para impresión remota", ticket_data.get('numero_display', 'N/A'))
+            logger.info(
+                "Ticket #%s notificado vía WebSocket para impresión remota",
+                ticket_data.get("numero_display", "N/A"),
+            )
         except Exception as e:
-            logger.warning("Error al transmitir ticket #%s por WebSocket: %s", ticket_data.get('numero_display', 'N/A'), e)
+            logger.warning(
+                "Error al transmitir ticket #%s por WebSocket: %s",
+                ticket_data.get("numero_display", "N/A"),
+                e,
+            )
 
         # 2. Enviar vía HTTP POST local (Fallback o desarrollo local)
         try:
@@ -87,17 +96,29 @@ async def print_ticket_automatic(pedido_data):
             # requests es síncrono: en executor para no congelar el event loop
             # (hasta 5s bloqueando WebSockets y requests si el print_service está caído)
             response = await asyncio.get_running_loop().run_in_executor(
-                None,
-                lambda: requests.post(print_service_url, json=ticket_data, timeout=5)
+                None, lambda: requests.post(print_service_url, json=ticket_data, timeout=5)
             )
             if response.status_code == 200:
                 result = response.json()
-                logger.info("Ticket #%s enviado a impresión automática local: %s", ticket_data.get('numero_display', 'N/A'), result)
+                logger.info(
+                    "Ticket #%s enviado a impresión automática local: %s",
+                    ticket_data.get("numero_display", "N/A"),
+                    result,
+                )
             else:
-                logger.warning("Error en impresión automática local del ticket #%s: %s - %s", ticket_data.get('numero_display', 'N/A'), response.status_code, response.text)
+                logger.warning(
+                    "Error en impresión automática local del ticket #%s: %s - %s",
+                    ticket_data.get("numero_display", "N/A"),
+                    response.status_code,
+                    response.text,
+                )
         except requests.exceptions.RequestException as e:
             # El ticket no se imprime; queda el endpoint de reimpresión manual como recuperación
-            logger.warning("Impresión local no disponible para ticket #%s: %s", ticket_data.get('numero_display', 'N/A'), e)
+            logger.warning(
+                "Impresión local no disponible para ticket #%s: %s",
+                ticket_data.get("numero_display", "N/A"),
+                e,
+            )
 
     except Exception as e:
         logger.error("Error general en impresión de ticket: %s", e)
@@ -112,10 +133,12 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
     """
     now_local = get_mexico_now()
     today_local = now_local.date()
-    
+
     # Rango del día actual en zona horaria de México
     start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
-    end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+    end_dt = datetime.combine(
+        today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+    )
 
     # Obtener el máximo numero_display como entero para la sucursal y día actuales
     max_number = (
@@ -136,7 +159,7 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
 async def create_pedido(
     data: PedidoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Crear un nuevo pedido.
@@ -145,20 +168,21 @@ async def create_pedido(
     # Validar permisos
     if current_user.rol not in ["cajero", "administrador", "mesero"]:
         raise HTTPException(
-            status_code=403,
-            detail="Solo cajeros, meseros y administradores pueden crear pedidos"
+            status_code=403, detail="Solo cajeros, meseros y administradores pueden crear pedidos"
         )
 
     # Idempotencia: si este client_request_id ya creó un pedido, devolverlo
     # tal cual (el cliente está reintentando un POST que sí llegó)
     if data.client_request_id:
-        pedido_existente = db.query(Pedido).filter(
-            Pedido.client_request_id == data.client_request_id
-        ).first()
+        pedido_existente = (
+            db.query(Pedido).filter(Pedido.client_request_id == data.client_request_id).first()
+        )
         if pedido_existente:
             logger.info(
                 "Replay idempotente: client_request_id %s ya creó el pedido %s (#%s)",
-                data.client_request_id, pedido_existente.id, pedido_existente.numero_display
+                data.client_request_id,
+                pedido_existente.id,
+                pedido_existente.numero_display,
             )
             return pedido_existente
 
@@ -167,62 +191,56 @@ async def create_pedido(
     if not turno_activo:
         raise HTTPException(
             status_code=400,
-            detail="No hay turno activo en esta sucursal. El cajero debe abrir turno antes de tomar pedidos."
+            detail="No hay turno activo en esta sucursal. El cajero debe abrir turno antes de tomar pedidos.",
         )
 
     # Validar tipo_orden
     if data.tipo_orden not in ["aqui", "llevar", "uber_eats"]:
         raise HTTPException(
             status_code=400,
-            detail="tipo_orden inválido. Valores permitidos: aqui, llevar, uber_eats"
+            detail="tipo_orden inválido. Valores permitidos: aqui, llevar, uber_eats",
         )
-    
+
     # Validar que hay artículos en el pedido
     if not data.articulos or len(data.articulos) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="El pedido debe tener al menos un artículo"
-        )
-    
+        raise HTTPException(status_code=400, detail="El pedido debe tener al menos un artículo")
+
     # Validar y calcular artículos
     total_calculado = 0
     articulos_calculados = []
-    
+
     for articulo in data.articulos:
         # Validar que el platillo existe
         platillo = db.query(Platillo).filter(Platillo.id == articulo.platillo_id).first()
         if not platillo:
             raise HTTPException(
-                status_code=400,
-                detail=f"Platillo con ID {articulo.platillo_id} no encontrado"
+                status_code=400, detail=f"Platillo con ID {articulo.platillo_id} no encontrado"
             )
-        
+
         # Validar que el platillo esté disponible
         if platillo.estado != "disponible":
             raise HTTPException(
-                status_code=400,
-                detail=f"El platillo '{platillo.nombre}' no está disponible"
+                status_code=400, detail=f"El platillo '{platillo.nombre}' no está disponible"
             )
-        
+
         # Validar cantidad
         if articulo.cantidad <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="La cantidad debe ser mayor a 0"
-            )
-        
+            raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
+
         # Calcular precio_cobrado automáticamente
         precio_cobrado = float(platillo.precio) * articulo.cantidad
         total_calculado += precio_cobrado
-        
+
         # Guardar artículo con precio calculado
-        articulos_calculados.append({
-            'platillo_id': articulo.platillo_id,
-            'cantidad': articulo.cantidad,
-            'precio_cobrado': precio_cobrado,
-            'modificaciones': articulo.modificaciones
-        })
-    
+        articulos_calculados.append(
+            {
+                "platillo_id": articulo.platillo_id,
+                "cantidad": articulo.cantidad,
+                "precio_cobrado": precio_cobrado,
+                "modificaciones": articulo.modificaciones,
+            }
+        )
+
     # Crear pedido con reintentos ante colisión de numero_display por concurrencia
     attempts = 0
     while attempts < 5:
@@ -251,41 +269,43 @@ async def create_pedido(
             # Crear los artículos del pedido
             for articulo_data in articulos_calculados:
                 # Obtener el platillo para verificar si es bebida
-                platillo = db.query(Platillo).filter(Platillo.id == articulo_data['platillo_id']).first()
-                
+                platillo = (
+                    db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
+                )
+
                 # Todos los items inician en pendiente; bebidas se marcan manualmente por mesero si aplica
                 estado_inicial = "pendiente"
 
                 articulo = ArticuloPedido(
                     pedido_id=pedido.id,
-                    platillo_id=articulo_data['platillo_id'],
-                    cantidad=articulo_data['cantidad'],
-                    precio_cobrado=articulo_data['precio_cobrado'],
-                    modificaciones=articulo_data['modificaciones'],
-                    estado_item=estado_inicial
+                    platillo_id=articulo_data["platillo_id"],
+                    cantidad=articulo_data["cantidad"],
+                    precio_cobrado=articulo_data["precio_cobrado"],
+                    modificaciones=articulo_data["modificaciones"],
+                    estado_item=estado_inicial,
                 )
                 db.add(articulo)
 
             db.commit()
             db.refresh(pedido)
-            
+
             # Notificar creación del pedido via WebSocket
             try:
                 pedido_data = {
-            "id": pedido.id,
-            "numero_display": pedido.numero_display,
-            "nombre_cliente": pedido.nombre_cliente,
-            "mesa": pedido.mesa,
-            "total": float(pedido.total),
-            "estado": pedido.estado,
-            "tipo_orden": pedido.tipo_orden,
-            "sucursal_id": pedido.sucursal_id,
-            "fecha_creacion": pedido.fecha_creacion.isoformat(),
-            "metodo_pago": pedido.metodo_pago,
-            "propina_efectivo": float(pedido.propina_efectivo),
-            "propina_tarjeta": float(pedido.propina_tarjeta),
-            "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
-            "articulos_pedido": [
+                    "id": pedido.id,
+                    "numero_display": pedido.numero_display,
+                    "nombre_cliente": pedido.nombre_cliente,
+                    "mesa": pedido.mesa,
+                    "total": float(pedido.total),
+                    "estado": pedido.estado,
+                    "tipo_orden": pedido.tipo_orden,
+                    "sucursal_id": pedido.sucursal_id,
+                    "fecha_creacion": pedido.fecha_creacion.isoformat(),
+                    "metodo_pago": pedido.metodo_pago,
+                    "propina_efectivo": float(pedido.propina_efectivo),
+                    "propina_tarjeta": float(pedido.propina_tarjeta),
+                    "propina_total": float(pedido.propina_efectivo + pedido.propina_tarjeta),
+                    "articulos_pedido": [
                         {
                             "id": a.id,
                             "cantidad": a.cantidad,
@@ -295,17 +315,25 @@ async def create_pedido(
                             "platillo": {
                                 "nombre": a.platillo.nombre,
                                 "kds_name": a.platillo.kds_name,
-                                "categoria": a.platillo.categoria
-                            } if a.platillo else None
-                        } for a in pedido.articulos_pedido
-                    ]
+                                "categoria": a.platillo.categoria,
+                            }
+                            if a.platillo
+                            else None,
+                        }
+                        for a in pedido.articulos_pedido
+                    ],
                 }
                 await websocket_manager.notify_pedido_created(pedido_data)
             except Exception as e:
                 # Log del error pero no fallar la creación del pedido.
                 # El KDS lo recuperará vía polling/resync (la DB es la fuente de verdad).
-                logger.warning("Notificación WebSocket fallida al crear pedido %s (#%s): %s", pedido.id, pedido.numero_display, e)
-            
+                logger.warning(
+                    "Notificación WebSocket fallida al crear pedido %s (#%s): %s",
+                    pedido.id,
+                    pedido.numero_display,
+                    e,
+                )
+
             return pedido
         except IntegrityError:
             db.rollback()
@@ -313,19 +341,24 @@ async def create_pedido(
             # client_request_id ya creó el pedido, devolver ese (no reintentar,
             # el retry-loop crearía justo el duplicado que queremos evitar)
             if data.client_request_id:
-                pedido_existente = db.query(Pedido).filter(
-                    Pedido.client_request_id == data.client_request_id
-                ).first()
+                pedido_existente = (
+                    db.query(Pedido)
+                    .filter(Pedido.client_request_id == data.client_request_id)
+                    .first()
+                )
                 if pedido_existente:
                     logger.info(
                         "Carrera idempotente: client_request_id %s ya creó el pedido %s",
-                        data.client_request_id, pedido_existente.id
+                        data.client_request_id,
+                        pedido_existente.id,
                     )
                     return pedido_existente
             # Colisión de unique de numero_display (otra transacción tomó el número). Reintentar.
             attempts += 1
     # Si no se pudo después de varios intentos, reportar error
-    raise HTTPException(status_code=500, detail="No fue posible generar un numero_display único. Intenta de nuevo.")
+    raise HTTPException(
+        status_code=500, detail="No fue posible generar un numero_display único. Intenta de nuevo."
+    )
 
 
 @router.get("", response_model=List[PedidoResponse])
@@ -333,19 +366,28 @@ def list_pedidos(
     estado: Optional[str] = None,
     turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: Optional[Usuario] = Depends(get_optional_current_user)
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ):
     """
     Listar pedidos.
     - Sin auth (KDS): devuelve pedidos activos (no pagados/cancelados) sin filtro de fecha.
     - Con auth: filtra por turno activo o turno_id explícito.
     """
-    ESTADOS_VALIDOS = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]
+    ESTADOS_VALIDOS = [
+        "pendiente",
+        "preparando",
+        "listo",
+        "entregado",
+        "cuenta_solicitada",
+        "pagado",
+        "cancelado",
+        "dividido",
+    ]
 
     if estado and estado not in ESTADOS_VALIDOS:
         raise HTTPException(
             status_code=400,
-            detail=f"Estado inválido. Valores permitidos: {', '.join(ESTADOS_VALIDOS)}"
+            detail=f"Estado inválido. Valores permitidos: {', '.join(ESTADOS_VALIDOS)}",
         )
 
     if current_user is None:
@@ -370,10 +412,11 @@ def list_pedidos(
             now_local = get_mexico_now()
             today_local = now_local.date()
             start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
-            end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(
+                today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+            )
             query = _query_pedidos_eager(db).filter(
-                Pedido.fecha_creacion >= start_dt,
-                Pedido.fecha_creacion < end_dt
+                Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt
             )
 
     # Filtro por sucursal según rol
@@ -388,8 +431,7 @@ def list_pedidos(
 
 @router.get("/pendientes-pago/lista", response_model=List[PedidoResponse])
 def get_pedidos_pendientes_pago(
-    db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)
 ):
     """
     Obtener pedidos que están esperando pago (estado: cuenta_solicitada).
@@ -400,9 +442,9 @@ def get_pedidos_pendientes_pago(
     if current_user.rol not in ["cajero", "administrador"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo cajeros y administradores pueden ver pedidos pendientes de pago"
+            detail="Solo cajeros y administradores pueden ver pedidos pendientes de pago",
         )
-    
+
     query = _query_pedidos_eager(db).filter(Pedido.estado == "cuenta_solicitada")
 
     # Filtro por sucursal para cajeros
@@ -417,30 +459,24 @@ def get_pedidos_pendientes_pago(
 def get_pedido(
     pedido_id: int,
     db: Session = Depends(get_db),
-    current_user: Optional[Usuario] = Depends(get_optional_current_user)
+    current_user: Optional[Usuario] = Depends(get_optional_current_user),
 ):
     """
     Obtener un pedido específico por ID.
     Público para KDS (sin auth). Con auth: cajeros solo ven su sucursal.
     """
-    pedido = (
-        _query_pedidos_eager(db)
-        .filter(Pedido.id == pedido_id)
-        .first()
-    )
-    
+    pedido = _query_pedidos_eager(db).filter(Pedido.id == pedido_id).first()
+
     if not pedido:
-        raise HTTPException(
-            status_code=404,
-            detail="Pedido no encontrado"
-        )
-    
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
     # Con auth: cajeros solo ven su sucursal
-    if current_user and current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para ver este pedido"
-        )
+    if (
+        current_user
+        and current_user.rol == "cajero"
+        and pedido.sucursal_id != current_user.sucursal_id
+    ):
+        raise HTTPException(status_code=403, detail="No tienes permisos para ver este pedido")
 
     return pedido
 
@@ -465,14 +501,16 @@ async def dividir_cuenta(
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
-            logger.info("Replay idempotente: pedido %s ya dividido, retornando cuentas hijas", pedido_id)
+            logger.info(
+                "Replay idempotente: pedido %s ya dividido, retornando cuentas hijas", pedido_id
+            )
             return {
                 "pedido_original_id": pedido.id,
                 "cuentas": cuentas_hijas,
             }
         raise HTTPException(
             status_code=400,
-            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas."
+            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas.",
         )
 
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
@@ -487,7 +525,9 @@ async def dividir_cuenta(
     if len(data.cuentas) > 5:
         raise HTTPException(status_code=400, detail="Maximo 5 cuentas")
 
-    articulos_originales = db.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
+    articulos_originales = (
+        db.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
+    )
     if not articulos_originales:
         raise HTTPException(status_code=400, detail="El pedido no tiene articulos")
 
@@ -501,7 +541,10 @@ async def dividir_cuenta(
             raise HTTPException(status_code=400, detail="Cada cuenta debe tener items")
         for item in cuenta.items:
             if item.articulo_id not in articulos_por_id:
-                raise HTTPException(status_code=400, detail=f"Articulo {item.articulo_id} no pertenece a este pedido")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Articulo {item.articulo_id} no pertenece a este pedido",
+                )
             if item.cantidad <= 0:
                 raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
             asignado_por_articulo[item.articulo_id] += item.cantidad
@@ -558,7 +601,9 @@ async def dividir_cuenta(
         for item in cuenta.items:
             articulo_original = articulos_por_id[item.articulo_id]
 
-            precio_unitario = Decimal(str(articulo_original.precio_cobrado)) / Decimal(str(articulo_original.cantidad))
+            precio_unitario = Decimal(str(articulo_original.precio_cobrado)) / Decimal(
+                str(articulo_original.cantidad)
+            )
             precio_cobrado = precio_unitario * Decimal(str(item.cantidad))
             total_cuenta += precio_cobrado
 
@@ -637,7 +682,9 @@ async def dividir_cuenta(
                 "metodo_pago": cuenta_pedido.metodo_pago,
                 "propina_efectivo": float(cuenta_pedido.propina_efectivo),
                 "propina_tarjeta": float(cuenta_pedido.propina_tarjeta),
-                "propina_total": float(cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta),
+                "propina_total": float(
+                    cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta
+                ),
                 "articulos_pedido": [
                     {
                         "id": a.id,
@@ -658,7 +705,9 @@ async def dividir_cuenta(
             await websocket_manager.notify_pedido_created(cuenta_data)
 
     except Exception as e:
-        logger.warning("Notificación WebSocket fallida en dividir cuenta del pedido %s: %s", pedido_id, e)
+        logger.warning(
+            "Notificación WebSocket fallida en dividir cuenta del pedido %s: %s", pedido_id, e
+        )
 
     return {
         "pedido_original_id": pedido.id,
@@ -686,14 +735,17 @@ async def dividir_por_montos(
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
-            logger.info("Replay idempotente: pedido %s ya dividido por montos, retornando cuentas hijas", pedido_id)
+            logger.info(
+                "Replay idempotente: pedido %s ya dividido por montos, retornando cuentas hijas",
+                pedido_id,
+            )
             return {
                 "pedido_original_id": pedido.id,
                 "cuentas": cuentas_hijas,
             }
         raise HTTPException(
             status_code=400,
-            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas."
+            detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas.",
         )
 
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
@@ -794,13 +846,17 @@ async def dividir_por_montos(
                 "metodo_pago": cuenta_pedido.metodo_pago,
                 "propina_efectivo": float(cuenta_pedido.propina_efectivo),
                 "propina_tarjeta": float(cuenta_pedido.propina_tarjeta),
-                "propina_total": float(cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta),
+                "propina_total": float(
+                    cuenta_pedido.propina_efectivo + cuenta_pedido.propina_tarjeta
+                ),
                 "articulos_pedido": [],
             }
             await websocket_manager.notify_pedido_created(cuenta_data)
 
     except Exception as e:
-        logger.warning("Notificación WebSocket fallida en dividir_por_montos del pedido %s: %s", pedido_id, e)
+        logger.warning(
+            "Notificación WebSocket fallida en dividir_por_montos del pedido %s: %s", pedido_id, e
+        )
 
     return {
         "pedido_original_id": pedido.id,
@@ -814,66 +870,76 @@ async def update_pedido(
     pedido_id: int,
     data: PedidoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Actualizar el estado de un pedido.
     Solo cocina y administradores pueden cambiar estados.
     """
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
-    
+
     if not pedido:
-        raise HTTPException(
-            status_code=404,
-            detail="Pedido no encontrado"
-        )
-    
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
     # Validar permisos de acceso
     if current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para modificar este pedido"
-        )
-    
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
+
     # Validar permisos para cambiar estado según rol
     allowed_transitions = {
         "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
-        "cajero": ["entregado", "cuenta_solicitada", "pagado", "cancelado"],  # Cajero puede cancelar pedidos
+        "cajero": [
+            "entregado",
+            "cuenta_solicitada",
+            "pagado",
+            "cancelado",
+        ],  # Cajero puede cancelar pedidos
         "cocina": ["pendiente", "preparando", "listo", "entregado"],
-        "administrador": ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]
+        "administrador": [
+            "pendiente",
+            "preparando",
+            "listo",
+            "entregado",
+            "cuenta_solicitada",
+            "pagado",
+            "cancelado",
+            "dividido",
+        ],
     }
-    
+
     if current_user.rol not in allowed_transitions:
         raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para cambiar el estado de pedidos"
+            status_code=403, detail="No tienes permisos para cambiar el estado de pedidos"
         )
-    
+
     if data.estado not in allowed_transitions[current_user.rol]:
         raise HTTPException(
             status_code=403,
-            detail=f"Tu rol ({current_user.rol}) no puede cambiar a estado '{data.estado}'"
+            detail=f"Tu rol ({current_user.rol}) no puede cambiar a estado '{data.estado}'",
         )
-    
+
     # Validar estado
-    if data.estado not in ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "pagado", "cancelado", "dividido"]:
+    if data.estado not in [
+        "pendiente",
+        "preparando",
+        "listo",
+        "entregado",
+        "cuenta_solicitada",
+        "pagado",
+        "cancelado",
+        "dividido",
+    ]:
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido"
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido",
         )
-    
+
     # Validar propinas (no negativas)
     if data.propina_efectivo is not None and data.propina_efectivo < 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La propina en efectivo no puede ser negativa"
-        )
+        raise HTTPException(status_code=400, detail="La propina en efectivo no puede ser negativa")
     if data.propina_tarjeta is not None and data.propina_tarjeta < 0:
-        raise HTTPException(
-            status_code=400,
-            detail="La propina en tarjeta no puede ser negativa"
-        )
-    
+        raise HTTPException(status_code=400, detail="La propina en tarjeta no puede ser negativa")
+
     # Actualizar estado
     old_estado = pedido.estado
     pedido.estado = data.estado
@@ -885,33 +951,33 @@ async def update_pedido(
         turno_activo = _get_turno_activo(db, pedido.sucursal_id)
         if turno_activo:
             pedido.turno_id = turno_activo.id
-    
+
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
     # EXCEPTO aquellos que ya están "entregado" (bebidas)
     if data.estado == "listo":
         for articulo in pedido.articulos_pedido:
             if articulo.estado_item not in ["listo", "entregado"]:
                 articulo.estado_item = "listo"
-    
+
     # Si el pedido se marca como "entregado", marcar todos los artículos como "entregado"
     if data.estado == "entregado":
         for articulo in pedido.articulos_pedido:
             if articulo.estado_item != "entregado":
                 articulo.estado_item = "entregado"
-    
+
     # Actualizar método de pago si se proporciona
     if data.metodo_pago is not None:
         pedido.metodo_pago = data.metodo_pago
-    
+
     # Actualizar propinas si se proporcionan
     if data.propina_efectivo is not None:
         pedido.propina_efectivo = data.propina_efectivo
     if data.propina_tarjeta is not None:
         pedido.propina_tarjeta = data.propina_tarjeta
-    
+
     db.commit()
     db.refresh(pedido)
-    
+
     # Notificar cambio de estado via WebSocket (solo si cambió)
     if old_estado != data.estado:
         try:
@@ -936,18 +1002,19 @@ async def update_pedido(
                         "precio_cobrado": float(a.precio_cobrado),
                         "modificaciones": a.modificaciones,
                         "estado_item": a.estado_item,
-                    "platillo": {
-                        "nombre": a.platillo.nombre,
-                        "kds_name": a.platillo.kds_name,
-                        "categoria": a.platillo.categoria
-                    } if a.platillo else None
-                    } for a in pedido.articulos_pedido
-                ]
+                        "platillo": {
+                            "nombre": a.platillo.nombre,
+                            "kds_name": a.platillo.kds_name,
+                            "categoria": a.platillo.categoria,
+                        }
+                        if a.platillo
+                        else None,
+                    }
+                    for a in pedido.articulos_pedido
+                ],
             }
             await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=data.estado,
-                pedido_data=pedido_data
+                pedido_id=pedido.id, nuevo_estado=data.estado, pedido_data=pedido_data
             )
 
             # Integración automática con servicio de impresión
@@ -960,8 +1027,10 @@ async def update_pedido(
 
         except Exception as e:
             # Log del error pero no fallar la actualización del pedido
-            logger.warning("Notificación WebSocket fallida en cambio de estado del pedido %s: %s", pedido.id, e)
-    
+            logger.warning(
+                "Notificación WebSocket fallida en cambio de estado del pedido %s: %s", pedido.id, e
+            )
+
     return pedido
 
 
@@ -970,7 +1039,7 @@ async def update_articulo_estado(
     articulo_id: int,
     data: ArticuloPedidoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Actualizar el estado de un artículo del pedido.
@@ -980,46 +1049,44 @@ async def update_articulo_estado(
     # Validar permisos
     if current_user.rol not in ["mesero", "cocina", "administrador"]:
         raise HTTPException(
-            status_code=403,
-            detail="Solo meseros, cocina y administradores pueden actualizar items"
+            status_code=403, detail="Solo meseros, cocina y administradores pueden actualizar items"
         )
-    
+
     # Obtener el artículo
     articulo = db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).first()
     if not articulo:
-        raise HTTPException(
-            status_code=404,
-            detail="Artículo no encontrado"
-        )
-    
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+
     # Validar estado
     if data.estado_item not in ["pendiente", "preparando", "listo", "entregado"]:
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado"
+            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado",
         )
-    
+
     # Actualizar estado del artículo
     old_estado = articulo.estado_item
     articulo.estado_item = data.estado_item
     db.commit()
-    
+
     # Obtener el pedido asociado
     pedido = articulo.pedido
-    
+
     # Verificar si todos los artículos están completados (listo o entregado)
-    todos_completados = all(a.estado_item in ["listo", "entregado"] for a in pedido.articulos_pedido)
-    
+    todos_completados = all(
+        a.estado_item in ["listo", "entregado"] for a in pedido.articulos_pedido
+    )
+
     # Si todos están completados y el pedido está en 'preparando', cambiar a 'listo'
     pedido_estado_changed = False
     if todos_completados and pedido.estado == "preparando":
         pedido.estado = "listo"
         pedido_estado_changed = True
         db.commit()
-    
+
     db.refresh(articulo)
     db.refresh(pedido)
-    
+
     # Notificar cambio de artículo via WebSocket (solo si cambió)
     if old_estado != data.estado_item:
         try:
@@ -1044,40 +1111,45 @@ async def update_articulo_estado(
                         "precio_cobrado": float(a.precio_cobrado),
                         "modificaciones": a.modificaciones,
                         "estado_item": a.estado_item,
-                    "platillo": {
-                        "nombre": a.platillo.nombre,
-                        "kds_name": a.platillo.kds_name,
-                        "categoria": a.platillo.categoria
-                    } if a.platillo else None
-                    } for a in pedido.articulos_pedido
-                ]
+                        "platillo": {
+                            "nombre": a.platillo.nombre,
+                            "kds_name": a.platillo.kds_name,
+                            "categoria": a.platillo.categoria,
+                        }
+                        if a.platillo
+                        else None,
+                    }
+                    for a in pedido.articulos_pedido
+                ],
             }
-            
+
             # Notificar cambio de artículo
             await websocket_manager.notify_articulo_estado_changed(
                 pedido_id=pedido.id,
                 articulo_id=articulo.id,
                 nuevo_estado=data.estado_item,
-                pedido_data=pedido_data
+                pedido_data=pedido_data,
             )
-            
+
             # Si el pedido también cambió de estado, notificar eso también
             if pedido_estado_changed:
                 await websocket_manager.notify_pedido_estado_changed(
-                    pedido_id=pedido.id,
-                    nuevo_estado="listo",
-                    pedido_data=pedido_data
+                    pedido_id=pedido.id, nuevo_estado="listo", pedido_data=pedido_data
                 )
-                
+
         except Exception as e:
             # Log del error pero no fallar la actualización del artículo
-            logger.warning("Notificación WebSocket fallida en cambio de estado de artículo %s: %s", articulo_id, e)
-    
+            logger.warning(
+                "Notificación WebSocket fallida en cambio de estado de artículo %s: %s",
+                articulo_id,
+                e,
+            )
+
     return {
         "articulo_id": articulo.id,
         "estado_item": articulo.estado_item,
         "pedido_id": pedido.id,
-        "pedido_estado": pedido.estado
+        "pedido_estado": pedido.estado,
     }
 
 
@@ -1086,7 +1158,7 @@ async def agregar_articulos_pedido(
     pedido_id: int,
     data: AgregarArticulosRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Agregar artículos a un pedido existente.
@@ -1097,98 +1169,88 @@ async def agregar_articulos_pedido(
     # Validar permisos
     if current_user.rol not in ["mesero", "administrador"]:
         raise HTTPException(
-            status_code=403,
-            detail="Solo meseros y administradores pueden agregar artículos"
+            status_code=403, detail="Solo meseros y administradores pueden agregar artículos"
         )
-    
+
     # Validar que hay artículos
     if len(data.articulos) == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Debe agregar al menos un artículo"
-        )
-    
+        raise HTTPException(status_code=400, detail="Debe agregar al menos un artículo")
+
     # Buscar el pedido
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
-        raise HTTPException(
-            status_code=404,
-            detail="Pedido no encontrado"
-        )
-    
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
     # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo
     if data.client_request_id:
-        articulos_existentes = db.query(ArticuloPedido).filter(
-            ArticuloPedido.pedido_id == pedido_id,
-            ArticuloPedido.client_request_id == data.client_request_id
-        ).all()
+        articulos_existentes = (
+            db.query(ArticuloPedido)
+            .filter(
+                ArticuloPedido.pedido_id == pedido_id,
+                ArticuloPedido.client_request_id == data.client_request_id,
+            )
+            .all()
+        )
         if articulos_existentes:
             logger.info(
                 "Replay idempotente: client_request_id %s ya agregó artículos al pedido %s",
-                data.client_request_id, pedido_id
+                data.client_request_id,
+                pedido_id,
             )
             return pedido
-    
+
     # Validar que el pedido no esté en estados finales
     if pedido.estado in ["cuenta_solicitada", "pagado", "cancelado"]:
         raise HTTPException(
             status_code=400,
-            detail=f"No se pueden agregar artículos a pedidos en estado '{pedido.estado}'"
+            detail=f"No se pueden agregar artículos a pedidos en estado '{pedido.estado}'",
         )
-    
+
     # Validar permisos de acceso por sucursal
     if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para modificar este pedido"
-        )
-    
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
+
     # Validar y procesar artículos
     articulos_calculados = []
-    total_agregado = Decimal('0')
-    
+    total_agregado = Decimal("0")
+
     for articulo_data in data.articulos:
         # Validar que el platillo existe
         platillo = db.query(Platillo).filter(Platillo.id == articulo_data.platillo_id).first()
         if not platillo:
             raise HTTPException(
-                status_code=400,
-                detail=f"Platillo con ID {articulo_data.platillo_id} no encontrado"
+                status_code=400, detail=f"Platillo con ID {articulo_data.platillo_id} no encontrado"
             )
-        
+
         # Validar que el platillo esté disponible
         if platillo.estado != "disponible":
             raise HTTPException(
-                status_code=400,
-                detail=f"El platillo '{platillo.nombre}' no está disponible"
+                status_code=400, detail=f"El platillo '{platillo.nombre}' no está disponible"
             )
-        
+
         # Validar cantidad
         if articulo_data.cantidad <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="La cantidad debe ser mayor a 0"
-            )
-        
+            raise HTTPException(status_code=400, detail="La cantidad debe ser mayor a 0")
+
         # Calcular precio
         precio_cobrado = platillo.precio * articulo_data.cantidad
         total_agregado += precio_cobrado
-        
+
         # Crear artículo calculado
         articulo_calculado = {
             "platillo_id": articulo_data.platillo_id,
             "cantidad": articulo_data.cantidad,
             "precio_cobrado": float(precio_cobrado),  # Convertir a float para JSON
-            "modificaciones": articulo_data.modificaciones or ""
+            "modificaciones": articulo_data.modificaciones or "",
         }
         articulos_calculados.append(articulo_calculado)
-    
+
     # Crear los nuevos artículos
     nuevos_articulos = []
     for articulo_data in articulos_calculados:
         # Obtener el platillo para verificar si es bebida
         platillo = db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
-        
+
         # Todos los items inician en pendiente; bebidas se marcan manualmente por mesero si aplica
         estado_inicial = "pendiente"
 
@@ -1199,14 +1261,14 @@ async def agregar_articulos_pedido(
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
             estado_item=estado_inicial,
-            client_request_id=data.client_request_id
+            client_request_id=data.client_request_id,
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)
-    
+
     # Actualizar total del pedido
     pedido.total += total_agregado
-    
+
     # Si el pedido estaba en "pendiente", mantenerlo así para re-procesar todo
     # Si estaba en otros estados, los artículos nuevos van a cocina como "agregados"
     # Si el pedido estaba "entregado", volver a "pendiente" para que aparezca en KDS
@@ -1217,10 +1279,10 @@ async def agregar_articulos_pedido(
         # get_mexico_now() y no datetime.now(): fecha_creacion participa en el unique
         # constraint del numero_display diario y en la ventana del día del KDS
         pedido.fecha_creacion = get_mexico_now()
-    
+
     db.commit()
     db.refresh(pedido)
-    
+
     # Notificaciones WebSocket según el estado
     try:
         pedido_data = {
@@ -1240,26 +1302,26 @@ async def agregar_articulos_pedido(
                     "precio_cobrado": float(a.precio_cobrado),
                     "modificaciones": a.modificaciones,
                     "estado_item": a.estado_item,
-                    "platillo": {
-                        "nombre": a.platillo.nombre,
-                        "kds_name": a.platillo.kds_name
-                    } if a.platillo else None
-                } for a in pedido.articulos_pedido
-            ]
+                    "platillo": {"nombre": a.platillo.nombre, "kds_name": a.platillo.kds_name}
+                    if a.platillo
+                    else None,
+                }
+                for a in pedido.articulos_pedido
+            ],
         }
-        
+
         # Siempre enviar actualización del pedido completo
         # Esto agrupa los artículos nuevos con los existentes visualmente en lugar de crear un "-A" temporal
         await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id,
-            nuevo_estado=pedido.estado,
-            pedido_data=pedido_data
+            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
         )
-        
+
     except Exception as e:
         # Log del error pero no fallar la operación
-        logger.warning("Notificación WebSocket fallida al agregar artículos al pedido %s: %s", pedido_id, e)
-    
+        logger.warning(
+            "Notificación WebSocket fallida al agregar artículos al pedido %s: %s", pedido_id, e
+        )
+
     return pedido
 
 
@@ -1268,7 +1330,7 @@ async def actualizar_articulos_pedido(
     pedido_id: int,
     data: dict,  # {"articulos": [{"id": int, "cantidad": int, "modificaciones": str}]}
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Actualizar artículos de un pedido existente.
@@ -1278,93 +1340,78 @@ async def actualizar_articulos_pedido(
     if current_user.rol not in ["mesero", "administrador", "cajero"]:
         raise HTTPException(
             status_code=403,
-            detail="Solo meseros, cajeros y administradores pueden modificar pedidos"
+            detail="Solo meseros, cajeros y administradores pueden modificar pedidos",
         )
-    
+
     # Buscar el pedido
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
-        raise HTTPException(
-            status_code=404,
-            detail="Pedido no encontrado"
-        )
-    
+        raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
     # Validar que el pedido no esté en estados finales
     if pedido.estado in ["pagado", "cancelado", "dividido"]:
         raise HTTPException(
-            status_code=400,
-            detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'"
+            status_code=400, detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'"
         )
-    
+
     # Validar permisos de acceso por sucursal
     if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para modificar este pedido"
-        )
-    
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
+
     # Validar estructura de data
     if "articulos" not in data or not isinstance(data["articulos"], list):
-        raise HTTPException(
-            status_code=400,
-            detail="Se requiere campo 'articulos' como lista"
-        )
-    
+        raise HTTPException(status_code=400, detail="Se requiere campo 'articulos' como lista")
+
     # Obtener artículos actuales del pedido
     articulos_actuales = {a.id: a for a in pedido.articulos_pedido}
-    nuevo_total = Decimal('0')
-    
+    nuevo_total = Decimal("0")
+
     # Procesar cada artículo actualizado
     for articulo_data in data["articulos"]:
         if "id" not in articulo_data or "cantidad" not in articulo_data:
             raise HTTPException(
-                status_code=400,
-                detail="Cada artículo debe tener 'id' y 'cantidad'"
+                status_code=400, detail="Cada artículo debe tener 'id' y 'cantidad'"
             )
-        
+
         articulo_id = articulo_data["id"]
         nueva_cantidad = articulo_data["cantidad"]
         nuevas_modificaciones = articulo_data.get("modificaciones", "")
-        
+
         # Validar que el artículo pertenece a este pedido
         if articulo_id not in articulos_actuales:
             if nueva_cantidad == 0:
                 # Ya fue eliminado en un intento previo, ignorar de forma idempotente
                 continue
             raise HTTPException(
-                status_code=400,
-                detail=f"Artículo con ID {articulo_id} no pertenece a este pedido"
+                status_code=400, detail=f"Artículo con ID {articulo_id} no pertenece a este pedido"
             )
-        
+
         articulo = articulos_actuales[articulo_id]
-        
+
         # Validar cantidad
         if nueva_cantidad < 0:
-            raise HTTPException(
-                status_code=400,
-                detail="La cantidad no puede ser negativa"
-            )
-        
+            raise HTTPException(status_code=400, detail="La cantidad no puede ser negativa")
+
         if nueva_cantidad == 0:
             # Eliminar artículo
             db.delete(articulo)
             continue
-        
+
         # Actualizar artículo
         articulo.cantidad = nueva_cantidad
         articulo.modificaciones = nuevas_modificaciones
-        
+
         # Recalcular precio basado en nueva cantidad
         articulo.precio_cobrado = articulo.platillo.precio * nueva_cantidad
         nuevo_total += articulo.precio_cobrado
-    
+
     # Actualizar total del pedido
     pedido.total = nuevo_total
-    
+
     # Commit cambios
     db.commit()
     db.refresh(pedido)
-    
+
     # Notificar via WebSocket que el pedido se actualizó
     try:
         pedido_data = {
@@ -1384,24 +1431,27 @@ async def actualizar_articulos_pedido(
                     "precio_cobrado": float(a.precio_cobrado),
                     "modificaciones": a.modificaciones,
                     "estado_item": a.estado_item,
-                    "platillo": {
-                        "nombre": a.platillo.nombre,
-                        "kds_name": a.platillo.kds_name
-                    } if a.platillo else None
-                } for a in pedido.articulos_pedido
-            ]
+                    "platillo": {"nombre": a.platillo.nombre, "kds_name": a.platillo.kds_name}
+                    if a.platillo
+                    else None,
+                }
+                for a in pedido.articulos_pedido
+            ],
         }
-        
+
         await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id,
-            nuevo_estado=pedido.estado,
-            pedido_data=pedido_data
+            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
         )
         logger.info("Notificación WebSocket enviada: pedido %s actualizado", pedido.id)
 
     except Exception as e:
         # Log del error pero no fallar la operación
-        logger.warning("Notificación WebSocket fallida al actualizar artículos del pedido %s: %s", pedido.id, e, exc_info=True)
+        logger.warning(
+            "Notificación WebSocket fallida al actualizar artículos del pedido %s: %s",
+            pedido.id,
+            e,
+            exc_info=True,
+        )
 
     return pedido
 
@@ -1411,7 +1461,7 @@ async def imprimir_ticket_pedido(
     pedido_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user)
+    current_user: Usuario = Depends(get_current_active_user),
 ):
     """
     Imprimir el ticket de un pedido manualmente.
@@ -1420,17 +1470,14 @@ async def imprimir_ticket_pedido(
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
-    
+
     # Validar que el pedido tiene artículos
     if not pedido.articulos_pedido:
         raise HTTPException(status_code=400, detail="El pedido no tiene artículos para imprimir")
 
     # Validar permisos de acceso por sucursal
     if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permisos para imprimir este pedido"
-        )
+        raise HTTPException(status_code=403, detail="No tienes permisos para imprimir este pedido")
 
     # Preparar datos para impresión
     pedido_data = {
@@ -1449,11 +1496,10 @@ async def imprimir_ticket_pedido(
                 "cantidad": a.cantidad,
                 "precio_cobrado": float(a.precio_cobrado),
                 "modificaciones": a.modificaciones,
-                "platillo": {
-                    "nombre": a.platillo.nombre
-                } if a.platillo else None
-            } for a in pedido.articulos_pedido
-        ]
+                "platillo": {"nombre": a.platillo.nombre} if a.platillo else None,
+            }
+            for a in pedido.articulos_pedido
+        ],
     }
 
     # Programar impresión en segundo plano; no bloquea la respuesta

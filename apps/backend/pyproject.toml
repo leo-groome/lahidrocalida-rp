@@ -1,0 +1,44 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Valta Command — Backend FastAPI"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.117.1",
+    "uvicorn==0.37.0",
+    "sqlalchemy==2.0.43",
+    "alembic==1.13.2",
+    "pydantic==2.11.9",
+    "pydantic-settings==2.11.0",
+    "python-dotenv==1.1.1",
+    "python-jose[cryptography]==3.3.0",
+    "passlib[argon2,bcrypt]==1.7.4",
+    "python-multipart==0.0.9",
+    "psycopg2-binary==2.9.10",
+    "websockets==11.0.3",
+    "pytz==2024.1",
+    "requests==2.31.0",
+    "asyncpg==0.30.0",
+    "anyio==4.11.0",
+    "httpx==0.28.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio",
+    "ruff>=0.9.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501", "E711", "E712", "E402", "F841"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]

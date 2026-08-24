@@ -1,17 +1,17 @@
 """baseline schema (espejo exacto de produccion, generado via pg_dump --schema-only)
 
 Revision ID: 1af66464b276
-Revises: 
+Revises:
 Create Date: 2026-08-24 12:42:12.798788
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision: str = '1af66464b276'
+revision: str = "1af66464b276"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

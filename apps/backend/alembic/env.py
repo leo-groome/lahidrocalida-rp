@@ -1,7 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
@@ -23,12 +22,12 @@ import sys
 from dotenv import load_dotenv
 
 # Ensure backend/app is importable
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
 
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'backend', '.env'))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "backend", ".env"))
 
-from app.db.session import Base  # noqa: E402
 import app.models  # noqa: F401,E402
+from app.db.session import Base  # noqa: E402
 
 # Use model metadata for autogenerate
 target_metadata = Base.metadata

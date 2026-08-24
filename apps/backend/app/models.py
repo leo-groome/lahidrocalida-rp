@@ -1,25 +1,22 @@
-from datetime import datetime
-
-from app.core.config import settings
-from app.db.session import Base
-from app.utils.timezone import get_mexico_now
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
     DateTime,
+    Enum,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
-    func,
-    Enum,
-    Numeric,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.types import DECIMAL
+
+from app.db.session import Base
+from app.utils.timezone import get_mexico_now
 
 
 def get_local_datetime():
@@ -123,7 +120,6 @@ class Pedido(Base):
         return self.usuario.nombre if self.usuario else None
 
 
-
 class ArticuloPedido(Base):
     __tablename__ = "articulos_pedido"
 
@@ -210,9 +206,7 @@ class Gasto(Base):
     sucursal = relationship("Sucursal", back_populates="gastos")
     proveedor = relationship("Proveedor", back_populates="gastos")
     turno = relationship("Turno")
-    detalles = relationship(
-        "GastoDetalle", back_populates="gasto", cascade="all, delete-orphan"
-    )
+    detalles = relationship("GastoDetalle", back_populates="gasto", cascade="all, delete-orphan")
     nomina_detalles = relationship(
         "NominaDetalle", back_populates="gasto", cascade="all, delete-orphan"
     )
@@ -235,6 +229,7 @@ class GastoDetalle(Base):
 
 class NominaDetalle(Base):
     """Una línea de pago a un empleado dentro de una tanda de nómina (Gasto tipo='nomina')."""
+
     __tablename__ = "nomina_detalles"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -256,9 +251,7 @@ class Turno(Base):
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
     fecha_apertura = Column(DateTime(timezone=True), default=get_local_datetime)
     fecha_cierre = Column(DateTime(timezone=True))
-    estado = Column(
-        String(10), default="abierto", nullable=False
-    )  # 'abierto', 'cerrado'
+    estado = Column(String(10), default="abierto", nullable=False)  # 'abierto', 'cerrado'
     total_inicial = Column(DECIMAL(10, 2), nullable=False)
     total_final = Column(DECIMAL(10, 2))
     ventas_efectivo = Column(DECIMAL(10, 2))
@@ -289,13 +282,9 @@ class TurnoDenominacion(Base):
     __tablename__ = "turno_denominaciones"
 
     id = Column(Integer, primary_key=True, index=True)
-    turno_id = Column(
-        Integer, ForeignKey("turnos.id", ondelete="CASCADE"), nullable=False
-    )
+    turno_id = Column(Integer, ForeignKey("turnos.id", ondelete="CASCADE"), nullable=False)
     tipo = Column(String(10), nullable=False)  # 'inicial', 'final'
-    denominacion = Column(
-        Integer, nullable=False
-    )  # 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1
+    denominacion = Column(Integer, nullable=False)  # 1000, 500, 200, 100, 50, 20, 10, 5, 2, 1
     cantidad = Column(Integer, nullable=False, default=0)
     subtotal = Column(DECIMAL(10, 2), nullable=False)
 
@@ -304,12 +293,8 @@ class TurnoDenominacion(Base):
 
     # Índices y constraints
     __table_args__ = (
-        UniqueConstraint(
-            "turno_id", "tipo", "denominacion", name="uq_turno_tipo_denominacion"
-        ),
-        CheckConstraint(
-            "tipo IN ('inicial', 'final')", name="chk_turno_denominacion_tipo"
-        ),
+        UniqueConstraint("turno_id", "tipo", "denominacion", name="uq_turno_tipo_denominacion"),
+        CheckConstraint("tipo IN ('inicial', 'final')", name="chk_turno_denominacion_tipo"),
         CheckConstraint(
             "denominacion IN (1000, 500, 200, 100, 50, 20, 10, 5, 2, 1)",
             name="chk_turno_denominacion_valor",

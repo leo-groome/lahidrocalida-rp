@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Optional, cast
 
@@ -7,10 +7,9 @@ from sqlalchemy import and_, case, extract, func, or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user
-from app.core.config import settings
 from app.db.session import get_db
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
-from app.utils.timezone import get_mexico_now, MEXICO_TZ
+from app.utils.timezone import MEXICO_TZ, get_mexico_now
 
 router = APIRouter(prefix="/reportes", tags=["reportes"])
 
@@ -46,10 +45,11 @@ def tickets_del_dia(
     # Determinar filtro: turno o fecha
     tid = turno_id
     if not tid:
-        turno_activo = db.query(Turno).filter(
-            Turno.sucursal_id == user.sucursal_id,
-            Turno.estado == "abierto"
-        ).first()
+        turno_activo = (
+            db.query(Turno)
+            .filter(Turno.sucursal_id == user.sucursal_id, Turno.estado == "abierto")
+            .first()
+        )
         tid = turno_activo.id if turno_activo else None
 
     # Proyección de columnas: evita traer el modelo completo y el N+1 de
@@ -80,7 +80,9 @@ def tickets_del_dia(
         now_local = get_mexico_now()
         today_local = now_local.date()
         start_dt = datetime.combine(today_local, datetime.min.time(), tzinfo=MEXICO_TZ)
-        end_dt = datetime.combine(today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        end_dt = datetime.combine(
+            today_local + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+        )
         query = query.filter(
             or_(
                 and_(
@@ -117,7 +119,9 @@ def tickets_del_dia(
             "propina_tarjeta": float(row.propina_tarjeta or 0),
             "propina_total": float((row.propina_efectivo or 0) + (row.propina_tarjeta or 0)),
             "fecha_pago": row.fecha_pago.isoformat() if row.fecha_pago is not None else None,
-            "fecha_creacion": row.fecha_creacion.isoformat() if row.fecha_creacion is not None else None,
+            "fecha_creacion": row.fecha_creacion.isoformat()
+            if row.fecha_creacion is not None
+            else None,
             "fecha_evento": fecha_evento.isoformat() if fecha_evento is not None else None,
             "mesero_nombre": row.mesero_nombre,
             "tipo_orden": row.tipo_orden,
@@ -147,10 +151,11 @@ def analytics_del_dia(
     # Determinar filtro turno vs fecha
     tid = turno_id
     if not tid:
-        turno_activo = db.query(Turno).filter(
-            Turno.sucursal_id == user.sucursal_id,
-            Turno.estado == "abierto"
-        ).first()
+        turno_activo = (
+            db.query(Turno)
+            .filter(Turno.sucursal_id == user.sucursal_id, Turno.estado == "abierto")
+            .first()
+        )
         tid = turno_activo.id if turno_activo else None
 
     def _filtro_periodo(extra_filters=None):
@@ -162,7 +167,9 @@ def analytics_del_dia(
             now_local = get_mexico_now()
             today = now_local.date()
             start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
-            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(
+                today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+            )
             filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
         if extra_filters:
             filters += extra_filters
@@ -173,36 +180,26 @@ def analytics_del_dia(
 
     total_pedidos = base_query.count()
 
-    efectivo_total = (
-        db.query(func.sum(Pedido.total))
-        .filter(_filtro_periodo([Pedido.metodo_pago == "efectivo"]))
-        .scalar() or Decimal("0.00")
-    )
+    efectivo_total = db.query(func.sum(Pedido.total)).filter(
+        _filtro_periodo([Pedido.metodo_pago == "efectivo"])
+    ).scalar() or Decimal("0.00")
 
-    tarjeta_total = (
-        db.query(func.sum(Pedido.total))
-        .filter(_filtro_periodo([Pedido.metodo_pago == "tarjeta"]))
-        .scalar() or Decimal("0.00")
-    )
+    tarjeta_total = db.query(func.sum(Pedido.total)).filter(
+        _filtro_periodo([Pedido.metodo_pago == "tarjeta"])
+    ).scalar() or Decimal("0.00")
 
-    transferencia_total = (
-        db.query(func.sum(Pedido.total))
-        .filter(_filtro_periodo([Pedido.metodo_pago == "transferencia"]))
-        .scalar() or Decimal("0.00")
-    )
+    transferencia_total = db.query(func.sum(Pedido.total)).filter(
+        _filtro_periodo([Pedido.metodo_pago == "transferencia"])
+    ).scalar() or Decimal("0.00")
 
     # Propinas por metodo
-    propina_efectivo_total = (
-        db.query(func.sum(Pedido.propina_efectivo))
-        .filter(_filtro_periodo([Pedido.metodo_pago == "efectivo"]))
-        .scalar() or Decimal("0.00")
-    )
+    propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(
+        _filtro_periodo([Pedido.metodo_pago == "efectivo"])
+    ).scalar() or Decimal("0.00")
 
-    propina_tarjeta_total = (
-        db.query(func.sum(Pedido.propina_tarjeta))
-        .filter(_filtro_periodo([Pedido.metodo_pago.in_(["tarjeta", "transferencia"])]))
-        .scalar() or Decimal("0.00")
-    )
+    propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(
+        _filtro_periodo([Pedido.metodo_pago.in_(["tarjeta", "transferencia"])])
+    ).scalar() or Decimal("0.00")
 
     propina_total = propina_efectivo_total + propina_tarjeta_total
 
@@ -240,18 +237,23 @@ def analytics_del_dia(
             now_local = get_mexico_now()
             today = now_local.date()
             start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
-            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(
+                today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+            )
             filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
         return and_(*filters)
 
-    cancelaciones = (
-        db.query(func.count(Pedido.id))
-        .filter(_filtro_cancelaciones())
-        .scalar() or 0
-    )
+    cancelaciones = db.query(func.count(Pedido.id)).filter(_filtro_cancelaciones()).scalar() or 0
 
     # Estado actual (operativo) — no filtra por estado=pagado
-    estados_operativos = ["pendiente", "preparando", "listo", "entregado", "cuenta_solicitada", "dividido"]
+    estados_operativos = [
+        "pendiente",
+        "preparando",
+        "listo",
+        "entregado",
+        "cuenta_solicitada",
+        "dividido",
+    ]
 
     def _filtro_operativos():
         filters = [Pedido.estado.in_(estados_operativos), Pedido.sucursal_id == user.sucursal_id]
@@ -261,7 +263,9 @@ def analytics_del_dia(
             now_local = get_mexico_now()
             today = now_local.date()
             start_dt = datetime.combine(today, datetime.min.time(), tzinfo=MEXICO_TZ)
-            end_dt = datetime.combine(today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+            end_dt = datetime.combine(
+                today + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+            )
             filters += [Pedido.fecha_creacion >= start_dt, Pedido.fecha_creacion < end_dt]
         return and_(*filters)
 
@@ -315,11 +319,9 @@ def analytics_del_dia(
             {"tipo": tipo, "cantidad": int(cantidad)} for tipo, cantidad in tipos_orden_data
         ],
         "estado_actual": [
-            {"estado": estado, "cantidad": int(cantidad)}
-            for estado, cantidad in estado_actual_data
+            {"estado": estado, "cantidad": int(cantidad)} for estado, cantidad in estado_actual_data
         ],
         "productos_mas_vendidos": [
-            {"nombre": nombre, "cantidad": int(cantidad)}
-            for nombre, cantidad in productos_vendidos
+            {"nombre": nombre, "cantidad": int(cantidad)} for nombre, cantidad in productos_vendidos
         ],
     }

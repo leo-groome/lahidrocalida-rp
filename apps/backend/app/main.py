@@ -1,3 +1,10 @@
+import logging
+
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app import websocket_routes
 from app.core.config import settings
 from app.db.session import get_db
@@ -13,11 +20,6 @@ from app.routers import (
     turnos,
     users,
 )
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-import logging
 
 # Sin esto, los logger.* de los módulos propios no salen en los logs del host
 logging.basicConfig(

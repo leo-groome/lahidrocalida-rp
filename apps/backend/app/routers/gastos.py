@@ -1,15 +1,14 @@
-from datetime import datetime, date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import and_, func
 
 from app.auth import get_current_active_user
 from app.core.cache import catalogos_cache
 from app.db.session import get_db
-from app.utils.timezone import MEXICO_TZ, get_mexico_now
 from app.models import (
     Articulo,
     CategoriaArticulo,
@@ -26,18 +25,19 @@ from app.schemas import (
     CategoriaArticuloCreate,
     CategoriaArticuloResponse,
     GastoCreate,
+    GastoPorCategoria,
     GastoResponse,
     GastosResumenResponse,
     GastoTimeline,
-    GastoPorCategoria,
     GastoTopProveedor,
-    HistorialPreciosResponse,
     HistorialPrecioItem,
+    HistorialPreciosResponse,
     PaginatedGastosResponse,
     ProveedorCreate,
     ProveedorResponse,
     UsuarioResponse,
 )
+from app.utils.timezone import MEXICO_TZ
 
 router = APIRouter(prefix="/gastos", tags=["gastos"])
 
@@ -73,7 +73,9 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
         if data.detalles:
             raise HTTPException(status_code=400, detail="Nómina no lleva detalles de artículos")
         if not data.nomina_detalles:
-            raise HTTPException(status_code=400, detail="Se requiere al menos un empleado en la nómina")
+            raise HTTPException(
+                status_code=400, detail="Se requiere al menos un empleado en la nómina"
+            )
     else:
         if data.nomina_detalles:
             raise HTTPException(status_code=400, detail="Solo la nómina lleva empleados")
@@ -102,17 +104,19 @@ def _build_nomina_detalles(
         .all()
     )
     if len(usuarios) != len(set(usuario_ids)):
-        raise HTTPException(status_code=400, detail="Hay empleados inválidos, inactivos o de otra sucursal")
+        raise HTTPException(
+            status_code=400, detail="Hay empleados inválidos, inactivos o de otra sucursal"
+        )
     detalles = []
     total = Decimal("0.00")
     for d in detalles_data:
         monto = _normalize_decimal(d.monto)
         if monto <= 0:
-            raise HTTPException(status_code=400, detail="El monto de cada empleado debe ser mayor a 0")
+            raise HTTPException(
+                status_code=400, detail="El monto de cada empleado debe ser mayor a 0"
+            )
         total += monto
-        detalles.append(
-            NominaDetalle(usuario_id=d.usuario_id, monto=monto, notas=d.notas)
-        )
+        detalles.append(NominaDetalle(usuario_id=d.usuario_id, monto=monto, notas=d.notas))
     total = _normalize_decimal(total)
     if total <= 0:
         raise HTTPException(status_code=400, detail="El total de la nómina debe ser mayor a 0")
@@ -193,13 +197,19 @@ def list_categorias_articulo(
         return cached
     result = [
         CategoriaArticuloResponse.model_validate(c)
-        for c in db.query(CategoriaArticulo).order_by(func.lower(CategoriaArticulo.nombre).asc()).all()
+        for c in db.query(CategoriaArticulo)
+        .order_by(func.lower(CategoriaArticulo.nombre).asc())
+        .all()
     ]
     catalogos_cache.set("categorias_articulo", result)
     return result
 
 
-@router.post("/categorias-articulo", response_model=CategoriaArticuloResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/categorias-articulo",
+    response_model=CategoriaArticuloResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_categoria_articulo(
     data: CategoriaArticuloCreate,
     db: Session = Depends(get_db),
@@ -256,7 +266,9 @@ def create_articulo(
     _ensure_can_manage_gastos(current_user)
     if data.unidad not in UNIDADES_PERMITIDAS:
         raise HTTPException(status_code=400, detail="Unidad inválida")
-    categoria = db.query(CategoriaArticulo).filter(CategoriaArticulo.id == data.categoria_id).first()
+    categoria = (
+        db.query(CategoriaArticulo).filter(CategoriaArticulo.id == data.categoria_id).first()
+    )
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     articulo = Articulo(
@@ -284,7 +296,9 @@ def update_articulo(
     articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
-    categoria = db.query(CategoriaArticulo).filter(CategoriaArticulo.id == data.categoria_id).first()
+    categoria = (
+        db.query(CategoriaArticulo).filter(CategoriaArticulo.id == data.categoria_id).first()
+    )
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
     articulo.nombre = data.nombre
@@ -387,7 +401,9 @@ def create_gasto(
         folio=data.folio,
         subtotal=subtotal,
         total=total,
-        total_manual=_normalize_decimal(data.total_manual) if data.total_manual is not None else None,
+        total_manual=_normalize_decimal(data.total_manual)
+        if data.total_manual is not None
+        else None,
         fecha_gasto=fecha_gasto,
         notas=data.notas,
         sucursal_id=current_user.sucursal_id,
@@ -435,9 +451,11 @@ def list_gastos(
         start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
         query = query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date is not None:
-        end_dt = datetime.combine(fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        end_dt = datetime.combine(
+            fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+        )
         query = query.filter(Gasto.fecha_gasto < end_dt)
-    
+
     # Filtro complejo por categoría (requiere join)
     if categoria_id is not None:
         query = (
@@ -452,8 +470,7 @@ def list_gastos(
 
     # Aplicar orden y paginación
     query = (
-        query
-        .options(
+        query.options(
             joinedload(Gasto.proveedor),
             joinedload(Gasto.detalles)
             .joinedload(GastoDetalle.articulo)
@@ -467,12 +484,7 @@ def list_gastos(
 
     items = query.all()
 
-    return PaginatedGastosResponse(
-        items=items,
-        total=total,
-        page=page,
-        page_size=page_size
-    )
+    return PaginatedGastosResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/analiticas/resumen", response_model=GastosResumenResponse)
@@ -497,7 +509,9 @@ def get_gastos_analiticas(
         start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
         base_query = base_query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date:
-        end_dt = datetime.combine(fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ)
+        end_dt = datetime.combine(
+            fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
+        )
         base_query = base_query.filter(Gasto.fecha_gasto < end_dt)
 
     # 1. Total Gastado
@@ -521,35 +535,39 @@ def get_gastos_analiticas(
     # 3. Por Categoría (más complejo porque 'nomina' no tiene articulos/categorias)
     # Estrategia: Consultar GastoDetalle -> Articulo -> Categoria para gastos normales
     # Y sumar gastos tipo 'nomina' o sin detalles como 'Otros'
-    
+
     # A. Gastos con detalle
     gastos_con_detalle = (
         db.query(
             CategoriaArticulo.nombre.label("categoria"),
-            func.sum(GastoDetalle.subtotal_linea).label("total")
+            func.sum(GastoDetalle.subtotal_linea).label("total"),
         )
         .join(Articulo, GastoDetalle.articulo_id == Articulo.id)
         .join(CategoriaArticulo, Articulo.categoria_id == CategoriaArticulo.id)
         .join(Gasto, GastoDetalle.gasto_id == Gasto.id)
     )
-    
+
     # Aplicar mismos filtros a esta subquery
     if current_user.rol == "compras":
-        gastos_con_detalle = gastos_con_detalle.filter(Gasto.sucursal_id == current_user.sucursal_id)
+        gastos_con_detalle = gastos_con_detalle.filter(
+            Gasto.sucursal_id == current_user.sucursal_id
+        )
     elif sucursal_id:
         gastos_con_detalle = gastos_con_detalle.filter(Gasto.sucursal_id == sucursal_id)
     if fecha_inicio_date:
         gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto >= fecha_inicio_date)
     if fecha_fin_date:
         gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto <= fecha_fin_date)
-        
+
     res_categorias = gastos_con_detalle.group_by(CategoriaArticulo.nombre).all()
-    
-    por_categoria = [GastoPorCategoria(categoria=r.categoria, total=float(r.total or 0)) for r in res_categorias]
+
+    por_categoria = [
+        GastoPorCategoria(categoria=r.categoria, total=float(r.total or 0)) for r in res_categorias
+    ]
 
     # B. Agregar Nomina e Indirectos sin detalle
     # Nómina
-    nomina_query = base_query.filter(Gasto.tipo_gasto == 'nomina')
+    nomina_query = base_query.filter(Gasto.tipo_gasto == "nomina")
     total_nomina = nomina_query.with_entities(func.sum(Gasto.total)).scalar() or 0
     if total_nomina > 0:
         por_categoria.append(GastoPorCategoria(categoria="Nómina", total=float(total_nomina)))
@@ -557,47 +575,39 @@ def get_gastos_analiticas(
     # 4. Top Proveedor
     top_prov = (
         base_query.with_entities(
-            Proveedor.id,
-            Proveedor.nombre,
-            func.sum(Gasto.total).label("total")
+            Proveedor.id, Proveedor.nombre, func.sum(Gasto.total).label("total")
         )
         .join(Proveedor, Gasto.proveedor_id == Proveedor.id)
         .group_by(Proveedor.id, Proveedor.nombre)
         .order_by(func.sum(Gasto.total).desc())
         .first()
     )
-    
+
     top_proveedor_obj = None
     if top_prov:
         top_proveedor_obj = GastoTopProveedor(
-            id=top_prov.id,
-            nombre=top_prov.nombre,
-            total=float(top_prov.total)
+            id=top_prov.id, nombre=top_prov.nombre, total=float(top_prov.total)
         )
 
     # 5. Timeline
     # Agrupar por fecha (día)
     timeline_res = (
         base_query.with_entities(
-            func.date(Gasto.fecha_gasto).label("fecha"),
-            func.sum(Gasto.total).label("total")
+            func.date(Gasto.fecha_gasto).label("fecha"), func.sum(Gasto.total).label("total")
         )
         .group_by(func.date(Gasto.fecha_gasto))
         .order_by(func.date(Gasto.fecha_gasto))
         .all()
     )
-    
-    timeline = [
-        GastoTimeline(fecha=str(r.fecha), total=float(r.total)) 
-        for r in timeline_res
-    ]
+
+    timeline = [GastoTimeline(fecha=str(r.fecha), total=float(r.total)) for r in timeline_res]
 
     return GastosResumenResponse(
         total_gastado=float(total_gastado),
         gasto_promedio_diario=promedio_diario,
         por_categoria=por_categoria,
         top_proveedor=top_proveedor_obj,
-        timeline=timeline
+        timeline=timeline,
     )
 
 
@@ -611,7 +621,7 @@ def get_historial_precios(
     articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
-        
+
     rows = (
         db.query(
             Gasto.fecha_gasto,
@@ -637,11 +647,9 @@ def get_historial_precios(
         )
         for row in rows
     ]
-        
+
     return HistorialPreciosResponse(
-        articulo_id=articulo.id,
-        articulo_nombre=articulo.nombre,
-        historial=items
+        articulo_id=articulo.id, articulo_nombre=articulo.nombre, historial=items
     )
 
 
@@ -714,7 +722,9 @@ def update_gasto(
     gasto.folio = data.folio
     gasto.subtotal = subtotal
     gasto.total = total
-    gasto.total_manual = _normalize_decimal(data.total_manual) if data.total_manual is not None else None
+    gasto.total_manual = (
+        _normalize_decimal(data.total_manual) if data.total_manual is not None else None
+    )
     if data.fecha_gasto:
         gasto.fecha_gasto = data.fecha_gasto
     gasto.notas = data.notas

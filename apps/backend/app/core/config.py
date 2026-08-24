@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     # Base de datos
     DATABASE_URL: str

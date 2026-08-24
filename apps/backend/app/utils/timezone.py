@@ -1,11 +1,13 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 MEXICO_TZ = ZoneInfo("America/Mexico_City")
 
+
 def get_mexico_now():
     """Retorna el datetime actual en la zona horaria de México (aware)"""
     return datetime.now(MEXICO_TZ)
+
 
 def get_day_range(target_date):
     """

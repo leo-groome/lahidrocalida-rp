@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
 from app.core.config import settings
 
 # 1. CREAR EL ENGINE (Motor de base de datos)
@@ -20,9 +21,10 @@ Base = declarative_base()
 # SessionLocal es una "fábrica" que crea sesiones de base de datos
 SessionLocal = sessionmaker(
     autocommit=False,  # No guarda automáticamente, necesitas hacer commit
-    autoflush=False,   # No envía cambios automáticamente a la BD
-    bind=engine       # Conecta con nuestro engine
+    autoflush=False,  # No envía cambios automáticamente a la BD
+    bind=engine,  # Conecta con nuestro engine
 )
+
 
 # 4. FUNCIÓN PARA OBTENER UNA SESIÓN
 def get_db():
