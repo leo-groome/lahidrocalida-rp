@@ -1,6 +1,6 @@
 # La Hidrocálida v2 — Tablero de sprints
 
-**Rama base:** `flujo-mesero` · **Última actualización:** 2026-08-24
+**Rama base:** `flujo-mesero` · **Última actualización:** 2026-08-24 (S0 cerrado)
 
 Documento vivo. El alcance y el *por qué* de cada bloque están en [PLAN_V2.md](./PLAN_V2.md); la
 foto del sistema tal como funciona hoy está en [ESTADO_ACTUAL.md](./ESTADO_ACTUAL.md). Este archivo
@@ -20,8 +20,8 @@ Estados: ⚪ pendiente · 🔵 en curso · 🟢 cerrado · 🔴 bloqueado · ⏭
 
 | Sprint | Alcance | Bloques | Tamaño | Estado | Rama | Cerrado |
 |---|---|---|---|---|---|---|
-| **S0** | Migración de infraestructura (Koyeb→Railway, Neon nueva instancia) | — | M | 🔵 en curso | — | — |
-| **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | ⚪ | `v2/sprint-1-fundaciones` | — |
+| **S0** | Migración de infraestructura (Koyeb→Railway, Neon nueva instancia) | — | M | 🟢 cerrado | — | 2026-08-24 |
+| **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | ⚪ **siguiente** | `v2/sprint-1-fundaciones` | — |
 | **S2** | Fiabilidad de pedidos | 1 | L | ⚪ | `v2/sprint-2-pedidos` | — |
 | **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | ⚪ | `v2/sprint-3-jornada` | — |
 | **S4** | Tiempos y métricas de cocina | 2 | M | ⚪ | `v2/sprint-4-tiempos` | — |
@@ -45,7 +45,7 @@ S2 y S3 son independientes entre sí y se pueden desarrollar en paralelo, pero *
 
 ## S0 — Migración de infraestructura
 
-**Estado:** 🔵 en curso · **Depende de:** nada · **Ejecuta:** Leo (yo entrego el runbook y valido)
+**Estado:** 🟢 cerrado (2026-08-24) · **Depende de:** nada · **Ejecuta:** Leo (yo entrego el runbook y valido)
 
 **Objetivo:** mover el backend de Koyeb a Railway y la base a una instancia nueva de Neon (la actual
 en Azure está siendo depreciada), aprovechando la migración para validar el baseline de Alembic sin
@@ -66,9 +66,9 @@ reescribir el historial de git.
 | 0.3 | Crear la instancia nueva de Neon (fuera de Azure) — hecho vía Import Data Assistant de Neon (schema+datos en un solo flujo, DB de 12 MB, bajo el límite de 10 GB) | Leo | 🟢 |
 | 0.4 | Construir el esquema con `alembic upgrade head` — **nunca** con `create_all` — no aplicó tal cual: el Import Data Assistant ya trajo el schema+datos, así que en vez de construir se **estampó** (`alembic stamp --purge 1af66464b276`) para alinear `alembic_version` con el baseline colapsado; `alembic upgrade head` corrido después confirma no-op | Claude | 🟢 |
 | 0.5 | `pg_dump --data-only` de la vieja → restore en la nueva; verificar conteos por tabla — cubierto por el Import Data Assistant; conteos verificados iguales en las 14 tablas entre vieja y nueva | Leo + Claude | 🟢 |
-| 0.6 | Migrar el backend a Railway, `DATABASE_URL` a la instancia nueva, `alembic upgrade head` como release command | Leo | ⚪ |
-| 0.7 | Provisionar Redis en Railway (no se usa hasta S2, pero tenerlo evita bloquear ese sprint) | Leo | ⚪ |
-| 0.8 | Apagar la instancia vieja → la credencial filtrada queda muerta | Leo | ⚪ |
+| 0.6 | Migrar el backend a Railway, `DATABASE_URL` a la instancia nueva, `alembic upgrade head` como release command (integrado al `CMD` del Dockerfile, corre en cada arranque, idempotente) | Leo | 🟢 |
+| 0.7 | Provisionar Redis en Railway (no se usa hasta S2, pero tenerlo evita bloquear ese sprint) | Leo | 🟢 |
+| 0.8 | Apagar la instancia vieja → la credencial filtrada queda muerta | Leo | 🟢 |
 
 Los pasos 0.1 y 0.2 son también la tarea 1.1 del Sprint 1: se hacen una sola vez.
 
@@ -110,23 +110,65 @@ inversa. `turnos.diferencia` es la más urgente: es un bug de negocio activo, no
 
 **Nota operativa:** al correr el diff contra prod se ejecutó por accidente un `alembic upgrade head`
 contra la Neon de producción (el `alembic.ini` tiene la URL hardcodeada y `env.py` no lee
-`DATABASE_URL` de entorno — la [1.2] de purgar el secreto también resuelve esto). Fue inofensivo
-porque prod ya estaba en `head` (no-op), pero confirma que ese archivo es peligroso hasta que 1.2 se
-cierre. Verificar con `-c <ini alterno>` o exportar `DATABASE_URL` no evita el problema — hay que
-editar `env.py` para leer de entorno primero.
+`DATABASE_URL` de entorno). Fue inofensivo porque prod ya estaba en `head` (no-op), pero confirmó
+que ese archivo es peligroso mientras el secreto siga ahí. Se resolvió parcialmente en el mismo
+día: `alembic/env.py` ahora prioriza `DATABASE_URL` de entorno sobre `alembic.ini` (era condición
+necesaria para que el `CMD` del Dockerfile no migrara contra la URL vieja). Falta borrar el literal
+de `alembic.ini:63` — eso es 1.2, y con la instancia vieja ya apagada (0.8) la credencial filtrada
+quedó muerta de todas formas, así que 1.2 es limpieza, ya no es urgente.
+
+### Hallazgos de 0.3-0.6 (2026-08-24)
+
+**Import Data Assistant de Neon reemplazó 0.3+0.5 en un solo paso.** La DB pesaba 12-13 MB, muy
+por debajo del límite de 10 GB del flujo guiado — copió schema + datos de un tiro en vez del
+`pg_dump`/`restore` manual planeado. Cambia el orden pero no el resultado: como el baseline ya
+estaba verificado byte-a-byte contra prod (0.1/0.2), no hacía falta que la instancia nueva
+construyera su schema *desde* las migraciones para confiar en el resultado — sólo hacía falta que
+`alembic_version` quedara consistente con el baseline colapsado. Se resolvió con
+`alembic stamp --purge 1af66464b276` contra la URL nueva. **Lección para la próxima migración de
+infra:** si el import trae su propio `alembic_version`, siempre hay que re-estampar antes del
+primer deploy — si no, el `alembic upgrade head` del arranque falla con
+`Can't locate revision`.
+
+**La `DATABASE_URL` se corrompió al copiarla a Railway.** Perdió `/neondb?sslmode=require&channel_binding=require`
+al pegarla en la UI de variables de Railway (y lo mismo pasó en `backend/.env` local al
+reconstruirlo desde `.env.example`). Sin `dbname` en la URL, psycopg2/libpq usa el username como
+nombre de base (error confuso: `database "neondb_owner" does not exist`), y sin `sslmode=require`
+Neon rechaza la conexión directamente. **Lección:** al pegar connection strings de Neon en un env var
+de Railway (o cualquier UI), verificar el string completo después de pegar — el `&` de la query
+string es un punto de corte fácil.
+
+**El JWT de sesión viaja como query param en el WebSocket (`/ws/kds?token=...`).** Confirmado en
+logs de Railway: el token completo queda en texto plano en los logs de acceso. Va contra la regla
+de "nunca loguear tokens" del proyecto. No se tocó — es cambio de `auth.py` +
+`websocket_routes.py` + frontend, entra en el bloque de seguridad de S1 (ver hallazgo nuevo abajo).
 
 ### Definition of Done
-- [ ] `alembic upgrade head` sobre base vacía reconstruye el esquema completo
-- [ ] El diff contra el dump de producción está revisado y cada diferencia explicada
-- [ ] Conteos por tabla cuadran entre instancia vieja y nueva
-- [ ] El backend responde en Railway contra la instancia nueva
-- [ ] La instancia vieja está apagada
+- [x] `alembic upgrade head` sobre base vacía reconstruye el esquema completo
+- [x] El diff contra el dump de producción está revisado y cada diferencia explicada
+- [x] Conteos por tabla cuadran entre instancia vieja y nueva
+- [x] El backend responde en Railway contra la instancia nueva
+- [x] La instancia vieja está apagada
 
 ### Bloqueantes
-Ninguno. S1 puede arrancar en paralelo: solo la validación final del baseline (0.4) depende de S0.
+Ninguno — cerrado. S1 puede arrancar.
 
 ### Notas de cierre
-*(pendiente)*
+
+**Qué quedó funcionando:** Neon en AWS us-east-2 (fuera de Azure, credencial vieja muerta), Railway
+sirviendo el backend con `alembic upgrade head` integrado al arranque del contenedor (release
+command implícito, idempotente), Redis provisionado, Docker local reproducible
+(`docker compose up` levanta app + Postgres desde cero y pasa el DoD de 1.1/1.8 por adelantado).
+
+**Qué se adelantó de S1 sin querer, porque tocar Docker/env lo exigía:** 1.1 completo (baseline
+colapsado, `create_all` fuera, `/health`), 1.8 completo (`docker-compose.yml`), y partes de 1.2/1.3/1.7
+(ver sus filas en la tabla de S1 — quedaron marcadas 🔵 parcial con el detalle de qué falta).
+**Al abrir la sesión de S1, no repetir ese trabajo — leer primero qué quedó parcial antes de asignar
+las tareas a los agentes.**
+
+**Las 6 divergencias `models.py` vs. schema real** (sección "Hallazgos de 0.1/0.2" arriba) siguen
+sin resolver y son ahora la entrada más concreta para arrancar S1 — en particular
+`turnos.diferencia`, que es un bug de negocio activo (se calcula, nunca se guarda).
 
 ---
 
@@ -149,7 +191,7 @@ solo sitio, exista un enum de estados único, y los agujeros explotables desde l
 | 1.5B | Migrar checks de rol — `gastos.py`, `asistencia.py`, `admin.py` | 3 routers | task-executor | ⚪ |
 | 1.5C | Migrar checks de rol — `users.py`, `reportes.py`, `propinas.py`, `products.py` | 4 routers | task-executor | ⚪ |
 | 1.6 | `domain/estados.py` + `constants/estados.ts` como fuente única (sin tabla de transiciones todavía) | backend + 4 consumidores front | backend-architect + vue-ui-architect | ⚪ |
-| 1.7 | Seguridad crítica: quitar fallback texto plano, rate limiting en logins, gates en `/usuarios/` y `/ws/stats`, `/health/database` sin host, CORS desde env | `auth.py`, `config.py`, `main.py`, `users.py`, `websocket_routes.py` | security-auditor + task-executor | 🔵 parcial — `CORS_ORIGINS` ahora viene de env (`CORS_ORIGINS` obligatoria, sin default, sin IP de LAN hardcodeada) y `/health/database` ya no expone host; falta fallback texto plano, rate limiting, y gates de `/usuarios/` y `/ws/stats` |
+| 1.7 | Seguridad crítica: quitar fallback texto plano, rate limiting en logins, gates en `/usuarios/` y `/ws/stats`, `/health/database` sin host, CORS desde env, JWT de sesión fuera del query string de los `/ws/*` (hallazgo nuevo, confirmado en logs de Railway) | `auth.py`, `config.py`, `main.py`, `users.py`, `websocket_routes.py` | security-auditor + task-executor | 🔵 parcial — `CORS_ORIGINS` ahora viene de env (`CORS_ORIGINS` obligatoria, sin default, sin IP de LAN hardcodeada) y `/health/database` ya no expone host; falta fallback texto plano, rate limiting, gates de `/usuarios/` y `/ws/stats`, y el token en query string de los WS |
 | 1.8 | `docker-compose.yml` (app + Postgres; Redis llega en S2) | raíz | backend-architect | 🟢 |
 | 1.9 | Arreglar `conftest.py` para que los tests nuevos corran | `backend/tests/conftest.py` | backend-architect | ⚪ |
 
@@ -401,6 +443,14 @@ Se borra en 1.3.
 Script trackeado que altera la tabla `pedidos` con SQL directo. Exactamente el antipatrón que el
 Bloque 0 viene a eliminar. Se borra en 1.3.
 
+**4. El JWT de sesión viaja como query param en los WebSocket (`/ws/kds`, y presumiblemente los
+demás `/ws/*`) y queda en texto plano en los logs de acceso de Railway.** Confirmado en producción
+el 2026-08-24. `websocket_routes.py` usa `token: str = Query(...)` porque el handshake de WS del
+browser no permite headers custom — el patrón en sí es común, pero usar el JWT de sesión completo
+(no uno de un solo uso, corta vida) significa que cualquiera con acceso a esos logs puede reusarlo
+hasta que expire (`ACCESS_TOKEN_EXPIRE_MINUTES=1440`, o sea todo el turno). Entra en el alcance de
+seguridad de 1.7 — no estaba en la lista original de esa tarea, hay que agregarlo.
+
 ---
 
 ## Registro de decisiones
@@ -415,3 +465,7 @@ Bloque 0 viene a eliminar. Se borra en 1.3.
 | 2026-08-24 | La migración de checks de rol (1.5) es estrictamente 1:1 | Las divergencias existentes son lógica de negocio; "arreglarlas" en una migración mecánica puede bloquear un flujo que hoy funciona en producción |
 | 2026-08-24 | `ACCESS_TOKEN_EXPIRE_MINUTES` se queda en 1440 hasta el S3 | Bajarlo sin el mecanismo de jornada desloguea al personal a media operación |
 | 2026-08-24 | `/auth/users` no recibe gate de auth | Es el selector de login de la tablet; ponerle auth rompe el arranque del dispositivo |
+| 2026-08-24 | El baseline de Alembic se genera por espejo de `pg_dump --schema-only` de prod, no por `autogenerate` desde `models.py` | El diff mostró que el ORM está desincronizado del schema real (`turnos.diferencia` y otras 5 columnas); autogenerar desde el modelo habría dropeado columnas con datos al construir la instancia nueva |
+| 2026-08-24 | Se usó el Import Data Assistant de Neon (copia schema+datos en un solo flujo) en vez del `pg_dump`/`restore` manual de 0.3+0.5 | DB de 12-13 MB, muy por debajo del límite de 10 GB del flujo guiado; el riesgo que 0.4 mitigaba (baseline malo) ya estaba cubierto por la verificación byte-a-byte de 0.1/0.2, así que no hacía falta que la instancia nueva construyera su schema desde las migraciones |
+| 2026-08-24 | `alembic/env.py` prioriza `DATABASE_URL` de entorno sobre `alembic.ini` | Necesario para que el `CMD` del Dockerfile (`alembic upgrade head` en cada arranque) no migre por accidente contra la URL vieja hardcodeada en el `.ini`; purga completa del secreto sigue pendiente en 1.2, pero ya no es urgente porque la instancia vieja se apagó (0.8) |
+| 2026-08-24 | `CORS_ORIGINS` pasa a variable de entorno obligatoria, sin default | Los orígenes ya no viven hardcodeados en `main.py` (incluían una IP de LAN quemada); si falta la variable, la app no arranca en vez de arrancar con CORS abierto o mal configurado |

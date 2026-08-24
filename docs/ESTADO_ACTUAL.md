@@ -1,6 +1,6 @@
 # La Hidrocálida POS — Estado actual del sistema
 
-**Última revisión:** 2026-08-24 · rama `flujo-mesero`, commit `09bb815`.
+**Última revisión:** 2026-08-24 · rama `flujo-mesero`, commit `1fb6e94` (post-S0).
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
 a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en
@@ -15,8 +15,8 @@ Cinco roles con interfaces dedicadas, tiempo real por WebSocket, PWA instalable 
 pantallas de cocina, e impresión térmica desde un servicio local.
 
 - Frontend: https://lahidrocalida.vercel.app (Vercel, CI/CD por push a GitHub)
-- Backend: Docker → Railway
-- DB: PostgreSQL en Neon Cloud
+- Backend: Docker → Railway (migrado de Koyeb el 2026-08-24, S0)
+- DB: PostgreSQL en Neon Cloud, instancia nueva en AWS us-east-2 (la de Azure, deprecada, está apagada)
 
 ---
 
@@ -67,13 +67,15 @@ lahidrocalida-rp/
 │   │   ├── utils/timezone.py
 │   │   └── routers/            # 10 routers, 5 313 líneas
 │   ├── tests/                  # pytest — solo test_network_optimizations.py
-│   └── Dockerfile
+│   ├── .env.example
+│   └── Dockerfile               # multi-stage, usuario no-root, healthcheck
 ├── frontend/pos-system/src/
 │   ├── views/                  # 9 vistas (8 712 líneas)
 │   ├── components/             # ~30 componentes
 │   ├── stores/ services/ api/ router/ utils/ types.ts
 ├── print_service/              # Servicio impresora térmica (Windows)
-└── alembic/versions/           # 6 migraciones, cadena lineal
+├── docker-compose.yml           # app + Postgres, dev local reproducible
+└── alembic/versions/           # 1 migración baseline (colapsada de 6, S0)
 ```
 
 Tamaño de los routers: `pedidos.py` 1 464 · `turnos.py` 965 · `admin.py` 880 · `gastos.py` 752 ·
@@ -144,8 +146,9 @@ admin cualquiera.
 - `/reportes` — `/dia/tickets`, `/dia/analytics`
 - `/asistencia` — `/`, `/usuario/{id}`, `/resumen` (solo admin)
 - `/admin` — `/analytics` por rango
-- WS `/ws/{client_type}?token={JWT}` · `GET /ws/stats` (**sin auth**)
-- `/health`, `/health/database` (**expone el host de la DB**)
+- WS `/ws/{client_type}?token={JWT}` (**el JWT completo queda en los logs de acceso, ver §12**) ·
+  `GET /ws/stats` (**sin auth**)
+- `/health`, `/health/database`
 
 ---
 
@@ -226,18 +229,22 @@ silencio para no bloquear el cobro. Cola con reintentos (máx. 5).
 | Servicio | Plataforma | Estado |
 |---|---|---|
 | Frontend | Vercel | Activo |
-| Backend | Docker → Railway | Activo, Dockerfile single-stage |
-| DB | Neon Cloud | Activo |
-| Migraciones | Alembic (6, cadena lineal, head `c4d5e6f7a8b9`) | **Incompletas** |
+| Backend | Docker → Railway | Activo, Dockerfile multi-stage, no-root, healthcheck |
+| DB | Neon Cloud (AWS us-east-2) | Activo — instancia nueva, migrada de Azure el 2026-08-24 (S0) |
+| Redis | Railway | Provisionado, sin uso hasta S2 |
+| Migraciones | Alembic (1 baseline colapsado, head `1af66464b276`) | Completas — reconstruye el esquema completo sobre base vacía, verificado byte a byte contra prod |
 | Tests | pytest — 1 archivo | Cobertura casi nula |
 | CI/CD backend | — | No configurado |
-| docker-compose | — | No existe |
-
-**Advertencia sobre Alembic:** `main.py` llama `Base.metadata.create_all()` en el arranque, y solo
-2 de las 6 migraciones crean tablas. Las 10 tablas núcleo no tienen migración: `alembic upgrade
-head` sobre una base vacía **no** reconstruye el esquema. Se corrige en el Bloque 0 del plan v2.
+| docker-compose | `docker-compose.yml` (raíz) | `docker compose up` levanta app + Postgres desde cero |
 
 **Ramas:** `main` (producción) · `flujo-mesero` (desarrollo activo).
+
+**Detalle de la migración de infraestructura (S0)** en
+[SPRINTS.md](./SPRINTS.md#s0--migración-de-infraestructura): por qué el baseline se generó por
+espejo de `pg_dump` y no por `autogenerate` desde `models.py`, las 6 divergencias que ese diff
+reveló (`models.py` desincronizado del schema real — entrada directa para S1), y los hallazgos de
+seguridad nuevos (secreto de Neon en `alembic.ini`, shim que eclipsaba `pydantic-settings`, JWT en
+query string de los WS).
 
 ---
 
@@ -249,18 +256,19 @@ head` sobre una base vacía **no** reconstruye el esquema. Se corrige en el Bloq
 | WS manager en memoria; no soporta >1 worker | Alta | `websocket_manager.py` |
 | Sin máquina de estados (whitelist rol→destino) | Alta | `pedidos.py:839-844` |
 | Carrera en `update_articulo_estado` (check-then-act, 2 commits) | Alta | `pedidos.py:1005,1018` |
-| Alembic incompleto + `create_all()` | Alta | `main.py:29` |
 | Sin rate limiting en logins | Alta | `routers/auth.py` |
 | Fallback de password en texto plano | Alta | `auth.py:35-38` |
+| JWT de sesión completo en el query string de los `/ws/*` → queda en texto plano en logs de acceso de Railway | Alta | `websocket_routes.py` (hallazgo del 2026-08-24, ver SPRINTS.md) |
+| `models.py` desincronizado del schema real (6 divergencias, la más grave: `turnos.diferencia` se calcula pero nunca se persiste) | Alta | `models.py` — detalle en SPRINTS.md, sección "Hallazgos de 0.1/0.2" |
+| Secreto de Neon (la instancia vieja, ya apagada) trackeado en el historial de `alembic.ini` | Media | recuperable con `git log -p -- alembic.ini`; sin efecto práctico ya que la credencial está muerta, pero sigue en el historial |
 | Cobertura de tests casi nula | Alta | Todo el proyecto |
 | Check-in por NIP ignora la fecha del registro abierto | Alta | `routers/auth.py:114-128` |
 | Turno sin cerrar bloquea el siguiente y sigue capturando pedidos | Alta | `turnos.py:179-184` |
 | Fechas naive comparadas contra `TIMESTAMPTZ` | Media | `asistencia.py:42-50,127-128` |
 | N+1 en `resumen_asistencia` | Media | `asistencia.py:142-151` |
 | `CajaView.vue` 4 093 líneas · `MeseroView.vue` 2 580 | Media | `views/` |
-| CORS con IP de LAN quemada | Media | `main.py:38` |
 | `print()` como logging | Baja | Routers |
-| Sin CI/CD backend ni docker-compose | Media | Infraestructura |
+| Sin CI/CD backend | Media | Infraestructura — `docker-compose.yml` ya existe (S0) |
 
 El plan v2 ataca todos los de severidad alta. Detalle y orden en [PLAN_V2.md](./PLAN_V2.md).
 
