@@ -1,0 +1,83 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/frontend/**'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'apps/frontend/**'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/frontend-ci.yml'
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Frontend Quality & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install Monorepo Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type Check (vue-tsc)
+        run: pnpm --filter frontend exec vue-tsc -b
+
+      - name: Build Verification
+        run: pnpm --filter frontend build
+
+      - name: Notify Telegram on Success
+        if: success()
+        continue-on-error: true
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🟢 *Frontend CI Exitoso*
+            *Repo:* `${{ github.repository }}`
+            *Rama:* `${{ github.ref_name }}`
+            *Commit:* `${{ github.sha }}`
+            *Autor:* ${{ github.actor }}
+
+      - name: Notify Telegram on Failure
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🔴 *Frontend CI Falló*
+            *Repo:* `${{ github.repository }}`
+            *Rama:* `${{ github.ref_name }}`
+            *Commit:* `${{ github.sha }}`
+            *Autor:* ${{ github.actor }}
+            [Ver detalles de la falla](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

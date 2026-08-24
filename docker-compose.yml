@@ -17,10 +17,10 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./apps/backend
+      dockerfile: Dockerfile
     env_file:
-      - backend/.env
+      - apps/backend/.env
     environment:
       # Local docker-compose siempre habla con el Postgres del propio compose,
       # nunca con Neon, sin importar lo que diga backend/.env.

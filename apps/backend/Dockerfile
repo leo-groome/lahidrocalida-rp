@@ -1,5 +1,5 @@
-# Build context: raíz del repo (necesita alembic/ y alembic.ini además de backend/).
-# docker build -f backend/Dockerfile .
+# Build context: apps/backend/ (self-contained — alembic/ y alembic.ini están aquí).
+# docker build apps/backend/
 
 FROM python:3.12.7-slim AS builder
 
@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 
@@ -25,7 +25,7 @@ ENV HOME=/home/appuser \
 WORKDIR /app
 
 COPY --from=builder /root/.local /home/appuser/.local
-COPY backend/app ./app
+COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .
 

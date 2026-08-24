@@ -1,0 +1,102 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'apps/backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-lint:
+    name: Backend Quality & Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hidrocalida
+          POSTGRES_PASSWORD: hidrocalida
+          POSTGRES_DB: hidrocalida_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          version: "latest"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: ./apps/backend
+        run: uv sync --frozen
+
+      - name: Ruff Linter Check
+        working-directory: ./apps/backend
+        run: uv run ruff check .
+
+      - name: Ruff Code Format Check
+        working-directory: ./apps/backend
+        run: uv run ruff format --check .
+
+      - name: Run Pytest
+        working-directory: ./apps/backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
+          DATABASE_URL_TEST: postgresql+asyncpg://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
+        run: uv run pytest
+
+      - name: Notify Telegram on Success
+        if: success()
+        continue-on-error: true
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🟢 *Backend CI Exitoso*
+            *Repo:* `${{ github.repository }}`
+            *Rama:* `${{ github.ref_name }}`
+            *Commit:* `${{ github.sha }}`
+            *Autor:* ${{ github.actor }}
+
+      - name: Notify Telegram on Failure
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🔴 *Backend CI Falló*
+            *Repo:* `${{ github.repository }}`
+            *Rama:* `${{ github.ref_name }}`
+            *Commit:* `${{ github.sha }}`
+            *Autor:* ${{ github.actor }}
+            [Ver detalles de la falla](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

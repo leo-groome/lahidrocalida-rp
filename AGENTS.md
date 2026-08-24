@@ -11,7 +11,7 @@
 
 **Environment Setup:** siempre `uv` — nunca `pip`, `venv` manual ni `poetry`.
 ```bash
-cd backend
+cd apps/backend
 uv sync
 cp .env.example .env   # editar DATABASE_URL y SECRET_KEY
 ```
@@ -36,10 +36,10 @@ curl http://localhost:8000/health/database
 - Auto-generated docs: `http://localhost:8000/docs`
 - Alternative docs: `http://localhost:8000/redoc`
 
-**Tests:** `pytest` está configurado; los tests viven en `backend/tests/`. La cobertura hoy es
+**Tests:** `pytest` está configurado; los tests viven en `apps/backend/tests/`. La cobertura hoy es
 mínima (un solo archivo), pero el framework existe y todo lo nuevo debe traer test.
 ```bash
-cd backend
+cd apps/backend
 uv run pytest                                   # toda la suite
 uv run pytest tests/test_network_optimizations.py -v   # un archivo
 ```
@@ -151,11 +151,11 @@ VITE_API_URL=http://localhost:8000
 
 ## 🧪 Testing Strategy
 
-- `pytest` configurado en el backend (`backend/tests/`). Cobertura actual mínima — todo lo nuevo
+- `pytest` configurado en el backend (`apps/backend/tests/`). Cobertura actual mínima — todo lo nuevo
   debe traer test de happy path + al menos un caso de error.
 - Frontend sin framework de tests todavía. Recomendado: Vitest / Playwright.
 - Testing manual complementario vía API y UI.
-- Scripts de utilería en `print_service/scripts/` (se corren individualmente).
+- Scripts de utilería en `apps/print-service/scripts/` (se corren individualmente).
 - Frontend UI Guidelines:
 - - Pozole button: ensure desktop grid alignment; color green; increased padding and height adjustments as implemented.
 - - Ensure consistency across responsive breakpoints; mobile keeps the existing modal behavior.
@@ -216,7 +216,7 @@ print_service/
 ```
 
 ### Integración con Backend
-**Archivo modificado**: `backend/app/routers/pedidos.py`
+**Archivo modificado**: `apps/backend/app/routers/pedidos.py`
 - Nueva función: `print_ticket_automatic()`
 - Trigger automático: Estado `cuenta_solicitada`
 - Comunicación: HTTP POST a `http://localhost:3001/print`
@@ -394,14 +394,14 @@ curl http://localhost:3001/health
 - `src/components/TurnoModal.vue` – Modal para inicio/cierre de turno con conteo rápido
 
 **Sistema de Impresión:**
-- `print_service/printer_service.py` – Servicio principal de impresión
-- `print_service/core/printer_manager.py` – Gestión de impresora Easytime SP-POS891ED
-- `print_service/core/ticket_formatter.py` – Formateo ESC/POS de tickets
-- `print_service/core/print_queue.py` – Sistema de cola con reintentos
-- `print_service/server/api_server.py` – API REST para integración
-- `print_service/server/websocket_bridge.py` – Puente WebSocket con backend
-- `print_service/config/settings.py` – Configuración del sistema de impresión
-- `print_service/config/printer_config.py` – Configuración específica SP-POS891ED
+- `apps/print-service/printer_service.py` – Servicio principal de impresión
+- `apps/print-service/core/printer_manager.py` – Gestión de impresora Easytime SP-POS891ED
+- `apps/print-service/core/ticket_formatter.py` – Formateo ESC/POS de tickets
+- `apps/print-service/core/print_queue.py` – Sistema de cola con reintentos
+- `apps/print-service/server/api_server.py` – API REST para integración
+- `apps/print-service/server/websocket_bridge.py` – Puente WebSocket con backend
+- `apps/print-service/config/settings.py` – Configuración del sistema de impresión
+- `apps/print-service/config/printer_config.py` – Configuración específica SP-POS891ED
 
 ---
 

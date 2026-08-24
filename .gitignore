@@ -367,4 +367,25 @@ target/
 .vercel
 .netlify
 opencode.json
-frontend/pos-system/package-lock.json
+
+# ===========================================
+# MONOREPO — apps/ specific
+# ===========================================
+
+# apps/backend
+apps/backend/.venv/
+apps/backend/.pytest_cache/
+apps/backend/__pycache__/
+
+# apps/frontend
+apps/frontend/node_modules/
+apps/frontend/dist/
+apps/frontend/dev-dist/
+
+# apps/print-service
+apps/print-service/__pycache__/
+apps/print-service/logs/
+
+# root monorepo
+node_modules/
+pnpm-lock.yaml
