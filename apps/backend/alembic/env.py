@@ -21,10 +21,12 @@ import sys
 
 from dotenv import load_dotenv
 
-# Ensure backend/app is importable
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "backend"))
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "backend", ".env"))
+# Ensure apps/backend (que contiene el paquete `app`) es importable
+sys.path.append(BACKEND_DIR)
+
+load_dotenv(os.path.join(BACKEND_DIR, ".env"))
 
 import app.models  # noqa: F401,E402
 from app.db.session import Base  # noqa: E402
@@ -32,11 +34,16 @@ from app.db.session import Base  # noqa: E402
 # Use model metadata for autogenerate
 target_metadata = Base.metadata
 
-# DATABASE_URL de entorno tiene prioridad sobre alembic.ini: evita que un
-# `alembic upgrade`/`stamp` corrido en Docker o Railway se conecte por accidente
-# a la URL que haya quedado hardcodeada en el .ini.
-if os.environ.get("DATABASE_URL"):
-    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# DATABASE_URL es la ÚNICA fuente de la URL de conexión. alembic.ini la deja
+# vacía a propósito (no se versionan credenciales), así que si falta el env var
+# abortamos en vez de intentar conectar a una URL vacía o equivocada.
+_database_url = os.environ.get("DATABASE_URL")
+if not _database_url:
+    raise RuntimeError(
+        "DATABASE_URL no está definida. Expórtala en el entorno o ponla en "
+        "apps/backend/.env antes de correr alembic."
+    )
+config.set_main_option("sqlalchemy.url", _database_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

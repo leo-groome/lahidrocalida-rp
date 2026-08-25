@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_active_user, get_optional_current_user
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
     AgregarArticulosRequest,
@@ -159,17 +160,12 @@ def generate_numero_display(db: Session, sucursal_id: int) -> str:
 async def create_pedido(
     data: PedidoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("cajero", "administrador", "mesero")),
 ):
     """
     Crear un nuevo pedido.
     Solo cajeros y administradores pueden crear pedidos.
     """
-    # Validar permisos
-    if current_user.rol not in ["cajero", "administrador", "mesero"]:
-        raise HTTPException(
-            status_code=403, detail="Solo cajeros, meseros y administradores pueden crear pedidos"
-        )
 
     # Idempotencia: si este client_request_id ya creó un pedido, devolverlo
     # tal cual (el cliente está reintentando un POST que sí llegó)
@@ -431,19 +427,14 @@ def list_pedidos(
 
 @router.get("/pendientes-pago/lista", response_model=List[PedidoResponse])
 def get_pedidos_pendientes_pago(
-    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("cajero", "administrador")),
 ):
     """
     Obtener pedidos que están esperando pago (estado: cuenta_solicitada).
     Para cajeros: solo pedidos de su sucursal.
     Para administradores: todos los pedidos.
     """
-    # Solo cajeros y administradores pueden ver esto
-    if current_user.rol not in ["cajero", "administrador"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Solo cajeros y administradores pueden ver pedidos pendientes de pago",
-        )
 
     query = _query_pedidos_eager(db).filter(Pedido.estado == "cuenta_solicitada")
 
@@ -486,12 +477,9 @@ async def dividir_cuenta(
     pedido_id: int,
     data: DividirCuentaRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Dividir una cuenta por articulos (solo administrador)."""
-
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="Solo administradores pueden dividir cuentas")
 
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
@@ -720,12 +708,9 @@ async def dividir_por_montos(
     pedido_id: int,
     data: DividirPorMontoRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
-
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="Solo administradores pueden dividir cuentas")
 
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
     if not pedido:
@@ -1039,18 +1024,13 @@ async def update_articulo_estado(
     articulo_id: int,
     data: ArticuloPedidoUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("mesero", "cocina", "administrador")),
 ):
     """
     Actualizar el estado de un artículo del pedido.
     Solo cocina y administradores pueden actualizar.
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
-    # Validar permisos
-    if current_user.rol not in ["mesero", "cocina", "administrador"]:
-        raise HTTPException(
-            status_code=403, detail="Solo meseros, cocina y administradores pueden actualizar items"
-        )
 
     # Obtener el artículo
     articulo = db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).first()
@@ -1158,7 +1138,7 @@ async def agregar_articulos_pedido(
     pedido_id: int,
     data: AgregarArticulosRequest,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("mesero", "administrador")),
 ):
     """
     Agregar artículos a un pedido existente.
@@ -1166,11 +1146,6 @@ async def agregar_articulos_pedido(
     - pendiente: Agregar al pedido actual, re-enviar completo a KDS
     - preparando/listo/entregado: Agregar al pedido, enviar SOLO artículos nuevos a KDS
     """
-    # Validar permisos
-    if current_user.rol not in ["mesero", "administrador"]:
-        raise HTTPException(
-            status_code=403, detail="Solo meseros y administradores pueden agregar artículos"
-        )
 
     # Validar que hay artículos
     if len(data.articulos) == 0:
@@ -1330,18 +1305,12 @@ async def actualizar_articulos_pedido(
     pedido_id: int,
     data: dict,  # {"articulos": [{"id": int, "cantidad": int, "modificaciones": str}]}
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("mesero", "administrador", "cajero")),
 ):
     """
     Actualizar artículos de un pedido existente.
     Permitido para pedidos en cualquier estado excepto finales.
     """
-    # Validar permisos
-    if current_user.rol not in ["mesero", "administrador", "cajero"]:
-        raise HTTPException(
-            status_code=403,
-            detail="Solo meseros, cajeros y administradores pueden modificar pedidos",
-        )
 
     # Buscar el pedido
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()

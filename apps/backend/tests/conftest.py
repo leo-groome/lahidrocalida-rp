@@ -3,6 +3,15 @@
 # create_all(bind=engine) — sin esto los tests pegarían a Neon.
 # TEST_DATABASE_URL permite correr la suite contra un Postgres local
 # (docker run postgres) para validar dialecto; default: SQLite in-memory.
+#
+# Por qué TestClient (sync) y no httpx.AsyncClient, pese a que el estándar del
+# proyecto es AsyncClient: los endpoints son `async def` pero hacen I/O de DB
+# con SQLAlchemy **sync** (psycopg2). Starlette ya ejecuta ese código en el
+# threadpool y TestClient lo ejerce por el mismo camino que producción.
+# AsyncClient+ASGITransport no cambiaría lo que se ejerce; solo añadiría
+# `await` a cada llamada y una capa de anyio. La migración se hace cuando la
+# capa de datos pase a AsyncSession/asyncpg (deviation conocida, no aquí):
+# en ese momento sí cambia el modelo de ejecución y el test client debe seguir.
 import os
 
 TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "sqlite://")
@@ -25,8 +34,6 @@ def _safe_create_task(coro, **kwargs):
 
 asyncio.create_task = _safe_create_task
 
-from datetime import datetime, timezone  # noqa: E402
-
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, event  # noqa: E402
@@ -35,6 +42,7 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.auth import get_current_active_user, get_optional_current_user  # noqa: E402
 from app.core import cache as cache_module  # noqa: E402
+from app.core.rate_limit import login_limiter  # noqa: E402
 from app.db.session import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
@@ -44,7 +52,18 @@ from app.models import (  # noqa: E402
     Platillo,
     Sucursal,
     Usuario,
+    get_local_datetime,
 )
+
+
+@pytest.fixture(autouse=True)
+def reset_login_limiter():
+    """El limiter de login es estado de proceso: sin resetear, los fallos de un
+    test gastarían el presupuesto de los siguientes (todos comparten la IP
+    `testclient`) y la suite fallaría según el orden de ejecución."""
+    login_limiter.reset()
+    yield
+    login_limiter.reset()
 
 
 @pytest.fixture()
@@ -112,7 +131,11 @@ def seed(db_session):
             tipo_orden="aqui",
             sucursal_id=sucursal.id,
             usuario_id=usuario.id,
-            fecha_creacion=datetime.now(timezone.utc),
+            # get_local_datetime() (hora de México), NO datetime.now(utc):
+            # los endpoints filtran por "el día de hoy" en MEXICO_TZ. Con UTC
+            # la suite pasaba en la mañana y fallaba después de las ~18:00
+            # local, cuando el "ahora" en UTC ya cae en el día siguiente.
+            fecha_creacion=get_local_datetime(),
         )
         db_session.add(pedido)
         db_session.flush()
@@ -161,15 +184,37 @@ def auth_client(client, seed):
 
 
 @pytest.fixture()
-def admin_client(client, seed):
-    admin = Usuario(
-        id=999,
-        nombre="Admin",
-        pin="x",
-        rol="administrador",
-        sucursal_id=seed["sucursal"].id,
-        activo=True,
-    )
-    app.dependency_overrides[get_current_active_user] = lambda: admin
-    yield client
-    app.dependency_overrides.clear()
+def como_rol(client, seed):
+    """Reautentica el `client` como un usuario del rol pedido.
+
+        def test_x(como_rol):
+            r = como_rol("cajero").get("/propinas/detalle")
+
+    El usuario es transitorio (no se persiste), igual que el admin que este
+    fixture reemplaza: los endpoints solo leen .id / .rol / .sucursal_id del
+    objeto que devuelve la dependencia de auth. Si un test futuro necesita la
+    fila real en `usuarios` (join), que la cree con `db_session`.
+    """
+
+    def _como(rol: str, **campos) -> TestClient:
+        usuario = Usuario(
+            id=campos.pop("id", 999),
+            nombre=campos.pop("nombre", rol.capitalize()),
+            pin="x",
+            rol=rol,
+            sucursal_id=campos.pop("sucursal_id", seed["sucursal"].id),
+            activo=True,
+            **campos,
+        )
+        app.dependency_overrides[get_current_active_user] = lambda: usuario
+        return client
+
+    yield _como
+    # No .clear(): el fixture `client` es dueño de los overrides de get_db y
+    # los limpia él mismo. Restaurar solo lo que este fixture pisó.
+    app.dependency_overrides[get_current_active_user] = lambda: seed["usuario"]
+
+
+@pytest.fixture()
+def admin_client(como_rol):
+    return como_rol("administrador")

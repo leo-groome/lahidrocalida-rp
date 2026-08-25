@@ -1,12 +1,14 @@
+import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import Usuario
 from app.utils.timezone import get_mexico_now
 from app.websocket_manager import websocket_manager
@@ -14,6 +16,10 @@ from app.websocket_manager import websocket_manager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Segundos que el server espera el mensaje `{"type": "auth", ...}` tras aceptar
+# el handshake. Corto: una conexión sin autenticar consume un slot del server.
+AUTH_TIMEOUT_SECONDS = 10
 
 
 async def get_user_from_token(token: str, db: Session) -> Usuario:
@@ -42,16 +48,57 @@ async def get_user_from_token(token: str, db: Session) -> Usuario:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
 
+async def _safe_close(websocket: WebSocket, code: int, reason: str) -> None:
+    """Cerrar sin propagar: el peer puede haberse ido ya (cierre durante auth)."""
+    try:
+        await websocket.close(code=code, reason=reason)
+    except Exception:  # noqa: BLE001 - cerrar es best-effort
+        pass
+
+
+async def _receive_auth_token(websocket: WebSocket) -> str:
+    """Esperar el primer mensaje de la conexión y extraer el JWT.
+
+    Protocolo: el cliente NO manda el token en la URL (el query string del
+    handshake queda en texto plano en los access logs del proxy). Conecta sin
+    credenciales y manda como primer frame:
+
+        {"type": "auth", "token": "<jwt>"}
+
+    Errores → HTTPException 401, que el caller traduce a close(4001).
+    """
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=AUTH_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=401, detail="Auth timeout")
+    except WebSocketDisconnect:
+        raise HTTPException(status_code=401, detail="Disconnected before auth")
+
+    try:
+        message = json.loads(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid auth message")
+
+    if not isinstance(message, dict) or message.get("type") != "auth":
+        raise HTTPException(status_code=401, detail="Expected auth message")
+
+    token = message.get("token")
+    if not token or not isinstance(token, str):
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    return token
+
+
 @router.websocket("/ws/{client_type}")
-async def websocket_endpoint(
-    websocket: WebSocket, client_type: str, token: str = Query(...), db: Session = Depends(get_db)
-):
+async def websocket_endpoint(websocket: WebSocket, client_type: str, db: Session = Depends(get_db)):
     """
     Endpoint principal de WebSocket para diferentes tipos de clientes
 
     Args:
         client_type: Tipo de cliente (kds, caja, mesero)
-        token: JWT token para autenticación
+
+    Autenticación: primer mensaje `{"type": "auth", "token": "<jwt>"}` dentro de
+    AUTH_TIMEOUT_SECONDS. Token inválido/ausente/tardío → close(4001).
     """
 
     # Validar que el client_type es válido
@@ -61,6 +108,12 @@ async def websocket_endpoint(
         return
 
     try:
+        # Aceptar el handshake para poder recibir el frame de auth. La conexión
+        # no queda registrada en el manager hasta que el token valida.
+        await websocket.accept()
+
+        token = await _receive_auth_token(websocket)
+
         # Autenticar usuario
         user = await get_user_from_token(token, db)
 
@@ -107,23 +160,24 @@ async def websocket_endpoint(
 
     except HTTPException as e:
         # Error de autenticación
-        await websocket.close(code=4001, reason=e.detail)
+        await _safe_close(websocket, code=4001, reason=e.detail)
 
     except Exception as e:
         # Error inesperado
         logger.error(f"Unexpected error in websocket endpoint: {e}")
-        await websocket.close(code=4002, reason="Internal server error")
+        await _safe_close(websocket, code=4002, reason="Internal server error")
 
     finally:
         # Limpiar la conexión del manager
         await websocket_manager.disconnect(websocket)
 
 
-@router.get("/ws/stats")
+@router.get("/ws/stats", dependencies=[Depends(require_roles("administrador"))])
 async def get_websocket_stats():
     """
     Endpoint para obtener estadísticas de conexiones WebSocket activas
-    Útil para monitoreo y debugging
+    Útil para monitoreo y debugging. Solo administrador: expone conteo de
+    sesiones activas por sucursal/rol.
     """
     return {
         "status": "active",

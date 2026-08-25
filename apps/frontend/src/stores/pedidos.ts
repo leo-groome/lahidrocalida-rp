@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 import { websocketService } from '@/services/websocket'
 import type { PedidoResponse } from '@/types'
+import { EstadoPedido, EstadoArticuloPedido, ESTADOS_PEDIDO_FINALES } from '@/constants/estados'
 
 type WsClientType = 'kds' | 'caja' | 'mesero'
 
@@ -22,14 +23,14 @@ export const usePedidosStore = defineStore('pedidos', () => {
   // Getters computados
   const pedidosPorEstado = computed(() => {
     const grupos: Record<string, PedidoResponse[]> = {
-      pendiente: [],
-      preparando: [],
-      listo: [],
-      entregado: [],
-      cuenta_solicitada: [],
-      pagado: [],
-      cancelado: [],
-      dividido: []
+      [EstadoPedido.PENDIENTE]: [],
+      [EstadoPedido.PREPARANDO]: [],
+      [EstadoPedido.LISTO]: [],
+      [EstadoPedido.ENTREGADO]: [],
+      [EstadoPedido.CUENTA_SOLICITADA]: [],
+      [EstadoPedido.PAGADO]: [],
+      [EstadoPedido.CANCELADO]: [],
+      [EstadoPedido.DIVIDIDO]: []
     }
 
     pedidos.value.forEach(pedido => {
@@ -43,8 +44,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
 
   const pedidosKDS = computed(() => {
     // Para KDS: mostrar solo pedidos activos (no entregados ni pagados)
-    return pedidos.value.filter(p => 
-      !['entregado', 'cuenta_solicitada', 'pagado', 'cancelado', 'dividido'].includes(p.estado)
+    return pedidos.value.filter(p =>
+      !([EstadoPedido.ENTREGADO, EstadoPedido.CUENTA_SOLICITADA, EstadoPedido.PAGADO, EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO] as string[]).includes(p.estado)
     ).slice(0, 60) // Limitar a 60 para performance
   })
 
@@ -54,19 +55,19 @@ export const usePedidosStore = defineStore('pedidos', () => {
     
     return pedidos.value.filter(p => {
       // Solo filtrar por estado, la fecha ya viene filtrada desde el backend
-      const noEstaPagadoNiCancelado = !['pagado', 'cancelado', 'dividido'].includes(p.estado)
-      
+      const noEstaPagadoNiCancelado = !(ESTADOS_PEDIDO_FINALES as string[]).includes(p.estado)
+
       return noEstaPagadoNiCancelado
     }).sort((a, b) => {
       // Ordenar: pendientes de pago primero, luego por número de orden
-      if (a.estado === 'cuenta_solicitada' && b.estado !== 'cuenta_solicitada') return -1
-      if (b.estado === 'cuenta_solicitada' && a.estado !== 'cuenta_solicitada') return 1
+      if (a.estado === EstadoPedido.CUENTA_SOLICITADA && b.estado !== EstadoPedido.CUENTA_SOLICITADA) return -1
+      if (b.estado === EstadoPedido.CUENTA_SOLICITADA && a.estado !== EstadoPedido.CUENTA_SOLICITADA) return 1
       return (a.numero_display || '').localeCompare(b.numero_display || '')
     })
   })
 
   const pedidosPendientesPago = computed(() => {
-    return pedidos.value.filter(p => p.estado === 'cuenta_solicitada')
+    return pedidos.value.filter(p => p.estado === EstadoPedido.CUENTA_SOLICITADA)
   })
 
   const estadisticasPedidos = computed(() => {
@@ -87,14 +88,14 @@ export const usePedidosStore = defineStore('pedidos', () => {
 
     pedidosHoy.forEach(pedido => {
       switch (pedido.estado) {
-        case 'pendiente': stats.pendiente++; break
-        case 'preparando': stats.preparando++; break
-        case 'listo': stats.listo++; break
-        case 'entregado': stats.entregado++; break
-        case 'cuenta_solicitada': stats.cuenta_solicitada++; break
-        case 'pagado': stats.pagado++; break
-        case 'cancelado': stats.cancelado++; break
-        case 'dividido': stats.dividido++; break
+        case EstadoPedido.PENDIENTE: stats.pendiente++; break
+        case EstadoPedido.PREPARANDO: stats.preparando++; break
+        case EstadoPedido.LISTO: stats.listo++; break
+        case EstadoPedido.ENTREGADO: stats.entregado++; break
+        case EstadoPedido.CUENTA_SOLICITADA: stats.cuenta_solicitada++; break
+        case EstadoPedido.PAGADO: stats.pagado++; break
+        case EstadoPedido.CANCELADO: stats.cancelado++; break
+        case EstadoPedido.DIVIDIDO: stats.dividido++; break
       }
     })
 
@@ -251,17 +252,17 @@ export const usePedidosStore = defineStore('pedidos', () => {
       console.log(`🔄 Pedido #${pedidos.value[index].numero_display} actualizado a estado: ${nuevoEstado}`)
       
       // Sonido de ENTRADA: si un pedido vuelve a pendiente (se agregaron items)
-      if (nuevoEstado === 'pendiente' && estadoAnterior !== 'pendiente') {
+      if (nuevoEstado === EstadoPedido.PENDIENTE && estadoAnterior !== EstadoPedido.PENDIENTE) {
         playKitchenSound('/notification_in.mp3');
       }
 
       // Sonido de SALIDA: si un pedido se marca como listo (con freno)
-      if (nuevoEstado === 'listo' && estadoAnterior !== 'listo') {
+      if (nuevoEstado === EstadoPedido.LISTO && estadoAnterior !== EstadoPedido.LISTO) {
         playKitchenSound('/notification_out.mp3', true);
       }
 
       // Notificación visual para estados importantes
-      if (['listo', 'cuenta_solicitada', 'pagado'].includes(nuevoEstado)) {
+      if (([EstadoPedido.LISTO, EstadoPedido.CUENTA_SOLICITADA, EstadoPedido.PAGADO] as string[]).includes(nuevoEstado)) {
         showNotification(`Pedido #${pedidos.value[index].numero_display}`, {
           body: `Cambió a: ${getEstadoLabel(nuevoEstado)}`,
           icon: '/favicon.ico'
@@ -280,7 +281,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     
     if (index !== -1) {
       // Sonido de SALIDA: si un artículo se marca como listo (con freno)
-      if (nuevoEstado === 'listo') {
+      if (nuevoEstado === EstadoPedido.LISTO) {
         playKitchenSound('/notification_out.mp3', true);
       }
       // Actualizar pedido completo (incluye los artículos actualizados)
@@ -304,14 +305,14 @@ export const usePedidosStore = defineStore('pedidos', () => {
 
   function getEstadoLabel(estado: string): string {
     const labels: Record<string, string> = {
-      'pendiente': 'Pendiente',
-      'preparando': 'Preparando',
-      'listo': 'Listo',
-      'entregado': 'Entregado',
-      'cuenta_solicitada': 'Cuenta Solicitada',
-      'pagado': 'Pagado',
-      'cancelado': 'Cancelado',
-      'dividido': 'Dividido'
+      [EstadoPedido.PENDIENTE]: 'Pendiente',
+      [EstadoPedido.PREPARANDO]: 'Preparando',
+      [EstadoPedido.LISTO]: 'Listo',
+      [EstadoPedido.ENTREGADO]: 'Entregado',
+      [EstadoPedido.CUENTA_SOLICITADA]: 'Cuenta Solicitada',
+      [EstadoPedido.PAGADO]: 'Pagado',
+      [EstadoPedido.CANCELADO]: 'Cancelado',
+      [EstadoPedido.DIVIDIDO]: 'Dividido'
     }
     return labels[estado] || estado
   }
@@ -406,7 +407,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
           // Actualizar el estado del artículo
           const articulo = pedidos.value[pedidoIndex].articulos_pedido?.find(a => a.id === articuloId)
           if (articulo) {
-            articulo.estado_item = nuevoEstado
+            articulo.estado_item = nuevoEstado as EstadoArticuloPedido
           }
           // Actualizar el estado del pedido por si cambió
           pedidos.value[pedidoIndex].estado = pedidoEstado

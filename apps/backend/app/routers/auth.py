@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,11 @@ from app.auth import (
     create_access_token,
     get_current_active_user,
     verify_password,
+)
+from app.core.rate_limit import (
+    clear_login_failures,
+    enforce_login_rate_limit,
+    register_login_failure,
 )
 from app.db.session import get_db
 from app.models import RegistroAsistencia, Usuario
@@ -30,49 +35,61 @@ ROLES_ADMIN = ["administrador"]
 
 @router.post("/login", response_model=Token)
 async def login_for_access_token(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
     """Endpoint OAuth2 estándar — compatibilidad con Swagger UI (usa ID como username)"""
+    rl_keys = enforce_login_rate_limit(request, form_data.username)
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
+        register_login_failure(rl_keys)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="ID de usuario o NIP incorrectos",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    clear_login_failures(rl_keys)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/login-simple", response_model=Token)
-async def login_simple(user_data: UsuarioLogin, db: Session = Depends(get_db)):
+async def login_simple(request: Request, user_data: UsuarioLogin, db: Session = Depends(get_db)):
     """Login por NIP táctil para staff (mesero, cajero, cocina). No permite admins."""
+    rl_keys = enforce_login_rate_limit(request, user_data.user_id)
+
     try:
         user_id_int = int(user_data.user_id)
     except ValueError:
+        register_login_failure(rl_keys)
         raise HTTPException(status_code=400, detail="user_id inválido")
 
     user = db.query(Usuario).filter(Usuario.id == user_id_int, Usuario.activo == True).first()
 
     if not user or user.rol in ROLES_ADMIN:
+        register_login_failure(rl_keys)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o no autorizado para login NIP",
         )
 
     if not verify_password(user_data.pin, user.pin):
+        register_login_failure(rl_keys)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="NIP incorrecto",
         )
 
+    clear_login_failures(rl_keys)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/login-admin", response_model=Token)
-async def login_admin(user_data: AdminLogin, db: Session = Depends(get_db)):
+async def login_admin(request: Request, user_data: AdminLogin, db: Session = Depends(get_db)):
     """Login para administradores con email + password. Solo accesible desde /admin-login."""
+    rl_keys = enforce_login_rate_limit(request, user_data.email)
     user = (
         db.query(Usuario)
         .filter(
@@ -84,27 +101,36 @@ async def login_admin(user_data: AdminLogin, db: Session = Depends(get_db)):
     )
 
     if not user or not verify_password(user_data.password, user.pin):
+        register_login_failure(rl_keys)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    clear_login_failures(rl_keys)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 
 @router.post("/asistencia", response_model=RegistroAsistenciaResponse)
-async def registrar_asistencia(data: AsistenciaPinRequest, db: Session = Depends(get_db)):
+async def registrar_asistencia(
+    request: Request, data: AsistenciaPinRequest, db: Session = Depends(get_db)
+):
     """
     Clock-In / Clock-Out mediante NIP. No requiere JWT.
     - Sin registro abierto → Clock-In (nueva entrada)
     - Con registro abierto → Clock-Out (registra salida)
     Solo para roles no-admin.
+
+    Rate-limitado igual que los logins: sin JWT y verificando el mismo NIP, es
+    el mismo oráculo de fuerza-bruta que /auth/login-simple, y además escribe.
     """
+    rl_keys = enforce_login_rate_limit(request, str(data.usuario_id))
     user = db.query(Usuario).filter(Usuario.id == data.usuario_id, Usuario.activo == True).first()
 
     if not user:
+        register_login_failure(rl_keys)
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     if user.rol in ROLES_ADMIN:
@@ -113,7 +139,10 @@ async def registrar_asistencia(data: AsistenciaPinRequest, db: Session = Depends
         )
 
     if not verify_password(data.pin, user.pin):
+        register_login_failure(rl_keys)
         raise HTTPException(status_code=401, detail="NIP incorrecto")
+
+    clear_login_failures(rl_keys)
 
     # Buscar registro abierto (sin fecha_salida)
     registro_abierto = (

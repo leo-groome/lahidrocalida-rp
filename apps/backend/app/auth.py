@@ -31,13 +31,18 @@ security_optional = HTTPBearer(auto_error=False)  # Para endpoints públicos opc
 
 
 def verify_password(plain_password: str, stored_password: str) -> bool:
-    """Verifica contraseña hash (bcrypt_sha256/bcrypt) o texto plano legado."""
+    """Verifica una contraseña contra un hash (argon2 / bcrypt_sha256 / bcrypt).
+
+    Solo se acepta un hash reconocible por passlib (prefijo `$`). Cualquier otro
+    valor almacenado — texto plano legado, cadena vacía, NULL — devuelve False:
+    nunca se compara en claro. Verificado contra la DB de producción: 0 filas con
+    PIN sin hashear, así que remover el fallback no bloquea a ningún usuario.
+    """
+    if not stored_password or not stored_password.startswith("$"):
+        return False
     try:
         # Passlib detecta el esquema según el prefijo del hash
-        if stored_password.startswith("$"):
-            return pwd_context.verify(plain_password, stored_password)
-        # Compatibilidad temporal con texto plano
-        return plain_password == stored_password
+        return pwd_context.verify(plain_password, stored_password)
     except Exception:
         return False
 

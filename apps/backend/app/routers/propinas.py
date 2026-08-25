@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import Pedido, Usuario
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
 
@@ -18,19 +18,13 @@ def get_reporte_propinas(
     fecha: Optional[str] = None,  # Formato YYYY-MM-DD, por defecto hoy
     mesero_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("cajero", "administrador")),
 ):
     """
     Obtener reporte de propinas para una fecha específica.
-    Solo cajeros y administradores pueden ver reportes.
     Para cajeros: solo pedidos de su sucursal.
     Para administradores: todos los pedidos.
     """
-    # Validar permisos
-    if current_user.rol not in ["cajero", "administrador"]:
-        raise HTTPException(
-            status_code=403, detail="Solo cajeros y administradores pueden ver reportes de propinas"
-        )
 
     # Determinar fecha a usar
     if fecha:
@@ -112,17 +106,12 @@ def get_detalle_propinas(
     fecha: Optional[str] = None,
     mesero_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("cajero", "administrador")),
 ):
     """
     Obtener detalle de propinas por pedido para una fecha específica.
     Útil para verificar pedidos individuales.
     """
-    # Validar permisos
-    if current_user.rol not in ["cajero", "administrador"]:
-        raise HTTPException(
-            status_code=403, detail="Solo cajeros y administradores pueden ver detalle de propinas"
-        )
 
     # Determinar fecha a usar (misma lógica que reporte)
     if fecha:

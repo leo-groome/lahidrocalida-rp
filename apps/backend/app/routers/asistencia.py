@@ -4,19 +4,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import RegistroAsistencia, Usuario
 from app.schemas import AsistenciaResumenItem, AsistenciaResumenResponse, RegistroAsistenciaResponse
 
 router = APIRouter(prefix="/asistencia", tags=["asistencia"])
-
-ROLES_ADMIN = ["administrador"]
-
-
-def _ensure_admin(user: Usuario) -> None:
-    if user.rol not in ROLES_ADMIN:
-        raise HTTPException(status_code=403, detail="Solo administradores")
 
 
 @router.get("/", response_model=List[RegistroAsistenciaResponse])
@@ -25,10 +18,9 @@ def list_registros(
     fecha_inicio: Optional[str] = None,  # YYYY-MM-DD
     fecha_fin: Optional[str] = None,  # YYYY-MM-DD
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Listar registros de asistencia. Solo admin."""
-    _ensure_admin(current_user)
 
     query = db.query(RegistroAsistencia)
 
@@ -79,10 +71,9 @@ def historial_usuario(
     usuario_id: int,
     limit: int = 30,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Historial de asistencia de un empleado específico. Solo admin."""
-    _ensure_admin(current_user)
 
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
@@ -122,10 +113,9 @@ def resumen_asistencia(
     fecha_inicio: str,  # YYYY-MM-DD
     fecha_fin: str,  # YYYY-MM-DD
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Resumen de horas trabajadas por empleado en un rango de fechas. Solo admin."""
-    _ensure_admin(current_user)
 
     try:
         dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
@@ -138,7 +128,9 @@ def resumen_asistencia(
 
     # Usuarios no-admin activos
     usuarios = (
-        db.query(Usuario).filter(Usuario.activo == True, Usuario.rol.notin_(ROLES_ADMIN)).all()
+        db.query(Usuario)
+        .filter(Usuario.activo == True, Usuario.rol.notin_(["administrador"]))
+        .all()
     )
 
     empleados_resumen = []
