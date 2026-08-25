@@ -29,15 +29,20 @@
     </div>
 
     <div v-else-if="activeTab === 'proveedores'">
-      <ProveedoresView />
+      <ProveedoresView :proveedores="proveedoresList" />
     </div>
 
     <div v-else-if="activeTab === 'articulos'">
-      <ArticulosView />
+      <ArticulosView
+        :articulos="articulosList"
+        :categorias="categoriasArticuloList"
+        v-model="selectedArticuloCategoria"
+        @update:model-value="loadArticulos"
+      />
     </div>
 
     <div v-else-if="activeTab === 'categorias'">
-      <CategoriasView />
+      <CategoriasView :categorias="categoriasArticuloList" />
     </div>
 
     <!-- Modal: Nuevo Gasto (3-step) -->
@@ -59,7 +64,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import api from '@/api/client'
 import GastosHistorial from './GastosHistorial.vue'
 import ProveedoresView from './ProveedoresView.vue'
 import ArticulosView from './ArticulosView.vue'
@@ -83,6 +89,35 @@ const editingGasto = ref<any>(null)
 // Key to force GastosHistorial remount and reload after save
 const historialKey = ref(0)
 
+// Catálogos para las pestañas de proveedores/artículos/categorías
+const proveedoresList = ref<any[]>([])
+const categoriasArticuloList = ref<any[]>([])
+const articulosList = ref<any[]>([])
+const selectedArticuloCategoria = ref(null)
+
+async function loadProveedores() {
+  try {
+    const res = await api.get('/gastos/proveedores')
+    proveedoresList.value = res.data
+  } catch (e) { console.error(e) }
+}
+
+async function loadCategoriasArticulo() {
+  try {
+    const res = await api.get('/gastos/categorias-articulo')
+    categoriasArticuloList.value = res.data
+  } catch (e) { console.error(e) }
+}
+
+async function loadArticulos() {
+  try {
+    const params: any = {}
+    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
+    const res = await api.get('/gastos/articulos', { params })
+    articulosList.value = res.data
+  } catch (e) { console.error(e) }
+}
+
 function openEditModal(gasto: any) {
   editingGasto.value = gasto
   showEditModal.value = true
@@ -94,4 +129,10 @@ function onGastoSaved() {
   editingGasto.value = null
   historialKey.value++
 }
+
+onMounted(() => {
+  loadProveedores()
+  loadCategoriasArticulo()
+  loadArticulos()
+})
 </script>

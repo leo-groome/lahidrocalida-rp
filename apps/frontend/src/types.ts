@@ -95,6 +95,7 @@ export interface Turno {
   ventas_efectivo: number | null;
   propinas_efectivo: number | null;
   diferencia: number | null;
+  fondo_anterior: number | null;
   observaciones: string | null;
   denominaciones_iniciales: Denominacion[];
   denominaciones_finales: Denominacion[] | null;

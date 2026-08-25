@@ -60,17 +60,22 @@
 
       <!-- Proveedores -->
       <div v-else-if="activeTab === 'proveedores'">
-        <ProveedoresView />
+        <ProveedoresView :proveedores="proveedoresList" />
       </div>
 
       <!-- Artículos -->
       <div v-else-if="activeTab === 'articulos'">
-        <ArticulosView />
+        <ArticulosView
+          :articulos="articulosList"
+          :categorias="categoriasArticuloList"
+          v-model="selectedArticuloCategoria"
+          @update:model-value="loadArticulos"
+        />
       </div>
 
       <!-- Categorías -->
       <div v-else-if="activeTab === 'categorias'">
-        <CategoriasView />
+        <CategoriasView :categorias="categoriasArticuloList" />
       </div>
     </main>
 
@@ -86,9 +91,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import api from '@/api/client'
 import GastosHistorial from '@/components/gastos/GastosHistorial.vue'
 import ProveedoresView from '@/components/gastos/ProveedoresView.vue'
 import ArticulosView from '@/components/gastos/ArticulosView.vue'
@@ -114,6 +120,35 @@ const showFormModal = ref(false)
 const editingGasto = ref<any>(null)
 const historialRef = ref<any>(null)
 const checkoutKey = ref(0)
+
+// Catálogos para las pestañas de proveedores/artículos/categorías
+const proveedoresList = ref<any[]>([])
+const categoriasArticuloList = ref<any[]>([])
+const articulosList = ref<any[]>([])
+const selectedArticuloCategoria = ref(null)
+
+async function loadProveedores() {
+  try {
+    const res = await api.get('/gastos/proveedores')
+    proveedoresList.value = res.data
+  } catch (e) { console.error(e) }
+}
+
+async function loadCategoriasArticulo() {
+  try {
+    const res = await api.get('/gastos/categorias-articulo')
+    categoriasArticuloList.value = res.data
+  } catch (e) { console.error(e) }
+}
+
+async function loadArticulos() {
+  try {
+    const params: any = {}
+    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
+    const res = await api.get('/gastos/articulos', { params })
+    articulosList.value = res.data
+  } catch (e) { console.error(e) }
+}
 
 // El botón "nuevo" del historial lleva al wizard de registro.
 function goRegistrar() {
@@ -142,6 +177,12 @@ function logout() {
   auth.logout()
   router.push('/login')
 }
+
+onMounted(() => {
+  loadProveedores()
+  loadCategoriasArticulo()
+  loadArticulos()
+})
 </script>
 
 <style scoped>

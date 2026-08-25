@@ -140,7 +140,7 @@ const canSplitDetailsPedido = computed(() => {
 })
 
 const totalVentasDia = computed(() => {
-  return pedidosStore.analytics?.total_ventas || 0
+  return analyticsDia.value?.ingresos.total || 0
 })
 
 const getEstadoAccentColor = (estado: string) => {
@@ -2557,7 +2557,7 @@ const handleGastoSaved = async () => {
                       </div>
                     </td>
                     <td class="px-8 py-5">
-                      <div class="text-xs font-bold text-slate-400 uppercase">{{ formatTime(pedido.fecha_pago || pedido.fecha_modificacion) }}</div>
+                      <div class="text-xs font-bold text-slate-400 uppercase">{{ formatTime(pedido.fecha_pago || pedido.fecha_creacion) }}</div>
                     </td>
                     <td class="px-8 py-5 text-center">
                       <span :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
