@@ -40,13 +40,13 @@ from app.models import (  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def reset_login_limiter():
+async def reset_login_limiter():
     """El limiter de login es estado de proceso: sin resetear, los fallos de un
     test gastarían el presupuesto de los siguientes (todos comparten la IP
     `testclient`) y la suite fallaría según el orden de ejecución."""
-    login_limiter.reset()
+    await login_limiter.reset()
     yield
-    login_limiter.reset()
+    await login_limiter.reset()
 
 
 @pytest.fixture()
