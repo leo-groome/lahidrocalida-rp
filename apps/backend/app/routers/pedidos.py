@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_active_user, get_optional_current_user
 from app.db.session import get_db
 from app.deps import require_roles
+from app.domain.estados import EstadoPedido, transicion_permitida
 from app.events import WsEvent, enqueue_event
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
@@ -874,53 +875,24 @@ async def update_pedido(
     if current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
         raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
-    # Validar permisos para cambiar estado según rol
-    allowed_transitions = {
-        "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
-        "cajero": [
-            "entregado",
-            "cuenta_solicitada",
-            "pagado",
-            "cancelado",
-        ],  # Cajero puede cancelar pedidos
-        "cocina": ["pendiente", "preparando", "listo", "entregado"],
-        "administrador": [
-            "pendiente",
-            "preparando",
-            "listo",
-            "entregado",
-            "cuenta_solicitada",
-            "pagado",
-            "cancelado",
-            "dividido",
-        ],
-    }
-
-    if current_user.rol not in allowed_transitions:
-        raise HTTPException(
-            status_code=403, detail="No tienes permisos para cambiar el estado de pedidos"
-        )
-
-    if data.estado not in allowed_transitions[current_user.rol]:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Tu rol ({current_user.rol}) no puede cambiar a estado '{data.estado}'",
-        )
-
-    # Validar estado
-    if data.estado not in [
-        "pendiente",
-        "preparando",
-        "listo",
-        "entregado",
-        "cuenta_solicitada",
-        "pagado",
-        "cancelado",
-        "dividido",
-    ]:
+    # Estado inválido (fuera del vocabulario) antes de evaluar la transición.
+    if data.estado not in set(EstadoPedido):
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido",
+            detail=f"Estado inválido. Valores permitidos: {', '.join(EstadoPedido)}",
+        )
+
+    # Máquina de estados real: valida origen (pedido.estado) y destino
+    # (data.estado) según el rol, no solo el destino como antes de S2. Un
+    # pedido en estado terminal (pagado/cancelado/dividido) no admite
+    # ninguna transición, sin importar el rol.
+    if not transicion_permitida(pedido.estado, data.estado, current_user.rol):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Tu rol ({current_user.rol}) no puede cambiar el pedido de "
+                f"'{pedido.estado}' a '{data.estado}'"
+            ),
         )
 
     # Validar propinas (no negativas)
@@ -1041,8 +1013,11 @@ async def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
 
-    # Obtener el artículo
-    articulo = db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).first()
+    # Obtener el artículo. with_for_update() lo bloquea contra otro request
+    # concurrente sobre el MISMO artículo (ej. doble tap accidental).
+    articulo = (
+        db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).with_for_update().first()
+    )
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
 
@@ -1056,23 +1031,32 @@ async def update_articulo_estado(
     # Actualizar estado del artículo
     old_estado = articulo.estado_item
     articulo.estado_item = data.estado_item
-    db.commit()
 
-    # Obtener el pedido asociado
-    pedido = articulo.pedido
+    # Bloquear el PEDIDO (no solo el artículo): serializa contra otros
+    # artículos del mismo pedido actualizándose en paralelo. Antes esto era
+    # check-then-act sin lock: dos artículos del mismo pedido marcados
+    # "listo" casi simultáneamente podían leerse el uno al otro como
+    # "todavía no completado" y ninguno disparaba el pedido -> listo.
+    pedido = db.query(Pedido).filter(Pedido.id == articulo.pedido_id).with_for_update().first()
 
-    # Verificar si todos los artículos están completados (listo o entregado)
+    # Verificar si todos los artículos están completados (listo o entregado).
+    # articulo ya está mutado en la identity map de esta sesión, así que esta
+    # lectura de pedido.articulos_pedido ya lo ve reflejado.
     todos_completados = all(
         a.estado_item in ["listo", "entregado"] for a in pedido.articulos_pedido
     )
 
-    # Si todos están completados y el pedido está en 'preparando', cambiar a 'listo'
+    # Si todos están completados y el pedido está en 'preparando', cambiar a
+    # 'listo'. Un solo commit para todo: antes eran 2 commits separados (uno
+    # para el artículo, otro para el pedido), con una ventana donde un
+    # crash entre ambos dejaba el artículo "listo" pero el pedido atascado
+    # en "preparando".
     pedido_estado_changed = False
     if todos_completados and pedido.estado == "preparando":
         pedido.estado = "listo"
         pedido_estado_changed = True
-        db.commit()
 
+    db.commit()
     db.refresh(articulo)
     db.refresh(pedido)
 

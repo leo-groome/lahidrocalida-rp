@@ -12,12 +12,19 @@ comparaciones y queries SQLAlchemy funcionan sin `.value`:
     Pedido.estado.in_(EstadoPedido.terminales())
 
 Alcance S1: definición del vocabulario. Las transiciones válidas
-(origen -> destino) son tarea de S2 y no viven aquí todavía.
+(origen -> destino) eran tarea de S2 — ver `TRANSICIONES_PEDIDO` y
+`transicion_permitida` más abajo.
 """
 
 from enum import StrEnum
 
-__all__ = ["EstadoPedido", "EstadoArticuloPedido", "EstadoTurno"]
+__all__ = [
+    "EstadoPedido",
+    "EstadoArticuloPedido",
+    "EstadoTurno",
+    "TRANSICIONES_PEDIDO",
+    "transicion_permitida",
+]
 
 
 class EstadoPedido(StrEnum):
@@ -41,6 +48,47 @@ class EstadoPedido(StrEnum):
     def activos(cls) -> frozenset["EstadoPedido"]:
         """Estados en los que el pedido sigue vivo en operación."""
         return frozenset(cls) - cls.terminales()
+
+
+# Destino -> roles que pueden mover un pedido a ese estado. Igual que el
+# `allowed_transitions` que vivía inline en routers/pedidos.py antes de S2,
+# pero ahora combinado con una validación real de origen (ver
+# `transicion_permitida`): antes nada impedía cambiar el estado de un pedido
+# ya en un estado terminal (pagado/cancelado/dividido), el único chequeo era
+# "¿el rol puede poner este destino?", sin mirar el origen.
+TRANSICIONES_PEDIDO: dict[EstadoPedido, frozenset[str]] = {
+    EstadoPedido.PENDIENTE: frozenset({"mesero", "cocina", "administrador"}),
+    EstadoPedido.PREPARANDO: frozenset({"cocina", "administrador"}),
+    EstadoPedido.LISTO: frozenset({"cocina", "administrador"}),
+    EstadoPedido.ENTREGADO: frozenset({"mesero", "cajero", "cocina", "administrador"}),
+    EstadoPedido.CUENTA_SOLICITADA: frozenset({"mesero", "cajero", "administrador"}),
+    EstadoPedido.PAGADO: frozenset({"cajero", "administrador"}),
+    EstadoPedido.CANCELADO: frozenset({"cajero", "administrador"}),
+    # Alcanzable manualmente por administrador (menú de estado en Caja) además
+    # de vía /dividir y /dividir_por_montos, que lo setean directo sin pasar
+    # por esta tabla.
+    EstadoPedido.DIVIDIDO: frozenset({"administrador"}),
+}
+
+
+def transicion_permitida(origen: str, destino: str, rol: str) -> bool:
+    """True si `rol` puede mover un pedido en estado `origen` a `destino`.
+
+    Un pedido en estado terminal (`EstadoPedido.terminales()`) no admite
+    ninguna transición más, sin importar el rol: es el bug que cierra esta
+    validación, antes solo se miraba el destino.
+    """
+    try:
+        origen_enum = EstadoPedido(origen)
+    except ValueError:
+        return False
+    if origen_enum in EstadoPedido.terminales():
+        return False
+    try:
+        destino_enum = EstadoPedido(destino)
+    except ValueError:
+        return False
+    return rol in TRANSICIONES_PEDIDO.get(destino_enum, frozenset())
 
 
 class EstadoArticuloPedido(StrEnum):
