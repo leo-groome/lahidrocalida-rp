@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import events, websocket_routes
 from app.core.config import settings
+from app.core.redis import check_redis, close_redis
 from app.db.session import get_db
 from app.routers import (
     admin,
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     tasks = [
         asyncio.create_task(events.event_consumer(stop_event)),
+        asyncio.create_task(events.redis_subscriber(stop_event)),
         asyncio.create_task(websocket_manager._cleanup_zombies()),
     ]
     try:
@@ -48,6 +50,7 @@ async def lifespan(app: FastAPI):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        await close_redis()
 
 
 app = FastAPI(title="La Hidrocálida POS API", lifespan=lifespan)
@@ -95,3 +98,12 @@ def check_database_connection(db: Session = Depends(get_db)):
     except Exception:
         logging.getLogger(__name__).exception("Fallo de conexión a la base de datos")
         return {"status": "error"}
+
+
+@app.get("/health/redis")
+async def check_redis_connection():
+    """Verifica Redis (fan-out WS + rate limiter). Sin REDIS_URL configurada,
+    "disabled" es el estado esperado: el sistema opera en modo local."""
+    if not settings.REDIS_URL:
+        return {"status": "disabled"}
+    return {"status": "ok"} if await check_redis() else {"status": "error"}

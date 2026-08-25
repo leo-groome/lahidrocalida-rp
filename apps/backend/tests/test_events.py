@@ -32,6 +32,9 @@ async def test_event_consumer_despacha_al_websocket_manager(monkeypatch):
     # (pytest-asyncio crea un loop por test) y Queue no permite cruzarlos.
     cola_de_prueba: asyncio.Queue = asyncio.Queue(maxsize=1000)
     monkeypatch.setattr("app.events._queue", cola_de_prueba)
+    # Sin Redis: fuerza el fan-out local directo (si el entorno tiene
+    # REDIS_URL seteada, el consumer publicaría en vez de despachar aquí).
+    monkeypatch.setattr("app.core.redis.settings.REDIS_URL", None)
 
     mock_wm = AsyncMock()
     monkeypatch.setattr("app.websocket_manager.websocket_manager", mock_wm)
@@ -53,6 +56,7 @@ async def test_event_consumer_despacha_al_websocket_manager(monkeypatch):
 async def test_event_consumer_no_muere_si_el_despacho_lanza(monkeypatch):
     cola_de_prueba: asyncio.Queue = asyncio.Queue(maxsize=1000)
     monkeypatch.setattr("app.events._queue", cola_de_prueba)
+    monkeypatch.setattr("app.core.redis.settings.REDIS_URL", None)
 
     mock_wm = AsyncMock()
     mock_wm.notify_pedido_created.side_effect = RuntimeError("boom")
@@ -68,3 +72,30 @@ async def test_event_consumer_no_muere_si_el_despacho_lanza(monkeypatch):
 
     # No debe propagar la excepción del despacho.
     await asyncio.gather(event_consumer(stop_event), _detener_tras_drenar())
+
+
+async def test_event_consumer_degrada_a_local_si_publish_a_redis_falla(monkeypatch):
+    """Redis configurado pero caído a medio vuelo (publish lanza): el evento
+    no se pierde, cae al fan-out local en vez de propagar la excepción."""
+    cola_de_prueba: asyncio.Queue = asyncio.Queue(maxsize=1000)
+    monkeypatch.setattr("app.events._queue", cola_de_prueba)
+
+    mock_redis_client = AsyncMock()
+    mock_redis_client.publish.side_effect = ConnectionError("redis caído")
+    monkeypatch.setattr("app.core.redis.get_redis", lambda: mock_redis_client)
+
+    mock_wm = AsyncMock()
+    monkeypatch.setattr("app.websocket_manager.websocket_manager", mock_wm)
+
+    payload = {"pedido_data": {"id": 9}}
+    enqueue_event(WsEvent(type="pedido_created", payload=payload))
+
+    stop_event = asyncio.Event()
+
+    async def _detener_tras_drenar():
+        await cola_de_prueba.join()
+        stop_event.set()
+
+    await asyncio.gather(event_consumer(stop_event), _detener_tras_drenar())
+
+    mock_wm.notify_pedido_created.assert_awaited_once_with(pedido_data=payload["pedido_data"])
