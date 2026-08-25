@@ -480,7 +480,11 @@ async def dividir_cuenta(
 ):
     """Dividir una cuenta por articulos (solo administrador)."""
 
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    # with_for_update(): serializa contra otra división concurrente del MISMO
+    # pedido (doble tap, dos cajeros). Sin el lock, dos requests podían pasar
+    # ambos el chequeo "no está dividido todavía" antes de que cualquiera
+    # commiteara, y ambos crear cuentas hijas duplicadas.
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -489,7 +493,10 @@ async def dividir_cuenta(
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
             logger.info(
-                "Replay idempotente: pedido %s ya dividido, retornando cuentas hijas", pedido_id
+                "Replay idempotente: pedido %s ya dividido (client_request_id=%s), "
+                "retornando cuentas hijas",
+                pedido_id,
+                data.client_request_id,
             )
             return {
                 "pedido_original_id": pedido.id,
@@ -543,11 +550,13 @@ async def dividir_cuenta(
                 detail=f"El articulo {articulo_id} no fue repartido correctamente",
             )
 
-    # Marcar pedido original como dividido
+    # Marcar pedido original como dividido. Sin commit todavía: todo-o-nada
+    # con la creación de las cuentas hijas de abajo (antes: un commit aquí y
+    # uno más por cada cuenta hija dentro del loop — si el proceso fallaba a
+    # medio loop, el pedido original quedaba "dividido" con menos cuentas
+    # hijas de las que debía tener, un estado inconsistente sin recuperación).
     old_estado = pedido.estado
     pedido.estado = "dividido"
-    db.commit()
-    db.refresh(pedido)
 
     cuentas_creadas: List[Pedido] = []
 
@@ -607,9 +616,12 @@ async def dividir_cuenta(
             db.add(articulo_nuevo)
 
         nuevo_pedido.total = total_cuenta
-        db.commit()
-        db.refresh(nuevo_pedido)
         cuentas_creadas.append(nuevo_pedido)
+
+    db.commit()
+    db.refresh(pedido)
+    for cuenta_pedido in cuentas_creadas:
+        db.refresh(cuenta_pedido)
 
     # Notificar por WebSocket
     try:
@@ -714,7 +726,9 @@ async def dividir_por_montos(
 ):
     """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
 
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    # with_for_update(): serializa contra otra división concurrente del mismo
+    # pedido, igual que en /dividir.
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -723,8 +737,10 @@ async def dividir_por_montos(
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
             logger.info(
-                "Replay idempotente: pedido %s ya dividido por montos, retornando cuentas hijas",
+                "Replay idempotente: pedido %s ya dividido por montos (client_request_id=%s), "
+                "retornando cuentas hijas",
                 pedido_id,
+                data.client_request_id,
             )
             return {
                 "pedido_original_id": pedido.id,
@@ -760,10 +776,10 @@ async def dividir_por_montos(
         label = f"Cuenta {i}/{total}"
         return f"{base} {label}" if base else label
 
+    # Sin commit todavía: todo-o-nada con las cuentas hijas (ver nota en
+    # /dividir de más arriba — mismo bug de atomicidad, mismo fix).
     old_estado = pedido.estado
     pedido.estado = "dividido"
-    db.commit()
-    db.refresh(pedido)
 
     cuentas_creadas: List[Pedido] = []
     total_cuentas = len(data.cuentas)
@@ -787,9 +803,13 @@ async def dividir_por_montos(
         )
 
         db.add(nuevo_pedido)
-        db.commit()
-        db.refresh(nuevo_pedido)
+        db.flush()
         cuentas_creadas.append(nuevo_pedido)
+
+    db.commit()
+    db.refresh(pedido)
+    for cuenta_pedido in cuentas_creadas:
+        db.refresh(cuenta_pedido)
 
     # Notificar por WebSocket
     try:
