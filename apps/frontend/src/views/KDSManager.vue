@@ -335,6 +335,19 @@ onUnmounted(() => {
 
     <!-- Main Content Area -->
     <div class="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+      <!-- Alerta: pedidos sin acuse >60s. La conexión WS puede seguir "viva"
+           (sigue respondiendo pings) mientras pierde eventos silenciosamente;
+           esta señal viene del server, no de un timeout local. -->
+      <div v-if="pedidosStore.pedidosSinAcuse.length > 0"
+           class="mb-4 bg-rose-600/90 border border-rose-400 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-2xl animate-pulse">
+        <AlertCircle class="w-6 h-6 flex-shrink-0" />
+        <p class="text-sm font-bold uppercase tracking-wide">
+          Posible pérdida de conexión: {{ pedidosStore.pedidosSinAcuse.length }}
+          pedido(s) sin confirmar hace más de 60s (#{{ pedidosStore.pedidosSinAcuse.join(', #') }}).
+          Verifica la conexión o refresca.
+        </p>
+      </div>
+
       <!-- Error Toasts -->
       <transition enter-active-class="transform transition ease-out duration-300 translate-y-2 opacity-0" 
                   enter-to-class="translate-y-0 opacity-100" 

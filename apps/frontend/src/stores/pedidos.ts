@@ -19,6 +19,10 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const isOutSoundThrottled = ref(false)
   const wsClientType = ref<WsClientType | null>(null)
   const listenersRegistered = ref(false)
+  // IDs de pedidos que el server reporta sin acuse por >60s (ver
+  // websocket_manager._avisar_acks_vencidos): puede indicar que este cliente
+  // está perdiendo eventos silenciosamente aunque la conexión siga "viva".
+  const pedidosSinAcuse = ref<number[]>([])
 
   // Getters computados
   const pedidosPorEstado = computed(() => {
@@ -192,6 +196,19 @@ export const usePedidosStore = defineStore('pedidos', () => {
       console.log('🍽️ Estado de artículo cambiado via WebSocket:', data)
       lastUpdate.value = new Date()
       handleArticuloEstadoChanged(data.pedido_id, data.articulo_id, data.nuevo_estado, data.pedido)
+    })
+
+    // El server nos dice qué pedidos llevan >60s sin acuse (ver 2.9). Es un
+    // snapshot, no un delta: reemplaza la lista completa cada vez.
+    websocketService.on('ack_timeout', (data: any) => {
+      console.warn('⚠️ Pedidos sin acuse >60s:', data.pedido_ids)
+      pedidosSinAcuse.value = data.pedido_ids || []
+    })
+
+    // Reconectar limpia cualquier alerta de acuse: los mensajes pendientes de
+    // la conexión vieja ya no existen del lado del server tras el reconnect.
+    websocketService.on('connection_open', () => {
+      pedidosSinAcuse.value = []
     })
   }
 
@@ -444,7 +461,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
     error,
     lastUpdate,
     wsConnected,
-    
+    pedidosSinAcuse,
+
     // Getters
     pedidosPorEstado,
     pedidosKDS,
