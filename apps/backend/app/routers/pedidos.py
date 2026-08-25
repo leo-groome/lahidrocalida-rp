@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_active_user, get_optional_current_user
 from app.db.session import get_db
 from app.deps import require_roles
+from app.events import WsEvent, enqueue_event
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
     AgregarArticulosRequest,
@@ -26,7 +27,6 @@ from app.schemas import (
     PedidoUpdate,
 )
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
-from app.websocket_manager import websocket_manager
 
 
 def _query_pedidos_eager(db: Session):
@@ -77,9 +77,7 @@ async def print_ticket_automatic(pedido_data):
 
         # 1. Enviar vía WebSocket (Recomendado para servidores en la nube como Railway)
         try:
-            from app.websocket_manager import websocket_manager
-
-            await websocket_manager.notify_print_ticket(ticket_data)
+            enqueue_event(WsEvent(type="print_ticket", payload={"pedido_data": ticket_data}))
             logger.info(
                 "Ticket #%s notificado vía WebSocket para impresión remota",
                 ticket_data.get("numero_display", "N/A"),
@@ -319,7 +317,7 @@ async def create_pedido(
                         for a in pedido.articulos_pedido
                     ],
                 }
-                await websocket_manager.notify_pedido_created(pedido_data)
+                enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": pedido_data}))
             except Exception as e:
                 # Log del error pero no fallar la creación del pedido.
                 # El KDS lo recuperará vía polling/resync (la DB es la fuente de verdad).
@@ -650,11 +648,14 @@ async def dividir_cuenta(
         }
 
         if old_estado != pedido.estado:
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=pedido.estado,
-                pedido_data=pedido_original_data,
-            )
+            enqueue_event(WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_original_data,
+                },
+            ))
 
         for cuenta_pedido in cuentas_creadas:
             cuenta_data = {
@@ -690,7 +691,7 @@ async def dividir_cuenta(
                     for a in cuenta_pedido.articulos_pedido
                 ],
             }
-            await websocket_manager.notify_pedido_created(cuenta_data)
+            enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": cuenta_data}))
 
     except Exception as e:
         logger.warning(
@@ -811,11 +812,14 @@ async def dividir_por_montos(
         }
 
         if old_estado != pedido.estado:
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=pedido.estado,
-                pedido_data=pedido_original_data,
-            )
+            enqueue_event(WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_original_data,
+                },
+            ))
 
         for cuenta_pedido in cuentas_creadas:
             cuenta_data = {
@@ -836,7 +840,7 @@ async def dividir_por_montos(
                 ),
                 "articulos_pedido": [],
             }
-            await websocket_manager.notify_pedido_created(cuenta_data)
+            enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": cuenta_data}))
 
     except Exception as e:
         logger.warning(
@@ -998,9 +1002,14 @@ async def update_pedido(
                     for a in pedido.articulos_pedido
                 ],
             }
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id, nuevo_estado=data.estado, pedido_data=pedido_data
-            )
+            enqueue_event(WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": data.estado,
+                    "pedido_data": pedido_data,
+                },
+            ))
 
             # Integración automática con servicio de impresión
             if data.estado == "cuenta_solicitada":
@@ -1104,18 +1113,26 @@ async def update_articulo_estado(
             }
 
             # Notificar cambio de artículo
-            await websocket_manager.notify_articulo_estado_changed(
-                pedido_id=pedido.id,
-                articulo_id=articulo.id,
-                nuevo_estado=data.estado_item,
-                pedido_data=pedido_data,
-            )
+            enqueue_event(WsEvent(
+                type="articulo_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "articulo_id": articulo.id,
+                    "nuevo_estado": data.estado_item,
+                    "pedido_data": pedido_data,
+                },
+            ))
 
             # Si el pedido también cambió de estado, notificar eso también
             if pedido_estado_changed:
-                await websocket_manager.notify_pedido_estado_changed(
-                    pedido_id=pedido.id, nuevo_estado="listo", pedido_data=pedido_data
-                )
+                enqueue_event(WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": "listo",
+                        "pedido_data": pedido_data,
+                    },
+                ))
 
         except Exception as e:
             # Log del error pero no fallar la actualización del artículo
@@ -1287,9 +1304,14 @@ async def agregar_articulos_pedido(
 
         # Siempre enviar actualización del pedido completo
         # Esto agrupa los artículos nuevos con los existentes visualmente en lugar de crear un "-A" temporal
-        await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
-        )
+        enqueue_event(WsEvent(
+            type="pedido_estado_changed",
+            payload={
+                "pedido_id": pedido.id,
+                "nuevo_estado": pedido.estado,
+                "pedido_data": pedido_data,
+            },
+        ))
 
     except Exception as e:
         # Log del error pero no fallar la operación
@@ -1408,10 +1430,15 @@ async def actualizar_articulos_pedido(
             ],
         }
 
-        await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
-        )
-        logger.info("Notificación WebSocket enviada: pedido %s actualizado", pedido.id)
+        enqueue_event(WsEvent(
+            type="pedido_estado_changed",
+            payload={
+                "pedido_id": pedido.id,
+                "nuevo_estado": pedido.estado,
+                "pedido_data": pedido_data,
+            },
+        ))
+        logger.info("Evento WS encolado: pedido %s actualizado", pedido.id)
 
     except Exception as e:
         # Log del error pero no fallar la operación

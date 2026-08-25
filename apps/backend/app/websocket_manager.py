@@ -38,9 +38,6 @@ class WebSocketManager:
             "administrador": ["kds", "caja", "mesero", "admin"],
         }
 
-        # Tarea de limpieza de conexiones "zombie"
-        self.cleanup_task = asyncio.create_task(self._cleanup_zombies())
-
     def _get_allowed_groups(self, user_role: str) -> List[str]:
         """Obtiene los grupos permitidos para un rol específico"""
         return self.role_to_groups.get(user_role, [])
