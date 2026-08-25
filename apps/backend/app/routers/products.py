@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_active_user
 from app.core.cache import platillos_cache
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import ArticuloPedido, Pedido, Platillo, Usuario
 from app.schemas import PlatilloCreate, PlatilloResponse
 
@@ -30,12 +31,8 @@ def list_platillos(
 def create_platillo(
     data: PlatilloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede crear platillos inicialmente
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado para crear platillos")
-
     platillo = Platillo(
         nombre=data.nombre,
         descripcion=data.descripcion,
@@ -108,12 +105,8 @@ def update_platillo(
     platillo_id: int,
     data: PlatilloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede actualizar platillos
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado para actualizar platillos")
-
     platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
     if not platillo:
         raise HTTPException(status_code=404, detail="Platillo no encontrado")
@@ -142,18 +135,12 @@ def toggle_disponibilidad_platillo(
     platillo_id: int,
     data: dict,  # {"estado": "disponible" | "no_disponible"}
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("cocina", "administrador")),
 ):
     """
     Cambiar disponibilidad de un platillo.
     Permitido para cocina y administradores.
     """
-    # Validar permisos - cocina y admin pueden cambiar disponibilidad
-    if current_user.rol not in ["cocina", "administrador"]:
-        raise HTTPException(
-            status_code=403, detail="Solo cocina y administradores pueden cambiar disponibilidad"
-        )
-
     platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
     if not platillo:
         raise HTTPException(status_code=404, detail="Platillo no encontrado")
@@ -184,12 +171,8 @@ def toggle_disponibilidad_platillo(
 def delete_platillo(
     platillo_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede eliminar platillos
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado para eliminar platillos")
-
     platillo = db.query(Platillo).filter(Platillo.id == platillo_id).first()
     if not platillo:
         raise HTTPException(status_code=404, detail="Platillo no encontrado")

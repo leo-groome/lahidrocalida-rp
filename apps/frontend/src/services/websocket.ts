@@ -85,7 +85,11 @@ export class WebSocketService {
       this.ws = null
     }
 
-    const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/ws/${clientType}?token=${authStore.token}`
+    // El token NO va en la URL: el query string del handshake queda en texto
+    // plano en los access logs del proxy. Se manda como primer frame (ver
+    // handleOpen -> sendAuth).
+    const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/ws/${clientType}`
+    const authToken = authStore.token
 
     try {
       this.connectionStatus.value = 'connecting'
@@ -102,6 +106,9 @@ export class WebSocketService {
 
         this.ws!.onopen = (event) => {
           clearTimeout(timeout)
+          // Primer frame obligatorio: auth. El server cierra con 4001 si no
+          // llega un token válido dentro de su timeout.
+          this.sendAuth(authToken)
           this.handleOpen(event)
           resolve(true)
         }
@@ -235,6 +242,21 @@ export class WebSocketService {
       if (index > -1) {
         callbacks.splice(index, 1)
       }
+    }
+  }
+
+  /**
+   * Enviar el frame de autenticación (primer mensaje de toda conexión)
+   */
+  private sendAuth(token: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+
+    try {
+      this.ws.send(JSON.stringify({ type: 'auth', token }))
+      this.stats.messagesSent++
+    } catch (error) {
+      console.error('WebSocket: Error enviando auth:', error)
+      this.lastError.value = 'Error enviando autenticación'
     }
   }
 

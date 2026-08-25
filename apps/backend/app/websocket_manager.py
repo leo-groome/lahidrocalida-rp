@@ -81,15 +81,19 @@ class WebSocketManager:
     async def connect(
         self, websocket: WebSocket, client_type: str, user_id: int, user_role: str, sucursal_id: int
     ):
-        """Conectar un nuevo cliente WebSocket"""
+        """Registrar un cliente WebSocket ya aceptado y autenticado.
+
+        PRECONDICIÓN: el caller ya hizo `await websocket.accept()`. El handshake
+        se acepta antes de autenticar porque el token llega como primer mensaje
+        de la conexión (ver `websocket_routes.websocket_endpoint`), no en el
+        query string. Este método NO acepta la conexión.
+        """
         try:
             # Validar que el rol tiene permisos para este tipo de cliente
             allowed_groups = self._get_allowed_groups(user_role)
             if client_type not in allowed_groups:
                 await websocket.close(code=4003, reason="Unauthorized for this client type")
                 return False
-
-            await websocket.accept()
 
             connection_info = ConnectionInfo(websocket, user_id, user_role, sucursal_id)
             self.connections[client_type].append(connection_info)

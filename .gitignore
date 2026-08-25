@@ -388,4 +388,3 @@ apps/print-service/logs/
 
 # root monorepo
 node_modules/
-pnpm-lock.yaml

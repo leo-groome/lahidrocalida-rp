@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, extract, func
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import (
     Articulo,
     ArticuloPedido,
@@ -23,12 +23,6 @@ from app.models import (
 )
 
 router = APIRouter(prefix="/admin", tags=["administracion"])
-
-
-def _ensure_admin_access(user: Usuario) -> None:
-    """Verificar que el usuario sea administrador"""
-    if user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="Acceso solo para administradores")
 
 
 def _get_week_range(date_input: Optional[date] = None) -> tuple[date, date]:
@@ -55,14 +49,13 @@ def get_analytics(
     fecha_fin: str,  # YYYY-MM-DD
     metodo_pago: Optional[str] = None,  # efectivo, tarjeta, transferencia
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """
     Analíticas unificadas (Ventas vs Gastos) para un rango de fechas.
     Permite zoom out (diario, semanal, mensual) según el rango proporcionado por el frontend.
     Incluye métricas avanzadas (top platillos, top meseros, ventas por categoría).
     """
-    _ensure_admin_access(current_user)
 
     try:
         start_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
@@ -204,13 +197,12 @@ def get_analytics_advanced(
     fecha_fin: str,  # YYYY-MM-DD
     metodo_pago: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """
     Analíticas avanzadas separadas para optimización de carga.
     Top platillos, ventas por categoría, top meseros.
     """
-    _ensure_admin_access(current_user)
 
     try:
         start_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
@@ -454,10 +446,9 @@ def _get_predictive_sales(sucursal_id: int, db: Session) -> Dict[str, Any]:
 def get_dashboard_metrics(
     turno_id: Optional[int] = None,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Dashboard principal — métricas del turno activo (o turno_id explícito)."""
-    _ensure_admin_access(current_user)
 
     # Determinar turno_id efectivo
     tid = turno_id
@@ -645,10 +636,9 @@ def get_dashboard_metrics(
 def get_weekly_report(
     fecha: Optional[str] = None,  # Formato YYYY-MM-DD, cualquier día de la semana deseada
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Reporte semanal (Martes a Domingo)"""
-    _ensure_admin_access(current_user)
 
     # Parsear fecha si se proporciona
     target_date = date.today()
@@ -929,10 +919,9 @@ def get_gastos_summary(
     fecha_inicio: str = None,  # YYYY-MM-DD
     fecha_fin: str = None,  # YYYY-MM-DD
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
     """Resumen de gastos por categoría en un período"""
-    _ensure_admin_access(current_user)
 
     # Si no se especifican fechas, usar la semana actual
     if not fecha_inicio or not fecha_fin:

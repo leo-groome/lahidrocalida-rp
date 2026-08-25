@@ -74,9 +74,9 @@
               <span class="text-xs font-black text-slate-400 uppercase tracking-widest">#{{ turno.id }}</span>
               <span
                 class="text-xs font-bold px-2 py-0.5 rounded-lg"
-                :class="turno.estado === 'cerrado' ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'"
+                :class="turno.estado === EstadoTurno.CERRADO ? 'bg-slate-100 text-slate-600' : 'bg-emerald-100 text-emerald-700'"
               >
-                {{ turno.estado === 'cerrado' ? 'Cerrado' : 'Abierto' }}
+                {{ turno.estado === EstadoTurno.CERRADO ? 'Cerrado' : 'Abierto' }}
               </span>
             </div>
             <p class="font-bold text-slate-800">{{ turno.usuario_nombre || 'Cajero desconocido' }}</p>
@@ -116,6 +116,7 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { api } from '@/api/client'
 import type { Turno } from '@/types'
+import { EstadoTurno } from '@/constants/estados'
 
 const turnos = ref<Turno[]>([])
 const loading = ref(false)
@@ -165,7 +166,7 @@ async function loadTurnos() {
       params: {
         fecha_inicio: fechaInicio.value,
         fecha_fin: fechaFin.value,
-        estado: 'cerrado',
+        estado: EstadoTurno.CERRADO,
       },
     })
     turnos.value = data

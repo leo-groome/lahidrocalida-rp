@@ -1,6 +1,6 @@
 # La Hidrocálida POS — Estado actual del sistema
 
-**Última revisión:** 2026-08-24 · rama `main`, commit `db6e440` (post-S0, monorepo migrado).
+**Última revisión:** 2026-08-24 · rama `main` · **Sprint 1 "Fundaciones" completo** (1.1–1.9 en 🟢). Deuda nueva para S2/triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; rate limit de login por IP puede colapsar detrás del proxy de Railway sin `--forwarded-allow-ips`; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`.
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
 a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en

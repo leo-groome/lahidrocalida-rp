@@ -1,3 +1,5 @@
+import type { EstadoArticuloPedido, EstadoPedido, EstadoTurno } from "./constants/estados";
+
 export type Rol = "mesero" | "cajero" | "cocina" | "administrador" | "compras";
 
 export interface Platillo {
@@ -24,7 +26,7 @@ export interface ArticuloPedidoResponse {
   cantidad: number;
   precio_cobrado: string | number;
   modificaciones?: string | null;
-  estado_item: "pendiente" | "preparando" | "listo" | "entregado";
+  estado_item: EstadoArticuloPedido;
   platillo?: Platillo;
 }
 
@@ -62,15 +64,7 @@ export interface PedidoResponse {
   total: string | number;
   usuario_nombre?: string | null;
   fecha_pago?: string | null;
-  estado:
-    | "pendiente"
-    | "preparando"
-    | "listo"
-    | "entregado"
-    | "cuenta_solicitada"
-    | "pagado"
-    | "cancelado"
-    | "dividido";
+  estado: EstadoPedido;
   metodo_pago: "efectivo" | "tarjeta" | "transferencia" | null;
   propina_efectivo: number;
   propina_tarjeta: number;
@@ -95,12 +89,13 @@ export interface Turno {
   usuario_id: number;
   fecha_apertura: string;
   fecha_cierre: string | null;
-  estado: "abierto" | "cerrado";
+  estado: EstadoTurno;
   total_inicial: number;
   total_final: number | null;
   ventas_efectivo: number | null;
   propinas_efectivo: number | null;
   diferencia: number | null;
+  fondo_anterior: number | null;
   observaciones: string | null;
   denominaciones_iniciales: Denominacion[];
   denominaciones_finales: Denominacion[] | null;

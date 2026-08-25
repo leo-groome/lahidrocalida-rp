@@ -5,6 +5,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { useRouter } from 'vue-router'
 import { formatElapsed } from '@/utils/dateUtils'
+import { EstadoArticuloPedido, EstadoPedido } from '@/constants/estados'
 import { 
   Flame, 
   CheckCircle, 
@@ -26,7 +27,7 @@ interface Articulo {
   cantidad: number
   precio_cobrado: string | number
   modificaciones?: string | null
-  estado_item: string
+  estado_item: EstadoArticuloPedido
   platillo?: { nombre: string; kds_name?: string | null; categoria?: string | null }
 }
 
@@ -36,7 +37,7 @@ interface Pedido {
   nombre_cliente: string | null
   mesa: string | null
   tipo_orden: 'aqui' | 'llevar' | 'uber_eats'
-  estado: 'pendiente' | 'preparando' | 'listo' | 'entregado' | 'cuenta_solicitada' | 'pagado' | 'cancelado'
+  estado: EstadoPedido
   articulos_pedido?: Articulo[]
   fecha_creacion: string
 }
@@ -51,10 +52,10 @@ let timer: number | undefined
 
 const pedidosActivos = computed(() => {
   return pedidosStore.pedidosKDS
-    .filter(p => ['pendiente', 'preparando', 'listo', 'entregado'].includes(p.estado))
+    .filter(p => ([EstadoPedido.PENDIENTE, EstadoPedido.PREPARANDO, EstadoPedido.LISTO, EstadoPedido.ENTREGADO] as string[]).includes(p.estado))
     .map(p => {
-      const articulosVisibles = (p.articulos_pedido || []).filter(a => 
-        ['pendiente', 'preparando', 'listo'].includes(a.estado_item) &&
+      const articulosVisibles = (p.articulos_pedido || []).filter(a =>
+        ([EstadoArticuloPedido.PENDIENTE, EstadoArticuloPedido.PREPARANDO, EstadoArticuloPedido.LISTO] as string[]).includes(a.estado_item) &&
         !['Bebidas', 'Aguas', 'Refrescos'].includes(a.platillo?.categoria || '')
       )
       
@@ -71,7 +72,7 @@ const pedidosRecienCompletados = computed(() => {
   
   return pedidosStore.pedidosKDS
     .filter(p => {
-      if (p.estado !== 'listo') return false
+      if (p.estado !== EstadoPedido.LISTO) return false
       const tiempoCreacion = new Date(p.fecha_creacion).getTime()
       return tiempoCreacion >= hace20Minutos
     })
@@ -114,7 +115,7 @@ const pedidosMostrados = computed(() => {
 const loading = computed(() => pedidosStore.loading)
 
 function recuperarPedido(pedido: any) {
-  updateEstadoPedidoOptimistic(pedido, 'preparando')
+  updateEstadoPedidoOptimistic(pedido, EstadoPedido.PREPARANDO)
 }
 
 async function cargarPlatillos() {
@@ -164,10 +165,10 @@ function getDisponiblesPorCategoria(categoria: string) {
 
 function getEstadoStyles(estado: string): string {
   const styles: Record<string, string> = {
-    'pendiente': 'bg-[#00126D]/40 border-rose-500/60',
-    'preparando': 'bg-[#00126D]/50 border-amber-400/80 shadow-[0_0_24px_rgba(245,158,11,0.25)]',
-    'listo': 'bg-[#00126D]/70 border-emerald-400/70',
-    'entregado': 'bg-[#00126D]/20 border-blue-400/50'
+    [EstadoPedido.PENDIENTE]: 'bg-[#00126D]/40 border-rose-500/60',
+    [EstadoPedido.PREPARANDO]: 'bg-[#00126D]/50 border-amber-400/80 shadow-[0_0_24px_rgba(245,158,11,0.25)]',
+    [EstadoPedido.LISTO]: 'bg-[#00126D]/70 border-emerald-400/70',
+    [EstadoPedido.ENTREGADO]: 'bg-[#00126D]/20 border-blue-400/50'
   }
   return styles[estado] || 'bg-slate-800'
 }
@@ -202,18 +203,18 @@ function getTipoOrdenIcon(tipo: string) {
 
 function getArticuloStyles(estado: string) {
   switch (estado) {
-    case 'pendiente': return 'bg-white/8 text-white'
-    case 'preparando': return 'bg-amber-500/20 text-amber-50 border-amber-400/70'
-    case 'listo': return 'bg-emerald-500/20 text-emerald-100 border-emerald-400/70'
+    case EstadoArticuloPedido.PENDIENTE: return 'bg-white/8 text-white'
+    case EstadoArticuloPedido.PREPARANDO: return 'bg-amber-500/20 text-amber-50 border-amber-400/70'
+    case EstadoArticuloPedido.LISTO: return 'bg-emerald-500/20 text-emerald-100 border-emerald-400/70'
     default: return 'bg-white/5'
   }
 }
 
 function getArticuloIcon(estado: string) {
   switch (estado) {
-    case 'pendiente': return Circle
-    case 'preparando': return Flame
-    case 'listo': return CheckCircle
+    case EstadoArticuloPedido.PENDIENTE: return Circle
+    case EstadoArticuloPedido.PREPARANDO: return Flame
+    case EstadoArticuloPedido.LISTO: return CheckCircle
     default: return Circle
   }
 }
@@ -230,10 +231,10 @@ async function updateEstadoPedidoOptimistic(pedido: any, nuevoEstado: string) {
 async function toggleArticuloEstadoOptimistic(articulo: any) {
   let nuevoEstado: string
   switch (articulo.estado_item) {
-    case 'pendiente': nuevoEstado = 'preparando'; break
-    case 'preparando': nuevoEstado = 'listo'; break
-    case 'listo': nuevoEstado = 'preparando'; break
-    default: nuevoEstado = 'preparando'
+    case EstadoArticuloPedido.PENDIENTE: nuevoEstado = EstadoArticuloPedido.PREPARANDO; break
+    case EstadoArticuloPedido.PREPARANDO: nuevoEstado = EstadoArticuloPedido.LISTO; break
+    case EstadoArticuloPedido.LISTO: nuevoEstado = EstadoArticuloPedido.PREPARANDO; break
+    default: nuevoEstado = EstadoArticuloPedido.PREPARANDO
   }
   try {
     const success = await pedidosStore.updateArticuloEstado(articulo.id, nuevoEstado)
@@ -452,7 +453,7 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <!-- Indicador de acción (solo si preparando) -->
-                <div v-if="p.estado === 'preparando'" class="flex gap-2">
+                <div v-if="p.estado === EstadoPedido.PREPARANDO" class="flex gap-2">
                   <div v-for="i in 3" :key="i" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" :style="`animation-delay: ${i * 0.3}s`"></div>
                 </div>
               </div>
@@ -467,17 +468,17 @@ onUnmounted(() => {
                   </button>
                 </template>
                 <template v-else>
-                  <button v-if="p.estado === 'pendiente'" @click="updateEstadoPedidoOptimistic(p, 'preparando')"
+                  <button v-if="p.estado === EstadoPedido.PENDIENTE" @click="updateEstadoPedidoOptimistic(p, EstadoPedido.PREPARANDO)"
                           class="flex items-center justify-center gap-3 bg-amber-500 hover:bg-amber-400 text-[#00126D] font-black px-6 py-4 md:px-10 md:py-5 rounded-2xl md:rounded-[2rem] transition-all shadow-2xl active:scale-95 border border-amber-300 w-full lg:w-auto">
                     <Flame class="w-6 h-6 md:w-8 md:h-8" />
                     <span class="text-base md:text-xl uppercase tracking-widest font-black">¡Cocinar!</span>
                   </button>
-                  <button v-else-if="p.estado === 'preparando'" @click="updateEstadoPedidoOptimistic(p, 'listo')"
+                  <button v-else-if="p.estado === EstadoPedido.PREPARANDO" @click="updateEstadoPedidoOptimistic(p, EstadoPedido.LISTO)"
                           class="flex items-center justify-center gap-3 bg-emerald-500 hover:bg-emerald-400 text-white font-black px-6 py-4 md:px-10 md:py-5 rounded-2xl md:rounded-[2rem] transition-all shadow-2xl active:scale-95 border border-emerald-400 w-full lg:w-auto">
                     <CheckCircle class="w-6 h-6 md:w-8 md:h-8" />
                     <span class="text-base md:text-xl uppercase tracking-widest font-black">¡Listo!</span>
                   </button>
-                  <button v-else-if="p.estado === 'listo'" @click="updateEstadoPedidoOptimistic(p, 'entregado')"
+                  <button v-else-if="p.estado === EstadoPedido.LISTO" @click="updateEstadoPedidoOptimistic(p, EstadoPedido.ENTREGADO)"
                           class="flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-4 md:px-10 md:py-5 rounded-2xl md:rounded-[2rem] transition-all shadow-2xl active:scale-95 border border-blue-400 w-full lg:w-auto">
                     <PackageCheck class="w-6 h-6 md:w-8 md:h-8" />
                     <span class="text-base md:text-xl uppercase tracking-widest font-black">Entregar</span>
@@ -492,7 +493,7 @@ onUnmounted(() => {
 
             <!-- Items Detailed (Tactile Grid) -->
             <transition enter-active-class="animate-in active" leave-active-class="opacity-0 duration-200">
-              <div v-if="p.estado === 'preparando'" class="mt-6 md:mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 border-t-2 border-white/5 pt-6 md:pt-10">
+              <div v-if="p.estado === EstadoPedido.PREPARANDO" class="mt-6 md:mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 border-t-2 border-white/5 pt-6 md:pt-10">
                 <div v-for="item in (p.articulos_pedido || [])" :key="item.id"
                      @click="toggleArticuloEstadoOptimistic(item)"
                      class="group/item p-4 md:p-6 rounded-2xl md:rounded-[2rem] border-2 transition-all duration-300 cursor-pointer flex items-center justify-between"
@@ -511,7 +512,7 @@ onUnmounted(() => {
                   <div class="flex-shrink-0 group-active/item:scale-90 transition-transform">
                     <component :is="getArticuloIcon(item.estado_item)"
                                class="w-10 h-10 md:w-12 md:h-12 transition-all duration-500" 
-                               :class="item.estado_item === 'listo' ? 'text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'text-slate-400 opacity-60'" />
+                               :class="item.estado_item === EstadoArticuloPedido.LISTO ? 'text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.3)]' : 'text-slate-400 opacity-60'" />
                   </div>
                 </div>
               </div>

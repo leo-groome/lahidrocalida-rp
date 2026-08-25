@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_active_user
 from app.core.cache import catalogos_cache
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import (
     Articulo,
     CategoriaArticulo,
@@ -44,11 +45,6 @@ router = APIRouter(prefix="/gastos", tags=["gastos"])
 TIPOS_GASTO = {"directo", "indirecto", "nomina"}
 METODOS_PAGO = {"efectivo", "tarjeta"}
 UNIDADES_PERMITIDAS = {"kg", "g", "lt", "ml", "pza", "caja", "paq"}
-
-
-def _ensure_can_manage_gastos(user: Usuario) -> None:
-    if user.rol not in ["administrador", "compras", "cajero"]:
-        raise HTTPException(status_code=403, detail="No autorizado para gestionar gastos")
 
 
 def _normalize_decimal(value: Decimal) -> Decimal:
@@ -147,9 +143,8 @@ def list_proveedores(
 def create_proveedor(
     data: ProveedorCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     proveedor = Proveedor(
         nombre=data.nombre,
         telefono=data.telefono,
@@ -169,9 +164,8 @@ def update_proveedor(
     proveedor_id: int,
     data: ProveedorCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     proveedor = db.query(Proveedor).filter(Proveedor.id == proveedor_id).first()
     if not proveedor:
         raise HTTPException(status_code=404, detail="Proveedor no encontrado")
@@ -213,9 +207,8 @@ def list_categorias_articulo(
 def create_categoria_articulo(
     data: CategoriaArticuloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     existing = db.query(CategoriaArticulo).filter(CategoriaArticulo.nombre == data.nombre).first()
     if existing:
         raise HTTPException(status_code=400, detail="La categoría ya existe")
@@ -232,9 +225,8 @@ def update_categoria_articulo(
     categoria_id: int,
     data: CategoriaArticuloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     categoria = db.query(CategoriaArticulo).filter(CategoriaArticulo.id == categoria_id).first()
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoría no encontrada")
@@ -261,9 +253,8 @@ def list_articulos(
 def create_articulo(
     data: ArticuloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     if data.unidad not in UNIDADES_PERMITIDAS:
         raise HTTPException(status_code=400, detail="Unidad inválida")
     categoria = (
@@ -288,9 +279,8 @@ def update_articulo(
     articulo_id: int,
     data: ArticuloCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     if data.unidad not in UNIDADES_PERMITIDAS:
         raise HTTPException(status_code=400, detail="Unidad inválida")
     articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
@@ -347,10 +337,9 @@ def _build_gasto_detalles(
 @router.get("/empleados", response_model=List[UsuarioResponse])
 def list_empleados_nomina(
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
     """Empleados activos de la sucursal del usuario, para armar la nómina."""
-    _ensure_can_manage_gastos(current_user)
     return (
         db.query(Usuario)
         .filter(
@@ -366,9 +355,8 @@ def list_empleados_nomina(
 def create_gasto(
     data: GastoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     _validate_gasto_inputs(data)
 
     detalles: list[GastoDetalle] = []
@@ -684,9 +672,8 @@ def update_gasto(
     gasto_id: int,
     data: GastoCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     _validate_gasto_inputs(data)
 
     gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
@@ -747,9 +734,8 @@ def update_gasto(
 def delete_gasto(
     gasto_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    _ensure_can_manage_gastos(current_user)
     gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")

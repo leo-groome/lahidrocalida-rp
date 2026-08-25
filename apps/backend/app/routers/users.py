@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user, get_password_hash
 from app.db.session import get_db
+from app.deps import require_roles
 from app.models import Usuario
 from app.schemas import UsuarioCreate, UsuarioResponse, UsuarioUpdate
 
@@ -15,13 +16,9 @@ router = APIRouter(prefix="/usuarios", tags=["usuarios"])
 def create_usuario(
     data: UsuarioCreate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    """Crear un usuario (requiere usuario autenticado)."""
-    # Validar rol del creador (solo administrador puede crear)
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado para crear usuarios")
-
+    """Crear un usuario (requiere administrador)."""
     usuario = Usuario(
         nombre=data.nombre,
         rol=data.rol,
@@ -37,9 +34,9 @@ def create_usuario(
 
 @router.get("/", response_model=List[UsuarioResponse])
 def list_usuarios(
-    db: Session = Depends(get_db), current_user: Usuario = Depends(get_current_active_user)
+    db: Session = Depends(get_db), current_user: Usuario = Depends(require_roles("administrador"))
 ):
-    """Listar usuarios (requiere usuario autenticado)."""
+    """Listar usuarios (requiere administrador)."""
     return db.query(Usuario).all()
 
 
@@ -52,12 +49,8 @@ def get_me(current_user: Usuario = Depends(get_current_active_user)):
 def get_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede ver usuarios específicos
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado")
-
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -70,12 +63,8 @@ def update_usuario(
     usuario_id: int,
     data: UsuarioUpdate,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede actualizar usuarios
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado")
-
     usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
     if not usuario:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -122,12 +111,8 @@ def update_usuario(
 def delete_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(get_current_active_user),
+    current_user: Usuario = Depends(require_roles("administrador")),
 ):
-    # Solo admin puede eliminar usuarios
-    if current_user.rol != "administrador":
-        raise HTTPException(status_code=403, detail="No autorizado")
-
     # No permitir que se elimine a sí mismo
     if usuario_id == current_user.id:
         raise HTTPException(status_code=400, detail="No puedes eliminar tu propio usuario")
