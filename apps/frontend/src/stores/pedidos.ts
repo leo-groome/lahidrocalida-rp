@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 import { websocketService } from '@/services/websocket'
+import { enviarOEncolar } from '@/services/offlineQueue'
 import type { PedidoResponse } from '@/types'
 import { EstadoPedido, EstadoArticuloPedido, ESTADOS_PEDIDO_FINALES } from '@/constants/estados'
 
@@ -341,24 +342,42 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
   // Funciones para operaciones REST (mantener funcionalidad existente)
-  async function createPedido(pedidoData: any): Promise<PedidoResponse | null> {
+  async function createPedido(
+    pedidoData: any
+  ): Promise<{ pedido: PedidoResponse } | { queued: true } | null> {
     loading.value = true
     error.value = null
 
     try {
-      const { data } = await api.post<PedidoResponse>('/pedidos/', pedidoData)
-      console.log(`✅ Pedido creado via REST: #${data.numero_display}`)
-      
+      // Sin conexión: enviarOEncolar persiste el request en localStorage y lo
+      // reintenta solo (reusa pedidoData.client_request_id para idempotencia
+      // — si ya llegó al backend en un intento anterior, el backend devuelve
+      // el pedido existente en vez de duplicarlo).
+      const resultado = await enviarOEncolar<PedidoResponse>(
+        'post',
+        '/pedidos/',
+        pedidoData,
+        pedidoData.client_request_id
+      )
+
+      if (resultado.estado === 'encolado') {
+        return { queued: true }
+      }
+
+      if (resultado.estado === 'error') {
+        error.value = resultado.error?.response?.data?.detail || 'Error creando pedido'
+        console.error('❌ Error creando pedido:', resultado.error)
+        return null
+      }
+
+      console.log(`✅ Pedido creado via REST: #${resultado.data.numero_display}`)
+
       // El WebSocket debería notificar automáticamente, pero por si acaso
       if (!wsConnected.value) {
-        handlePedidoCreated(data)
+        handlePedidoCreated(resultado.data)
       }
-      
-      return data
-    } catch (e: any) {
-      error.value = e?.response?.data?.detail || 'Error creando pedido'
-      console.error('❌ Error creando pedido:', e)
-      return null
+
+      return { pedido: resultado.data }
     } finally {
       loading.value = false
     }
