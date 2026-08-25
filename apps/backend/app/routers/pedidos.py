@@ -1177,13 +1177,16 @@ async def agregar_articulos_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-    # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo
+    # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo.
+    # Cada fila guarda "<client_request_id>:<índice>" (ver más abajo, un batch
+    # de varios artículos comparte el client_request_id del request), por eso
+    # el filtro es un prefijo y no una igualdad exacta.
     if data.client_request_id:
         articulos_existentes = (
             db.query(ArticuloPedido)
             .filter(
                 ArticuloPedido.pedido_id == pedido_id,
-                ArticuloPedido.client_request_id == data.client_request_id,
+                ArticuloPedido.client_request_id.like(f"{data.client_request_id}:%"),
             )
             .all()
         )
@@ -1241,9 +1244,13 @@ async def agregar_articulos_pedido(
         }
         articulos_calculados.append(articulo_calculado)
 
-    # Crear los nuevos artículos
+    # Crear los nuevos artículos. client_request_id lleva el índice dentro del
+    # batch ("<client_request_id>:<i>") porque el UniqueConstraint es por
+    # (pedido_id, client_request_id): sin el índice, un batch de 2+ artículos
+    # con el mismo client_request_id de request violaría la unicidad consigo
+    # mismo en el mismo insert.
     nuevos_articulos = []
-    for articulo_data in articulos_calculados:
+    for i, articulo_data in enumerate(articulos_calculados):
         # Obtener el platillo para verificar si es bebida
         platillo = db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
 
@@ -1257,7 +1264,7 @@ async def agregar_articulos_pedido(
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
             estado_item=estado_inicial,
-            client_request_id=data.client_request_id,
+            client_request_id=f"{data.client_request_id}:{i}" if data.client_request_id else None,
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)
@@ -1276,7 +1283,32 @@ async def agregar_articulos_pedido(
         # constraint del numero_display diario y en la ventana del día del KDS
         pedido.fecha_creacion = get_mexico_now()
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Carrera: otro request concurrente con el mismo client_request_id ya
+        # insertó este batch (ambos pasaron el chequeo de arriba antes de que
+        # cualquiera commiteara). Mismo patrón que create_pedido: no
+        # reintentar, devolver el pedido tal como quedó por el ganador.
+        if data.client_request_id:
+            articulos_existentes = (
+                db.query(ArticuloPedido)
+                .filter(
+                    ArticuloPedido.pedido_id == pedido_id,
+                    ArticuloPedido.client_request_id.like(f"{data.client_request_id}:%"),
+                )
+                .all()
+            )
+            if articulos_existentes:
+                logger.info(
+                    "Carrera idempotente: client_request_id %s ya agregó artículos al pedido %s",
+                    data.client_request_id,
+                    pedido_id,
+                )
+                db.refresh(pedido)
+                return pedido
+        raise
     db.refresh(pedido)
 
     # Notificaciones WebSocket según el estado
