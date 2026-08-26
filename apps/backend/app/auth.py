@@ -167,3 +167,22 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
     if not current_user.activo:
         raise HTTPException(status_code=400, detail="Usuario inactivo")
     return current_user
+
+
+def verificar_pin_admin(db: Session, pin: Optional[str]) -> Usuario:
+    """Verifica `pin` contra el NIP de cualquier administrador activo.
+
+    Usado para autorizar puntualmente acciones sensibles (cancelar cuenta,
+    editar propina de un ticket pagado, borrar artículo, ver analíticas del
+    turno) cuando no hay un cajero fijo: la sesión de caja la comparte
+    cualquier mesero, así que el control real vive en este PIN, no en el rol
+    de la sesión activa. Devuelve el `Usuario` admin cuyo hash hizo match
+    (para auditoría de quién autorizó), o lanza 401/400.
+    """
+    if not pin:
+        raise HTTPException(status_code=400, detail="PIN de administrador requerido")
+    admins = db.query(Usuario).filter(Usuario.rol == "administrador", Usuario.activo == True).all()
+    for admin in admins:
+        if verify_password(pin, admin.pin):
+            return admin
+    raise HTTPException(status_code=401, detail="PIN de administrador inválido")

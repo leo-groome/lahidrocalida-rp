@@ -23,7 +23,7 @@ from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.auth import get_current_active_user, get_optional_current_user  # noqa: E402
+from app.auth import get_current_active_user, get_optional_current_user, get_password_hash  # noqa: E402
 from app.core import cache as cache_module  # noqa: E402
 from app.core.rate_limit import login_limiter  # noqa: E402
 from app.db.session import get_db  # noqa: E402
@@ -204,3 +204,26 @@ def como_rol(client, seed):
 @pytest.fixture()
 def admin_client(como_rol):
     return como_rol("administrador")
+
+
+@pytest.fixture()
+def admin_pin(db_session, seed):
+    """Administrador real persistido en DB, con PIN conocido en claro.
+
+    `verificar_pin_admin` consulta `usuarios` directo (no la dependency de
+    auth), así que el admin de `como_rol` (transitorio, nunca se guarda) no
+    sirve para probar el gate de PIN: se necesita una fila real con hash.
+    Devuelve el PIN en claro para pasarlo en el body de la request.
+    """
+    pin_plano = "4242"
+    admin = Usuario(
+        nombre="Admin Real",
+        pin=get_password_hash(pin_plano),
+        rol="administrador",
+        sucursal_id=seed["sucursal"].id,
+        activo=True,
+    )
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+    return {"usuario": admin, "pin": pin_plano}

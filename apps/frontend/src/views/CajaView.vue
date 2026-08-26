@@ -10,6 +10,8 @@ import TurnoModal from '@/components/TurnoModal.vue'
 import GastoRapidoModal from '@/components/gastos/GastoRapidoModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
+import { useAdminPin } from '@/composables/useAdminPin'
+import NipKeypad from '@/components/NipKeypad.vue'
 import { formatTime, formatDateTime, getMinutesElapsed } from '@/utils/dateUtils'
 import { 
   Users, 
@@ -597,8 +599,30 @@ const turnoMetrics = computed(() => {
   }
 })
 
+// PIN de administrador para VER las analíticas del turno (venta y propinas
+// totales): los datos se cargan igual que antes al entrar a la pestaña, pero
+// se muestran borrosos (blur) hasta que se ingresa un PIN de administrador
+// válido. Se puede navegar entre sub-tabs con los datos borrosos sin pedir
+// PIN; el bloqueo se reactiva cada vez que se vuelve a entrar a la pestaña.
+const analyticsPin = useAdminPin('Ver analíticas', 'Ingresa el PIN de un administrador para ver venta y propinas')
+const analyticsUnlocked = ref(false)
+const cancelarPin = useAdminPin('Cancelar cuenta', 'Ingresa el PIN de un administrador para cancelar')
+const propinaPin = useAdminPin('Editar propina', 'Ingresa el PIN de un administrador para autorizar')
+
+const desbloquearAnalytics = async () => {
+  try {
+    await analyticsPin.requestPinVerificado((pin) => api.post('/auth/verify-admin-pin', { pin }))
+    analyticsUnlocked.value = true
+  } catch {
+    // Modal cancelado: se queda borroso, el usuario puede reintentar con el botón.
+  }
+}
+
 // Watch para cargar reporte cuando se activa la pestaña
-watch(activeTab, (newTab) => {
+watch(activeTab, (newTab, oldTab) => {
+  if (oldTab === 'propinas') {
+    analyticsUnlocked.value = false
+  }
   if (newTab === 'propinas') {
     subTabReporteDia.value = 'reporte'
     cargarReportePropinas()
@@ -711,20 +735,26 @@ const guardarPropinaManual = async () => {
 
   savingPropinaManual.value = true
   try {
-    const payload = {
-      estado: 'pagado',
-      propina_efectivo: propinaTipoManual.value === 'efectivo' ? monto : 0,
-      propina_tarjeta: propinaTipoManual.value === 'tarjeta' ? monto : 0
-    }
+    // Editar propina de un ticket ya pagado requiere PIN de un administrador
+    // activo — aplica también si quien está logueado ya es administrador.
+    await propinaPin.requestPinVerificado((pin) => {
+      const payload = {
+        estado: 'pagado',
+        propina_efectivo: propinaTipoManual.value === 'efectivo' ? monto : 0,
+        propina_tarjeta: propinaTipoManual.value === 'tarjeta' ? monto : 0,
+        pin_autorizacion: pin
+      }
+      return api.put(`/pedidos/${ticketParaPropina.value!.id}`, payload)
+    })
 
-    await api.put(`/pedidos/${ticketParaPropina.value.id}`, payload)
     showSuccessNotification('Propina actualizada')
-
     cerrarEditarPropina()
     await Promise.all([cargarTicketsDelDia(), cargarReportePropinas(), cargarAnalyticsDia()])
   } catch (e: any) {
-    console.error('Error actualizando propina:', e)
-    showErrorNotification('Error al actualizar propina')
+    if (e) {
+      console.error('Error actualizando propina:', e)
+      showErrorNotification('Error al actualizar propina')
+    }
   } finally {
     savingPropinaManual.value = false
   }
@@ -929,6 +959,10 @@ const removeEditItem = (index: number) => {
   orderItemsToEdit.value.splice(index, 1)
 }
 
+// Borrar artículo desde caja (editar mesa) exige PIN de un administrador
+// activo — se pide justo después de picar "Guardar cambios", no antes.
+const borrarArticuloPin = useAdminPin('Borrar artículo', 'Ingresa el PIN de un administrador para borrar')
+
 // Guardar ediciones del pedido
 const saveOrderEdits = async () => {
   if (!editingOrderId.value || orderItemsToEdit.value.length === 0) return
@@ -954,9 +988,20 @@ const saveOrderEdits = async () => {
       }
     })
 
-    const payload = { articulos: finalArticulos }
+    const hayEliminaciones = finalArticulos.some(a => a.cantidad === 0)
 
-    await api.put(`/pedidos/${editingOrderId.value}/actualizar-articulos`, payload)
+    if (hayEliminaciones) {
+      await borrarArticuloPin.requestPinVerificado((pin) =>
+        api.put(`/pedidos/${editingOrderId.value}/actualizar-articulos`, {
+          articulos: finalArticulos,
+          pin_autorizacion: pin
+        })
+      )
+    } else {
+      await api.put(`/pedidos/${editingOrderId.value}/actualizar-articulos`, {
+        articulos: finalArticulos
+      })
+    }
 
     // Recargar el pedido completo para actualizar UI sin cambiar estado
     const res = await api.get(`/pedidos/${editingOrderId.value}`)
@@ -976,8 +1021,11 @@ const saveOrderEdits = async () => {
     showSuccessNotification('Pedido actualizado correctamente')
     showEditPedidoModal.value = false
   } catch (error: any) {
-    console.error('Error al guardar cambios:', error)
-    showErrorNotification(error.response?.data?.detail || 'Error al guardar cambios')
+    // `error` viene indefinido si el usuario cerró el modal de PIN (no es un error real)
+    if (error) {
+      console.error('Error al guardar cambios:', error)
+      showErrorNotification(error.response?.data?.detail || 'Error al guardar cambios')
+    }
   } finally {
     isSavingEdits.value = false
   }
@@ -1603,26 +1651,28 @@ const confirmarCancelacion = async () => {
   const pedido = pedidoACancelar.value
 
   try {
-    // Cambiar estado a cancelado
-    const success = await pedidosStore.updatePedidoEstado(pedido.id, 'cancelado')
+    // Cambiar estado a cancelado — requiere PIN de un administrador activo
+    await cancelarPin.requestPinVerificado((pin) =>
+      pedidosStore.updatePedidoEstado(pedido.id, 'cancelado', undefined, undefined, undefined, {
+        pinAutorizacion: pin,
+        throwOnError: true
+      })
+    )
 
-    if (success) {
-      const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
-      showSuccessNotification(`Pedido cancelado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
+    const tipoTexto = pedido.mesa ? `Mesa ${pedido.mesa}` : pedido.nombre_cliente || 'Cliente'
+    showSuccessNotification(`Pedido cancelado: ${tipoTexto} - $${Number(pedido.total).toFixed(2)}`)
 
-      // Limpiar filtro después de acción completada
-      searchQuery.value = ''
+    // Limpiar filtro después de acción completada
+    searchQuery.value = ''
 
-      // Cerrar todos los modales
-      cerrarConfirmacionCancelacion()
-      if (showDetailsModal.value) {
-        closeDetailsModal()
-      }
-    } else {
-      showErrorNotification(pedidosStore.error || 'Error al cancelar pedido')
+    // Cerrar todos los modales
+    cerrarConfirmacionCancelacion()
+    if (showDetailsModal.value) {
+      closeDetailsModal()
     }
   } catch (e: any) {
-    showErrorNotification('Error inesperado al cancelar pedido')
+    // `e` viene indefinido si el usuario cerró el modal de PIN (no es un error real)
+    if (e) showErrorNotification('Error al cancelar pedido')
   }
 }
 
@@ -2127,7 +2177,7 @@ const handleGastoSaved = async () => {
 
       <!-- Tab Reporte del Dia (Modernized Premium) -->
       <div v-else-if="activeTab === 'propinas'" class="space-y-8 mt-6">
-        
+
         <!-- SUB-TABS (Segmented Control) -->
         <div class="flex p-1 bg-slate-100 rounded-2xl w-fit mb-4">
           <button
@@ -2156,9 +2206,22 @@ const handleGastoSaved = async () => {
           </button>
         </div>
 
+        <!-- Banner de desbloqueo: los datos de abajo se ven borrosos hasta ingresar PIN de admin -->
+        <button
+          v-if="!analyticsUnlocked"
+          @click="desbloquearAnalytics"
+          class="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-[#00126D] text-white font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-900/20"
+        >
+          <Lock class="w-4 h-4" />
+          Ingresar PIN de administrador para ver los datos
+        </button>
+
         <!-- Vista 1: Dashboard de Analíticas -->
-        <div v-if="subTabReporteDia === 'reporte'" class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          
+        <div
+          v-if="subTabReporteDia === 'reporte'"
+          :class="['space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700', !analyticsUnlocked && 'blur-md select-none pointer-events-none']"
+        >
+
           <!-- Header del Dashboard -->
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
@@ -2360,7 +2423,10 @@ const handleGastoSaved = async () => {
         </div>
 
         <!-- Vista 2: Auditoría y Control de Turno -->
-        <div v-else-if="subTabReporteDia === 'tickets'" class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div
+          v-else-if="subTabReporteDia === 'tickets'"
+          :class="['space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700', !analyticsUnlocked && 'blur-md select-none pointer-events-none']"
+        >
           
           <!-- Sección de Control de Turno -->
           <div class="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
@@ -3903,6 +3969,46 @@ const handleGastoSaved = async () => {
       :turno-id="turnoActivo?.id"
       @save="handleGastoSaved"
       @cancel="showGastoModal = false"
+    />
+
+    <!-- PIN de administrador: gate de analíticas del turno -->
+    <NipKeypad
+      v-if="analyticsPin.isOpen.value"
+      :titulo="analyticsPin.titulo"
+      :mensaje="analyticsPin.mensaje"
+      :error="analyticsPin.error.value"
+      @confirm="analyticsPin.onConfirm"
+      @cancel="analyticsPin.onCancel"
+    />
+
+    <!-- PIN de administrador: cancelar cuenta -->
+    <NipKeypad
+      v-if="cancelarPin.isOpen.value"
+      :titulo="cancelarPin.titulo"
+      :mensaje="cancelarPin.mensaje"
+      :error="cancelarPin.error.value"
+      @confirm="cancelarPin.onConfirm"
+      @cancel="cancelarPin.onCancel"
+    />
+
+    <!-- PIN de administrador: borrar artículo al editar una mesa desde caja -->
+    <NipKeypad
+      v-if="borrarArticuloPin.isOpen.value"
+      :titulo="borrarArticuloPin.titulo"
+      :mensaje="borrarArticuloPin.mensaje"
+      :error="borrarArticuloPin.error.value"
+      @confirm="borrarArticuloPin.onConfirm"
+      @cancel="borrarArticuloPin.onCancel"
+    />
+
+    <!-- PIN de administrador: editar propina de ticket pagado -->
+    <NipKeypad
+      v-if="propinaPin.isOpen.value"
+      :titulo="propinaPin.titulo"
+      :mensaje="propinaPin.mensaje"
+      :error="propinaPin.error.value"
+      @confirm="propinaPin.onConfirm"
+      @cancel="propinaPin.onCancel"
     />
 
     <!-- Modal de Confirmación de Cancelación -->

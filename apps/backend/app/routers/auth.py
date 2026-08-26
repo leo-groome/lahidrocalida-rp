@@ -9,6 +9,7 @@ from app.auth import (
     authenticate_user,
     create_access_token,
     get_current_active_user,
+    verificar_pin_admin,
     verify_password,
 )
 from app.core.rate_limit import (
@@ -18,10 +19,11 @@ from app.core.rate_limit import (
 )
 from app.db.session import get_db
 from app.domain.estados import MAX_HORAS_JORNADA
-from app.models import RegistroAsistencia, Usuario
+from app.models import AutorizacionPin, RegistroAsistencia, Usuario
 from app.schemas import (
     AdminLogin,
     AsistenciaPinRequest,
+    PinVerifyRequest,
     RegistroAsistenciaResponse,
     Token,
     UsuarioLogin,
@@ -227,6 +229,29 @@ async def registrar_asistencia(
         usuario_nombre=user.nombre,
         horas_trabajadas=horas,
     )
+
+
+@router.post("/verify-admin-pin")
+async def verify_admin_pin(
+    data: PinVerifyRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Autoriza puntualmente con PIN de un administrador activo (cualquiera).
+
+    Gate previo a mostrar las analíticas del turno (venta/propinas del día) —
+    no hay cajero fijo, así que el rol de la sesión activa no basta.
+    """
+    admin = verificar_pin_admin(db, data.pin)
+    db.add(
+        AutorizacionPin(
+            accion="ver_analiticas",
+            ejecutado_por_id=current_user.id,
+            autorizado_por_id=admin.id,
+        )
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/me", response_model=UsuarioResponse)

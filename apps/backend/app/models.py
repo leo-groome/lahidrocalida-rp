@@ -343,3 +343,23 @@ class RegistroAsistencia(Base):
 
     # Relaciones
     usuario = relationship("Usuario", back_populates="registros_asistencia")
+
+
+class AutorizacionPin(Base):
+    """Auditoría de acciones sensibles autorizadas con PIN de administrador.
+
+    No hay cajero fijo: la sesión de caja la comparte cualquier mesero de
+    confianza, así que el rol de la sesión ya no basta para saber quién
+    autorizó qué. Cada fila registra quién ejecutó la acción y qué
+    administrador la autorizó con su PIN (aunque no se elige de una lista —
+    se guarda cuál hash hizo match).
+    """
+
+    __tablename__ = "autorizaciones_pin"
+
+    id = Column(Integer, primary_key=True, index=True)
+    accion = Column(String(50), nullable=False)
+    ejecutado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    autorizado_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=get_local_datetime)

@@ -158,6 +158,11 @@ class PedidoUpdate(BaseModel):
     metodo_pago: Optional[str] = None
     propina_efectivo: Optional[Decimal] = None
     propina_tarjeta: Optional[Decimal] = None
+    pin_autorizacion: Optional[str] = None
+
+
+class PinVerifyRequest(BaseModel):
+    pin: str
 
 
 class AgregarArticulosRequest(BaseModel):
