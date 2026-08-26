@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_active_user, get_optional_current_user
 from app.db.session import get_db
 from app.deps import require_roles
+from app.domain.estados import EstadoPedido, transicion_permitida
+from app.events import WsEvent, enqueue_event
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
     AgregarArticulosRequest,
@@ -26,7 +28,6 @@ from app.schemas import (
     PedidoUpdate,
 )
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
-from app.websocket_manager import websocket_manager
 
 
 def _query_pedidos_eager(db: Session):
@@ -77,9 +78,7 @@ async def print_ticket_automatic(pedido_data):
 
         # 1. Enviar vía WebSocket (Recomendado para servidores en la nube como Railway)
         try:
-            from app.websocket_manager import websocket_manager
-
-            await websocket_manager.notify_print_ticket(ticket_data)
+            enqueue_event(WsEvent(type="print_ticket", payload={"pedido_data": ticket_data}))
             logger.info(
                 "Ticket #%s notificado vía WebSocket para impresión remota",
                 ticket_data.get("numero_display", "N/A"),
@@ -319,7 +318,7 @@ async def create_pedido(
                         for a in pedido.articulos_pedido
                     ],
                 }
-                await websocket_manager.notify_pedido_created(pedido_data)
+                enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": pedido_data}))
             except Exception as e:
                 # Log del error pero no fallar la creación del pedido.
                 # El KDS lo recuperará vía polling/resync (la DB es la fuente de verdad).
@@ -481,7 +480,11 @@ async def dividir_cuenta(
 ):
     """Dividir una cuenta por articulos (solo administrador)."""
 
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    # with_for_update(): serializa contra otra división concurrente del MISMO
+    # pedido (doble tap, dos cajeros). Sin el lock, dos requests podían pasar
+    # ambos el chequeo "no está dividido todavía" antes de que cualquiera
+    # commiteara, y ambos crear cuentas hijas duplicadas.
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -490,7 +493,10 @@ async def dividir_cuenta(
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
             logger.info(
-                "Replay idempotente: pedido %s ya dividido, retornando cuentas hijas", pedido_id
+                "Replay idempotente: pedido %s ya dividido (client_request_id=%s), "
+                "retornando cuentas hijas",
+                pedido_id,
+                data.client_request_id,
             )
             return {
                 "pedido_original_id": pedido.id,
@@ -544,11 +550,13 @@ async def dividir_cuenta(
                 detail=f"El articulo {articulo_id} no fue repartido correctamente",
             )
 
-    # Marcar pedido original como dividido
+    # Marcar pedido original como dividido. Sin commit todavía: todo-o-nada
+    # con la creación de las cuentas hijas de abajo (antes: un commit aquí y
+    # uno más por cada cuenta hija dentro del loop — si el proceso fallaba a
+    # medio loop, el pedido original quedaba "dividido" con menos cuentas
+    # hijas de las que debía tener, un estado inconsistente sin recuperación).
     old_estado = pedido.estado
     pedido.estado = "dividido"
-    db.commit()
-    db.refresh(pedido)
 
     cuentas_creadas: List[Pedido] = []
 
@@ -608,9 +616,12 @@ async def dividir_cuenta(
             db.add(articulo_nuevo)
 
         nuevo_pedido.total = total_cuenta
-        db.commit()
-        db.refresh(nuevo_pedido)
         cuentas_creadas.append(nuevo_pedido)
+
+    db.commit()
+    db.refresh(pedido)
+    for cuenta_pedido in cuentas_creadas:
+        db.refresh(cuenta_pedido)
 
     # Notificar por WebSocket
     try:
@@ -650,10 +661,15 @@ async def dividir_cuenta(
         }
 
         if old_estado != pedido.estado:
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=pedido.estado,
-                pedido_data=pedido_original_data,
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": pedido.estado,
+                        "pedido_data": pedido_original_data,
+                    },
+                )
             )
 
         for cuenta_pedido in cuentas_creadas:
@@ -690,7 +706,7 @@ async def dividir_cuenta(
                     for a in cuenta_pedido.articulos_pedido
                 ],
             }
-            await websocket_manager.notify_pedido_created(cuenta_data)
+            enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": cuenta_data}))
 
     except Exception as e:
         logger.warning(
@@ -712,7 +728,9 @@ async def dividir_por_montos(
 ):
     """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
 
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    # with_for_update(): serializa contra otra división concurrente del mismo
+    # pedido, igual que en /dividir.
+    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -721,8 +739,10 @@ async def dividir_por_montos(
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
         if cuentas_hijas:
             logger.info(
-                "Replay idempotente: pedido %s ya dividido por montos, retornando cuentas hijas",
+                "Replay idempotente: pedido %s ya dividido por montos (client_request_id=%s), "
+                "retornando cuentas hijas",
                 pedido_id,
+                data.client_request_id,
             )
             return {
                 "pedido_original_id": pedido.id,
@@ -758,10 +778,10 @@ async def dividir_por_montos(
         label = f"Cuenta {i}/{total}"
         return f"{base} {label}" if base else label
 
+    # Sin commit todavía: todo-o-nada con las cuentas hijas (ver nota en
+    # /dividir de más arriba — mismo bug de atomicidad, mismo fix).
     old_estado = pedido.estado
     pedido.estado = "dividido"
-    db.commit()
-    db.refresh(pedido)
 
     cuentas_creadas: List[Pedido] = []
     total_cuentas = len(data.cuentas)
@@ -785,9 +805,13 @@ async def dividir_por_montos(
         )
 
         db.add(nuevo_pedido)
-        db.commit()
-        db.refresh(nuevo_pedido)
+        db.flush()
         cuentas_creadas.append(nuevo_pedido)
+
+    db.commit()
+    db.refresh(pedido)
+    for cuenta_pedido in cuentas_creadas:
+        db.refresh(cuenta_pedido)
 
     # Notificar por WebSocket
     try:
@@ -811,10 +835,15 @@ async def dividir_por_montos(
         }
 
         if old_estado != pedido.estado:
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id,
-                nuevo_estado=pedido.estado,
-                pedido_data=pedido_original_data,
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": pedido.estado,
+                        "pedido_data": pedido_original_data,
+                    },
+                )
             )
 
         for cuenta_pedido in cuentas_creadas:
@@ -836,7 +865,7 @@ async def dividir_por_montos(
                 ),
                 "articulos_pedido": [],
             }
-            await websocket_manager.notify_pedido_created(cuenta_data)
+            enqueue_event(WsEvent(type="pedido_created", payload={"pedido_data": cuenta_data}))
 
     except Exception as e:
         logger.warning(
@@ -870,53 +899,24 @@ async def update_pedido(
     if current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
         raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
-    # Validar permisos para cambiar estado según rol
-    allowed_transitions = {
-        "mesero": ["pendiente", "entregado", "cuenta_solicitada"],
-        "cajero": [
-            "entregado",
-            "cuenta_solicitada",
-            "pagado",
-            "cancelado",
-        ],  # Cajero puede cancelar pedidos
-        "cocina": ["pendiente", "preparando", "listo", "entregado"],
-        "administrador": [
-            "pendiente",
-            "preparando",
-            "listo",
-            "entregado",
-            "cuenta_solicitada",
-            "pagado",
-            "cancelado",
-            "dividido",
-        ],
-    }
-
-    if current_user.rol not in allowed_transitions:
-        raise HTTPException(
-            status_code=403, detail="No tienes permisos para cambiar el estado de pedidos"
-        )
-
-    if data.estado not in allowed_transitions[current_user.rol]:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Tu rol ({current_user.rol}) no puede cambiar a estado '{data.estado}'",
-        )
-
-    # Validar estado
-    if data.estado not in [
-        "pendiente",
-        "preparando",
-        "listo",
-        "entregado",
-        "cuenta_solicitada",
-        "pagado",
-        "cancelado",
-        "dividido",
-    ]:
+    # Estado inválido (fuera del vocabulario) antes de evaluar la transición.
+    if data.estado not in set(EstadoPedido):
         raise HTTPException(
             status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado, cuenta_solicitada, pagado, cancelado, dividido",
+            detail=f"Estado inválido. Valores permitidos: {', '.join(EstadoPedido)}",
+        )
+
+    # Máquina de estados real: valida origen (pedido.estado) y destino
+    # (data.estado) según el rol, no solo el destino como antes de S2. Un
+    # pedido en estado terminal (pagado/cancelado/dividido) no admite
+    # ninguna transición, sin importar el rol.
+    if not transicion_permitida(pedido.estado, data.estado, current_user.rol):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Tu rol ({current_user.rol}) no puede cambiar el pedido de "
+                f"'{pedido.estado}' a '{data.estado}'"
+            ),
         )
 
     # Validar propinas (no negativas)
@@ -998,8 +998,15 @@ async def update_pedido(
                     for a in pedido.articulos_pedido
                 ],
             }
-            await websocket_manager.notify_pedido_estado_changed(
-                pedido_id=pedido.id, nuevo_estado=data.estado, pedido_data=pedido_data
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": data.estado,
+                        "pedido_data": pedido_data,
+                    },
+                )
             )
 
             # Integración automática con servicio de impresión
@@ -1032,8 +1039,11 @@ async def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
 
-    # Obtener el artículo
-    articulo = db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).first()
+    # Obtener el artículo. with_for_update() lo bloquea contra otro request
+    # concurrente sobre el MISMO artículo (ej. doble tap accidental).
+    articulo = (
+        db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).with_for_update().first()
+    )
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
 
@@ -1047,23 +1057,32 @@ async def update_articulo_estado(
     # Actualizar estado del artículo
     old_estado = articulo.estado_item
     articulo.estado_item = data.estado_item
-    db.commit()
 
-    # Obtener el pedido asociado
-    pedido = articulo.pedido
+    # Bloquear el PEDIDO (no solo el artículo): serializa contra otros
+    # artículos del mismo pedido actualizándose en paralelo. Antes esto era
+    # check-then-act sin lock: dos artículos del mismo pedido marcados
+    # "listo" casi simultáneamente podían leerse el uno al otro como
+    # "todavía no completado" y ninguno disparaba el pedido -> listo.
+    pedido = db.query(Pedido).filter(Pedido.id == articulo.pedido_id).with_for_update().first()
 
-    # Verificar si todos los artículos están completados (listo o entregado)
+    # Verificar si todos los artículos están completados (listo o entregado).
+    # articulo ya está mutado en la identity map de esta sesión, así que esta
+    # lectura de pedido.articulos_pedido ya lo ve reflejado.
     todos_completados = all(
         a.estado_item in ["listo", "entregado"] for a in pedido.articulos_pedido
     )
 
-    # Si todos están completados y el pedido está en 'preparando', cambiar a 'listo'
+    # Si todos están completados y el pedido está en 'preparando', cambiar a
+    # 'listo'. Un solo commit para todo: antes eran 2 commits separados (uno
+    # para el artículo, otro para el pedido), con una ventana donde un
+    # crash entre ambos dejaba el artículo "listo" pero el pedido atascado
+    # en "preparando".
     pedido_estado_changed = False
     if todos_completados and pedido.estado == "preparando":
         pedido.estado = "listo"
         pedido_estado_changed = True
-        db.commit()
 
+    db.commit()
     db.refresh(articulo)
     db.refresh(pedido)
 
@@ -1104,17 +1123,29 @@ async def update_articulo_estado(
             }
 
             # Notificar cambio de artículo
-            await websocket_manager.notify_articulo_estado_changed(
-                pedido_id=pedido.id,
-                articulo_id=articulo.id,
-                nuevo_estado=data.estado_item,
-                pedido_data=pedido_data,
+            enqueue_event(
+                WsEvent(
+                    type="articulo_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "articulo_id": articulo.id,
+                        "nuevo_estado": data.estado_item,
+                        "pedido_data": pedido_data,
+                    },
+                )
             )
 
             # Si el pedido también cambió de estado, notificar eso también
             if pedido_estado_changed:
-                await websocket_manager.notify_pedido_estado_changed(
-                    pedido_id=pedido.id, nuevo_estado="listo", pedido_data=pedido_data
+                enqueue_event(
+                    WsEvent(
+                        type="pedido_estado_changed",
+                        payload={
+                            "pedido_id": pedido.id,
+                            "nuevo_estado": "listo",
+                            "pedido_data": pedido_data,
+                        },
+                    )
                 )
 
         except Exception as e:
@@ -1156,13 +1187,16 @@ async def agregar_articulos_pedido(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
-    # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo
+    # Idempotencia: si este client_request_id ya agregó artículos a este pedido, devolverlo.
+    # Cada fila guarda "<client_request_id>:<índice>" (ver más abajo, un batch
+    # de varios artículos comparte el client_request_id del request), por eso
+    # el filtro es un prefijo y no una igualdad exacta.
     if data.client_request_id:
         articulos_existentes = (
             db.query(ArticuloPedido)
             .filter(
                 ArticuloPedido.pedido_id == pedido_id,
-                ArticuloPedido.client_request_id == data.client_request_id,
+                ArticuloPedido.client_request_id.like(f"{data.client_request_id}:%"),
             )
             .all()
         )
@@ -1220,9 +1254,13 @@ async def agregar_articulos_pedido(
         }
         articulos_calculados.append(articulo_calculado)
 
-    # Crear los nuevos artículos
+    # Crear los nuevos artículos. client_request_id lleva el índice dentro del
+    # batch ("<client_request_id>:<i>") porque el UniqueConstraint es por
+    # (pedido_id, client_request_id): sin el índice, un batch de 2+ artículos
+    # con el mismo client_request_id de request violaría la unicidad consigo
+    # mismo en el mismo insert.
     nuevos_articulos = []
-    for articulo_data in articulos_calculados:
+    for i, articulo_data in enumerate(articulos_calculados):
         # Obtener el platillo para verificar si es bebida
         platillo = db.query(Platillo).filter(Platillo.id == articulo_data["platillo_id"]).first()
 
@@ -1236,7 +1274,7 @@ async def agregar_articulos_pedido(
             precio_cobrado=articulo_data["precio_cobrado"],
             modificaciones=articulo_data["modificaciones"],
             estado_item=estado_inicial,
-            client_request_id=data.client_request_id,
+            client_request_id=f"{data.client_request_id}:{i}" if data.client_request_id else None,
         )
         db.add(articulo)
         nuevos_articulos.append(articulo)
@@ -1255,7 +1293,32 @@ async def agregar_articulos_pedido(
         # constraint del numero_display diario y en la ventana del día del KDS
         pedido.fecha_creacion = get_mexico_now()
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Carrera: otro request concurrente con el mismo client_request_id ya
+        # insertó este batch (ambos pasaron el chequeo de arriba antes de que
+        # cualquiera commiteara). Mismo patrón que create_pedido: no
+        # reintentar, devolver el pedido tal como quedó por el ganador.
+        if data.client_request_id:
+            articulos_existentes = (
+                db.query(ArticuloPedido)
+                .filter(
+                    ArticuloPedido.pedido_id == pedido_id,
+                    ArticuloPedido.client_request_id.like(f"{data.client_request_id}:%"),
+                )
+                .all()
+            )
+            if articulos_existentes:
+                logger.info(
+                    "Carrera idempotente: client_request_id %s ya agregó artículos al pedido %s",
+                    data.client_request_id,
+                    pedido_id,
+                )
+                db.refresh(pedido)
+                return pedido
+        raise
     db.refresh(pedido)
 
     # Notificaciones WebSocket según el estado
@@ -1287,8 +1350,15 @@ async def agregar_articulos_pedido(
 
         # Siempre enviar actualización del pedido completo
         # Esto agrupa los artículos nuevos con los existentes visualmente en lugar de crear un "-A" temporal
-        await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
+        enqueue_event(
+            WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_data,
+                },
+            )
         )
 
     except Exception as e:
@@ -1408,10 +1478,17 @@ async def actualizar_articulos_pedido(
             ],
         }
 
-        await websocket_manager.notify_pedido_estado_changed(
-            pedido_id=pedido.id, nuevo_estado=pedido.estado, pedido_data=pedido_data
+        enqueue_event(
+            WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_data,
+                },
+            )
         )
-        logger.info("Notificación WebSocket enviada: pedido %s actualizado", pedido.id)
+        logger.info("Evento WS encolado: pedido %s actualizado", pedido.id)
 
     except Exception as e:
         # Log del error pero no fallar la operación

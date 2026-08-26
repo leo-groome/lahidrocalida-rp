@@ -1,6 +1,6 @@
 # La Hidrocálida POS — Estado actual del sistema
 
-**Última revisión:** 2026-08-24 · rama `main` · **Sprint 1 "Fundaciones" completo** (1.1–1.9 en 🟢). Deuda nueva para S2/triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; rate limit de login por IP puede colapsar detrás del proxy de Railway sin `--forwarded-allow-ips`; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`.
+**Última revisión:** 2026-08-25 · rama `v2/sprint-2-pedidos` · **Sprint 1 "Fundaciones" completo** (1.1–1.9 en 🟢) y **Sprint 2 "Fiabilidad de pedidos" completo** (2.1–2.10 en 🟢, ver detalle y notas de cierre en [SPRINTS.md](./SPRINTS.md)). Deuda pendiente para triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`; `pedidos.py` mezcla endpoints `async def` con queries síncronas de SQLAlchemy (migración a AsyncSession/asyncpg, fuera de alcance de S2).
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
 a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en
@@ -243,9 +243,9 @@ silencio para no bloquear el cobro. Cola con reintentos (máx. 5).
 | Frontend | Vercel | Activo |
 | Backend | Docker → Railway | Activo, Dockerfile multi-stage, no-root, healthcheck |
 | DB | Neon Cloud (AWS us-east-2) | Activo — instancia nueva, migrada de Azure el 2026-08-24 (S0) |
-| Redis | Railway | Provisionado, sin uso hasta S2 |
+| Redis | Railway | En uso desde S2 — fan-out de eventos WS entre workers y backend del rate limiter de login |
 | Migraciones | Alembic (1 baseline colapsado, head `1af66464b276`) en `apps/backend/alembic/` | Completas |
-| Tests | pytest — 8 tests, cobertura mínima | `apps/backend/tests/` |
+| Tests | pytest — 80 tests (backend), sin suite de tests en frontend todavía | `apps/backend/tests/` |
 | CI/CD backend | GitHub Actions `backend-ci.yml` | ✅ Activo — ruff + pytest en cada push a `apps/backend/**` |
 | CI/CD frontend | GitHub Actions `frontend-ci.yml` | ✅ Activo — vue-tsc + build en cada push a `apps/frontend/**` |
 | Seguridad | GitHub Actions `security-sast.yml` | ✅ Activo — Gitleaks cada lunes, alerta Telegram |
@@ -268,10 +268,10 @@ query string de los WS).
 
 | Issue | Severidad | Dónde |
 |---|---|---|
-| Endpoints `async def` con sesión síncrona → bloqueo del event loop | Alta | `routers/*.py` |
-| WS manager en memoria; no soporta >1 worker | Alta | `websocket_manager.py` |
-| Sin máquina de estados (whitelist rol→destino) | Alta | `pedidos.py:839-844` |
-| Carrera en `update_articulo_estado` (check-then-act, 2 commits) | Alta | `pedidos.py:1005,1018` |
+| Endpoints `async def` con sesión síncrona → bloqueo del event loop | Alta | `routers/*.py` (deliberadamente fuera de alcance de S2, ver notas de cierre en SPRINTS.md) |
+| ~~WS manager en memoria; no soporta >1 worker~~ | — | Resuelto en S2 2.2: fan-out por Redis pub/sub, degrada a memoria sin Redis |
+| ~~Sin máquina de estados (whitelist rol→destino)~~ | — | Resuelto en S2 2.4: `domain/estados.py::transicion_permitida`, valida origen y destino |
+| ~~Carrera en `update_articulo_estado` (check-then-act, 2 commits)~~ | — | Resuelto en S2 2.5: `with_for_update()` + un solo commit |
 | Sin rate limiting en logins | Alta | `routers/auth.py` |
 | Fallback de password en texto plano | Alta | `auth.py:35-38` |
 | JWT de sesión completo en el query string de los `/ws/*` → queda en texto plano en logs de acceso de Railway | Alta | `websocket_routes.py` (hallazgo del 2026-08-24, ver SPRINTS.md) |

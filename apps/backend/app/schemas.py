@@ -190,6 +190,7 @@ class DividirCuentaCuenta(BaseModel):
 
 class DividirCuentaRequest(BaseModel):
     cuentas: List[DividirCuentaCuenta]
+    client_request_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class DividirCuentaResponse(BaseModel):
@@ -203,6 +204,7 @@ class DividirPorMontoCuenta(BaseModel):
 
 class DividirPorMontoRequest(BaseModel):
     cuentas: List[DividirPorMontoCuenta]
+    client_request_id: Optional[str] = Field(default=None, max_length=36)
 
 
 # ===== SCHEMAS PARA GASTOS =====

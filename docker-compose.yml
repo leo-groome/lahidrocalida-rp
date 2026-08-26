@@ -15,6 +15,16 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ./apps/backend
@@ -22,13 +32,16 @@ services:
     env_file:
       - apps/backend/.env
     environment:
-      # Local docker-compose siempre habla con el Postgres del propio compose,
-      # nunca con Neon, sin importar lo que diga backend/.env.
+      # Local docker-compose siempre habla con el Postgres/Redis del propio
+      # compose, nunca con Neon/Railway, sin importar lo que diga backend/.env.
       DATABASE_URL: postgresql://postgres:postgres@db:5432/hidrocalida
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8001:8000"
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:

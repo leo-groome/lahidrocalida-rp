@@ -12,6 +12,7 @@ import { formatTime } from '@/utils/dateUtils'
 import { useAuthStore } from '../stores/auth'
 import { usePedidosStore } from '../stores/pedidos'
 import { api } from '../api/client'
+import { enviarOEncolar, pendingCount as pedidosSinConfirmar } from '@/services/offlineQueue'
 import type { PlatilloResponse, PedidoCreate, ArticuloPedidoCreate } from '../types'
 import PozoleVariantModal from '../components/PozoleVariantModal.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -42,6 +43,7 @@ import {
   Eye,
   Save,
   CheckCircle,
+  WifiOff,
   ArrowRight,
   Edit3
 } from 'lucide-vue-next'
@@ -555,23 +557,29 @@ const enviarPedido = async () => {
         currentRequestId.value = crypto.randomUUID()
       }
 
-      // Modo agregar artículos - usar endpoint PUT
-      const response = await api.put(`/pedidos/${pedidoExistenteId.value}/agregar-articulos`, {
-        articulos,
-        mesero_id: auth.user?.id,
-        client_request_id: currentRequestId.value
-      })
-      
-      if (response.status === 200) {
-        const mensajeExito = `Artículos agregados a Mesa ${mesa.value}`
-        showSuccessNotification(mensajeExito)
-        
-        // Limpiar y salir del modo agregar
+      // Modo agregar artículos - usar endpoint PUT. Sin conexión, se encola y
+      // se reintenta solo (mismo client_request_id, el backend es idempotente).
+      const resultado = await enviarOEncolar(
+        'put',
+        `/pedidos/${pedidoExistenteId.value}/agregar-articulos`,
+        {
+          articulos,
+          mesero_id: auth.user?.id,
+          client_request_id: currentRequestId.value
+        },
+        currentRequestId.value
+      )
+
+      if (resultado.estado === 'ok') {
+        showSuccessNotification(`Artículos agregados a Mesa ${mesa.value}`)
+        limpiarModoAgregar()
+      } else if (resultado.estado === 'encolado') {
+        showSuccessNotification(`Sin conexión: se agregarán a Mesa ${mesa.value} en cuanto vuelva la señal`)
         limpiarModoAgregar()
       } else {
-        showErrorNotification('Error al agregar artículos')
+        showErrorNotification(resultado.error?.response?.data?.detail || 'Error al agregar artículos')
       }
-      
+
   } else {
     // Modo nuevo pedido - usar endpoint POST
       // Reusar la clave si es un reintento del mismo carrito: el backend
@@ -588,17 +596,20 @@ const enviarPedido = async () => {
         client_request_id: currentRequestId.value
       }
 
-      const nuevoPedido = await pedidosStore.createPedido(pedidoData)
+      const resultado = await pedidosStore.createPedido(pedidoData)
 
-      if (nuevoPedido) {
+      if (resultado && 'pedido' in resultado) {
         // Limpiar formulario y reiniciar flujo
         limpiarFormulario()
 
         const mensajeExito = tipoOrden.value === 'aqui'
-          ? `Pedido #${nuevoPedido.numero_display} enviado a cocina para Mesa ${mesa.value}`
-          : `Pedido #${nuevoPedido.numero_display} ${tipoOrden.value === 'uber_eats' ? 'Uber Eats' : 'para llevar'} enviado a cocina (${nombreCliente.value})`
+          ? `Pedido #${resultado.pedido.numero_display} enviado a cocina para Mesa ${mesa.value}`
+          : `Pedido #${resultado.pedido.numero_display} ${tipoOrden.value === 'uber_eats' ? 'Uber Eats' : 'para llevar'} enviado a cocina (${nombreCliente.value})`
 
         showSuccessNotification(mensajeExito)
+      } else if (resultado && 'queued' in resultado) {
+        limpiarFormulario()
+        showSuccessNotification('Sin conexión: el pedido se enviará automáticamente en cuanto vuelva la señal')
       } else {
         showErrorNotification(pedidosStore.error || 'No se pudo enviar. Revisa tu conexión y vuelve a intentar — el pedido no se duplicará.')
       }
@@ -1229,6 +1240,15 @@ const guardarCambiosPedido = async () => {
   <div class="min-h-screen flex flex-col bg-slate-50/50 selection:bg-blue-100 italic-shadows">
     <!-- Header -->
     <AppHeader title="Mesero" />
+
+    <!-- Cola offline: pedidos/artículos guardados localmente esperando reconexión -->
+    <div v-if="pedidosSinConfirmar > 0"
+         class="fixed top-20 right-4 z-40 bg-amber-500 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 border border-amber-300 animate-pulse">
+      <WifiOff class="w-5 h-5 flex-shrink-0" />
+      <span class="text-xs font-black uppercase tracking-wide">
+        {{ pedidosSinConfirmar }} sin confirmar — reintentando…
+      </span>
+    </div>
 
     <main class="flex-1 p-4 lg:p-8 max-w-[1600px] mx-auto w-full relative">
       <!-- Background Decorative Elements -->

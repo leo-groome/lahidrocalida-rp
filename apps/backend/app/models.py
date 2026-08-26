@@ -122,6 +122,17 @@ class Pedido(Base):
 
 class ArticuloPedido(Base):
     __tablename__ = "articulos_pedido"
+    __table_args__ = (
+        # NULL no colisiona consigo mismo en Postgres (comportamiento estándar
+        # de UNIQUE): los artículos sin client_request_id (creados fuera del
+        # flujo idempotente) no se ven afectados. String(72) porque cada fila
+        # guarda "<client_request_id>:<índice>" (ver agregar_articulos_pedido)
+        # — un batch de varios artículos comparte el client_request_id del
+        # request, así que la unicidad real es por posición dentro del batch.
+        UniqueConstraint(
+            "pedido_id", "client_request_id", name="uq_articulo_pedido_client_request_id"
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False)
@@ -132,7 +143,7 @@ class ArticuloPedido(Base):
     estado_item = Column(
         String(20), default="pendiente"
     )  # 'pendiente', 'preparando', 'listo', 'entregado'
-    client_request_id = Column(String(36), nullable=True, index=True)
+    client_request_id = Column(String(72), nullable=True, index=True)
 
     # Relaciones
     pedido = relationship("Pedido", back_populates="articulos_pedido")

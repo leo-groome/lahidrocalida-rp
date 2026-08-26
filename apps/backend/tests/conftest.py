@@ -17,23 +17,6 @@ import os
 TEST_DB_URL = os.environ.get("TEST_DATABASE_URL", "sqlite://")
 os.environ["DATABASE_URL"] = TEST_DB_URL
 
-import asyncio  # noqa: E402
-
-# websocket_manager crea un task de limpieza al importar; fuera de un event
-# loop corriendo (pytest) eso truena — degradar a no-op
-_orig_create_task = asyncio.create_task
-
-
-def _safe_create_task(coro, **kwargs):
-    try:
-        return _orig_create_task(coro, **kwargs)
-    except RuntimeError:
-        coro.close()
-        return None
-
-
-asyncio.create_task = _safe_create_task
-
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine, event  # noqa: E402
@@ -57,13 +40,13 @@ from app.models import (  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def reset_login_limiter():
+async def reset_login_limiter():
     """El limiter de login es estado de proceso: sin resetear, los fallos de un
     test gastarían el presupuesto de los siguientes (todos comparten la IP
     `testclient`) y la suite fallaría según el orden de ejecución."""
-    login_limiter.reset()
+    await login_limiter.reset()
     yield
-    login_limiter.reset()
+    await login_limiter.reset()
 
 
 @pytest.fixture()
@@ -170,7 +153,10 @@ def client(db_engine, db_session, seed):
     cache_module.platillos_cache._data.clear()
     cache_module.catalogos_cache._data.clear()
 
-    yield TestClient(app)
+    # `with` (no un TestClient suelto): dispara el lifespan de app.main, que
+    # arranca el consumidor de la cola de eventos WS y el cleanup de zombies.
+    with TestClient(app) as test_client:
+        yield test_client
     app.dependency_overrides.clear()
 
 

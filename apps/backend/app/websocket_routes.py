@@ -147,6 +147,11 @@ async def websocket_endpoint(websocket: WebSocket, client_type: str, db: Session
                         # Actualizar último ping en el manager (zombie cleanup)
                         websocket_manager.update_last_ping(websocket)
 
+                    elif message.get("type") == "ack":
+                        message_id = message.get("message_id")
+                        if isinstance(message_id, str):
+                            websocket_manager.ack_message(websocket, message_id)
+
                 except Exception as e:
                     logger.warning(f"Error processing message from client: {e}")
                     # No cerrar la conexión por errores de mensajes no críticos

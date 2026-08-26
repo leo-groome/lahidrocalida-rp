@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api } from '@/api/client'
 import { websocketService } from '@/services/websocket'
+import { enviarOEncolar } from '@/services/offlineQueue'
 import type { PedidoResponse } from '@/types'
 import { EstadoPedido, EstadoArticuloPedido, ESTADOS_PEDIDO_FINALES } from '@/constants/estados'
 
@@ -19,6 +20,10 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const isOutSoundThrottled = ref(false)
   const wsClientType = ref<WsClientType | null>(null)
   const listenersRegistered = ref(false)
+  // IDs de pedidos que el server reporta sin acuse por >60s (ver
+  // websocket_manager._avisar_acks_vencidos): puede indicar que este cliente
+  // está perdiendo eventos silenciosamente aunque la conexión siga "viva".
+  const pedidosSinAcuse = ref<number[]>([])
 
   // Getters computados
   const pedidosPorEstado = computed(() => {
@@ -193,6 +198,19 @@ export const usePedidosStore = defineStore('pedidos', () => {
       lastUpdate.value = new Date()
       handleArticuloEstadoChanged(data.pedido_id, data.articulo_id, data.nuevo_estado, data.pedido)
     })
+
+    // El server nos dice qué pedidos llevan >60s sin acuse (ver 2.9). Es un
+    // snapshot, no un delta: reemplaza la lista completa cada vez.
+    websocketService.on('ack_timeout', (data: any) => {
+      console.warn('⚠️ Pedidos sin acuse >60s:', data.pedido_ids)
+      pedidosSinAcuse.value = data.pedido_ids || []
+    })
+
+    // Reconectar limpia cualquier alerta de acuse: los mensajes pendientes de
+    // la conexión vieja ya no existen del lado del server tras el reconnect.
+    websocketService.on('connection_open', () => {
+      pedidosSinAcuse.value = []
+    })
   }
 
   function playKitchenSound(soundFile: string, throttle = false): void {
@@ -324,24 +342,42 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
   // Funciones para operaciones REST (mantener funcionalidad existente)
-  async function createPedido(pedidoData: any): Promise<PedidoResponse | null> {
+  async function createPedido(
+    pedidoData: any
+  ): Promise<{ pedido: PedidoResponse } | { queued: true } | null> {
     loading.value = true
     error.value = null
 
     try {
-      const { data } = await api.post<PedidoResponse>('/pedidos/', pedidoData)
-      console.log(`✅ Pedido creado via REST: #${data.numero_display}`)
-      
+      // Sin conexión: enviarOEncolar persiste el request en localStorage y lo
+      // reintenta solo (reusa pedidoData.client_request_id para idempotencia
+      // — si ya llegó al backend en un intento anterior, el backend devuelve
+      // el pedido existente en vez de duplicarlo).
+      const resultado = await enviarOEncolar<PedidoResponse>(
+        'post',
+        '/pedidos/',
+        pedidoData,
+        pedidoData.client_request_id
+      )
+
+      if (resultado.estado === 'encolado') {
+        return { queued: true }
+      }
+
+      if (resultado.estado === 'error') {
+        error.value = resultado.error?.response?.data?.detail || 'Error creando pedido'
+        console.error('❌ Error creando pedido:', resultado.error)
+        return null
+      }
+
+      console.log(`✅ Pedido creado via REST: #${resultado.data.numero_display}`)
+
       // El WebSocket debería notificar automáticamente, pero por si acaso
       if (!wsConnected.value) {
-        handlePedidoCreated(data)
+        handlePedidoCreated(resultado.data)
       }
-      
-      return data
-    } catch (e: any) {
-      error.value = e?.response?.data?.detail || 'Error creando pedido'
-      console.error('❌ Error creando pedido:', e)
-      return null
+
+      return { pedido: resultado.data }
     } finally {
       loading.value = false
     }
@@ -444,7 +480,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
     error,
     lastUpdate,
     wsConnected,
-    
+    pedidosSinAcuse,
+
     // Getters
     pedidosPorEstado,
     pedidosKDS,

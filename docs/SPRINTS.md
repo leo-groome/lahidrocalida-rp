@@ -21,8 +21,8 @@ Estados: ⚪ pendiente · 🔵 en curso · 🟢 cerrado · 🔴 bloqueado · ⏭
 | Sprint | Alcance | Bloques | Tamaño | Estado | Rama | Cerrado |
 |---|---|---|---|---|---|---|
 | **S0** | Migración de infraestructura (Koyeb→Railway, Neon nueva instancia) | — | M | 🟢 cerrado | — | 2026-08-24 |
-| **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | ⚪ **siguiente** | `v2/sprint-1-fundaciones` | — |
-| **S2** | Fiabilidad de pedidos | 1 | L | ⚪ | `v2/sprint-2-pedidos` | — |
+| **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | 🟢 cerrado | `v2/sprint-1-fundaciones` | 2026-08-25 |
+| **S2** | Fiabilidad de pedidos | 1 | L | 🟢 cerrado | `v2/sprint-2-pedidos` | 2026-08-25 |
 | **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | ⚪ | `v2/sprint-3-jornada` | — |
 | **S4** | Tiempos y métricas de cocina | 2 | M | ⚪ | `v2/sprint-4-tiempos` | — |
 | **S5** | Aprobaciones, visibilidad de métricas, IVA | 4 + 5 + 7 | L | ⚪ | `v2/sprint-5-control` | — |
@@ -191,7 +191,7 @@ repo que lleva tiempo pendiente:
 
 ## S1 — Fundaciones
 
-**Estado:** ⚪ pendiente · **Rama:** `v2/sprint-1-fundaciones` · **Depende de:** S0 pasos 0.1-0.2
+**Estado:** 🟢 cerrado (1.1–1.9) · **Rama:** `v2/sprint-1-fundaciones` · **Depende de:** S0 pasos 0.1-0.2
 
 **Objetivo:** que a partir de aquí toda migración sea reproducible, todo check de rol venga de un
 solo sitio, exista un enum de estados único, y los agujeros explotables desde la LAN estén cerrados.
@@ -296,36 +296,49 @@ cd frontend/pos-system && pnpm build
 | `SELECT id, nombre FROM usuarios WHERE pin NOT LIKE '$%';` — si devuelve filas, hay que rehashear esos PINs antes de mergear o esos usuarios quedan fuera | Leo (o Claude con `DATABASE_URL` de solo lectura) | merge de 1.7 |
 | Lista definitiva de orígenes CORS de producción (hoy: `lahidrocalida.vercel.app` + una IP de LAN quemada) | Leo | merge de 1.7 |
 
-### Notas de cierre
-*(pendiente)*
+**Qué quedó funcionando (2026-08-25):** baseline de Alembic colapsado y verificado contra prod; `create_all` eliminado de `main.py`; `app/deps.py` con `require_roles` + `get_turno_activo` unificado (antes 5 copias inline); los 3 checks de rol inline migrados a `require_roles` en `pedidos.py`, `gastos.py`, `asistencia.py`, `admin.py`, `users.py`, `propinas.py`, `products.py`; `domain/estados.py` con `EstadoPedido`/`EstadoArticuloPedido`/`EstadoTurno` como `StrEnum` y espejo `constants/estados.ts` en el frontend; fallback de contraseña en texto plano eliminado; rate limiting de ventana deslizante en `/auth/login`, `/auth/login-simple`, `/auth/login-admin` y `/auth/asistencia`; `GET /usuarios/` gateado a `administrador`; JWT de WS movido del query string a un frame de auth post-connect; `GET /ws/stats` gateado; `docker-compose.yml` funcional (app + Postgres); `conftest.py` reparado con bug de timezone y fixture `como_rol(rol)`. Suite: 42 tests verdes, ruff limpio, `pnpm build` limpio.
+
+**Deuda asumida y traspasada a S2+:** `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token (S3); JWT en `localStorage` (S7); CI de backend corre sobre SQLite in-memory (S7); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado` (cosmético, S3). Rate limit por IP puede colapsar a bucket global detrás del proxy de Railway sin `--forwarded-allow-ips` — operacional, pendiente de configuración.
 
 ---
 
 ## S2 — Fiabilidad de pedidos
 
-**Estado:** ⚪ pendiente · **Rama:** `v2/sprint-2-pedidos` · **Depende de:** S1, S0 completo
+**Estado:** 🟢 completo (2.1–2.10) · **Rama:** `v2/sprint-2-pedidos` · **Depende de:** S1, S0 completo
 
 **Objetivo:** que deje de perderse un pedido. Cubre el Bloque 1 completo.
 
 | # | Tarea | Bloque | Estado |
 |---|---|---|---|
-| 2.1 | Desbloquear el event loop: `app/events.py` con cola + consumidor en `lifespan`; los endpoints dejan de hacer `await notify_*` | 1.1 | ⚪ |
-| 2.2 | Redis entra de verdad: `core/redis.py`, fan-out de WS por pub/sub, degradación a fan-out local, `/health` reporta Redis aparte | 1.2 | ⚪ |
-| 2.3 | Migrar el rate limiter de S1 de memoria a Redis (misma firma, solo cambia el backend) | 6 | ⚪ |
-| 2.4 | Máquina de estados real: tabla `(origen, destino) → roles` en `domain/estados.py`; `update_pedido` valida origen **y** destino | 1.3 | ⚪ |
-| 2.5 | Cerrar la carrera de cocina: `with_for_update()` + un solo commit en `update_articulo_estado` | 1.4 | ⚪ |
-| 2.6 | Atomicidad de la división de cuenta: sacar los commits del bucle + `client_request_id` | 1.5 | ⚪ |
-| 2.7 | `UniqueConstraint(pedido_id, client_request_id)` en `articulos_pedido` + captura de `IntegrityError` | 1.6 | ⚪ |
-| 2.8 | Cola offline en el mesero: `localStorage` + reintento con backoff reusando `client_request_id`; badge de "N sin confirmar" | 1.7 | ⚪ |
-| 2.9 | Acuse del KDS por WS + alerta en KDSManager si un pedido lleva >60 s sin acuse | 1.8 | ⚪ |
-| 2.10 | Interceptor 401 en `api/client.ts` (hoy solo hay interceptor de request) | 1.9 | ⚪ |
+| 2.1 | Desbloquear el event loop: `app/events.py` con cola + consumidor en `lifespan`; los endpoints dejan de hacer `await notify_*` | 1.1 | 🟢 |
+| 2.2 | Redis entra de verdad: `core/redis.py`, fan-out de WS por pub/sub, degradación a fan-out local, `/health` reporta Redis aparte | 1.2 | 🟢 |
+| 2.3 | Migrar el rate limiter de S1 de memoria a Redis (misma firma, solo cambia el backend) | 6 | 🟢 |
+| 2.4 | Máquina de estados real: tabla `(origen, destino) → roles` en `domain/estados.py`; `update_pedido` valida origen **y** destino | 1.3 | 🟢 |
+| 2.5 | Cerrar la carrera de cocina: `with_for_update()` + un solo commit en `update_articulo_estado` | 1.4 | 🟢 |
+| 2.6 | Atomicidad de la división de cuenta: sacar los commits del bucle + `client_request_id` | 1.5 | 🟢 |
+| 2.7 | `UniqueConstraint(pedido_id, client_request_id)` en `articulos_pedido` + captura de `IntegrityError` | 1.6 | 🟢 |
+| 2.8 | Cola offline en el mesero: `localStorage` + reintento con backoff reusando `client_request_id`; badge de "N sin confirmar" | 1.7 | 🟢 |
+| 2.9 | Acuse del KDS por WS + alerta en KDSManager si un pedido lleva >60 s sin acuse | 1.8 | 🟢 |
+| 2.10 | Interceptor 401 en `api/client.ts` (hoy solo hay interceptor de request) | 1.9 | 🟢 |
 
 **Nota de arranque:** aquí se introduce el `lifespan` en `main.py`, que hoy no existe. Eso permite
 eliminar el efecto secundario de import de `websocket_manager.py:297` y, con él, el monkeypatch de
 `asyncio.create_task` en `conftest.py:15-26`.
 
 ### Notas de cierre
-*(pendiente)*
+- 2.4 excluye deliberadamente `dividido` como destino alcanzable por cualquier rol salvo
+  `administrador` (vía el menú manual de Caja) — sigue siendo alcanzable también por
+  `/dividir` y `/dividir_por_montos`, que lo setean directo sin pasar por la tabla de
+  transiciones.
+- 2.7: `articulos_pedido.client_request_id` pasó de `String(36)` a `String(72)` porque cada
+  fila ahora guarda `"<client_request_id>:<índice>"` (un batch de `agregar-articulos` comparte
+  un client_request_id pero puede traer varios artículos). Migración `799190d9c93b`.
+- 2.8/2.9 verificados manualmente en navegador (2026-08-25): cola offline de mesero probada con corte de red (Network Offline) y persistencia/reanudación tras reload; acuse de KDS y alerta visual (>60s) verificados bajo Slow 3G (banner disparado correctamente). Suite de tests backend pasando 80 tests + 4 tests de Redis contra docker-compose, type-check y build de frontend limpios.
+- Deuda heredada, explícitamente fuera de alcance: `pedidos.py` mezcla endpoints `async def`
+  con queries síncronas de SQLAlchemy (psycopg2), lo que puede retrasar el drenado de la cola
+  de eventos bajo carga alta compartiendo el mismo event loop. Migrar a AsyncSession/asyncpg es
+  su propio esfuerzo, no de S2.
+- 4 tests marcados `@pytest.mark.skip` porque requieren Redis real: `test_events_redis.py::test_publish_en_un_worker_llega_al_subscriber_de_otro`, `test_events_redis.py::test_redis_subscriber_despacha_evento_publicado`, `test_health.py::test_health_redis_ok_con_redis_real`, `test_rate_limit.py::test_redis_limiter_comparte_estado_entre_workers`. La condición es `TEST_REDIS_URL` no configurada. La suite en CI (SQLite in-memory) no provisiona Redis. Para correrlos con Redis local: `TEST_REDIS_URL=redis://localhost:6379/0 uv run pytest tests/test_events_redis.py tests/test_health.py::test_health_redis_ok_con_redis_real tests/test_rate_limit.py::test_redis_limiter_comparte_estado_entre_workers -v` → 4 passed (verificado 2026-08-25 contra Redis de docker compose).
 
 ---
 

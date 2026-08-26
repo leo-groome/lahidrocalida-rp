@@ -1,13 +1,21 @@
 import asyncio
 import json
 import logging
-from typing import Dict, List, Optional
+import time
+import uuid
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 
 from app.utils.timezone import get_mexico_now
 
 logger = logging.getLogger(__name__)
+
+# Segundos sin acuse de un mensaje al KDS antes de avisarle (vía "ack_timeout")
+# que puede estar perdiendo eventos silenciosamente — la propia conexión WS
+# sigue "viva" (no es un zombie: puede seguir mandando pings), pero un mensaje
+# que el cliente nunca acusó es indistinguible de uno perdido en tránsito.
+ACK_TIMEOUT_SECONDS = 60
 
 
 class ConnectionInfo:
@@ -18,6 +26,10 @@ class ConnectionInfo:
         self.sucursal_id = sucursal_id
         self.connected_at = get_mexico_now()
         self.last_ping = get_mexico_now()
+        # message_id -> (enviado_en, pedido_id). Solo se puebla para KDS
+        # (ver _broadcast_to_group) — es el único cliente para el que S2 pide
+        # esta alerta.
+        self.pending_acks: Dict[str, Tuple[float, Optional[int]]] = {}
 
 
 class WebSocketManager:
@@ -37,9 +49,6 @@ class WebSocketManager:
             "mesero": ["mesero"],
             "administrador": ["kds", "caja", "mesero", "admin"],
         }
-
-        # Tarea de limpieza de conexiones "zombie"
-        self.cleanup_task = asyncio.create_task(self._cleanup_zombies())
 
     def _get_allowed_groups(self, user_role: str) -> List[str]:
         """Obtiene los grupos permitidos para un rol específico"""
@@ -77,6 +86,40 @@ class WebSocketManager:
                         alive.append(conn)
 
                 self.connections[client_type] = alive
+
+            await self._avisar_acks_vencidos()
+
+    async def _avisar_acks_vencidos(self) -> None:
+        """Avisa a cada conexión KDS qué pedidos llevan >60s sin acuse.
+
+        La conexión sigue "viva" para _cleanup_zombies (puede seguir
+        respondiendo pings) pero un mensaje nunca acusado es indistinguible
+        de uno perdido en tránsito — esto le da a la UI una señal para
+        alertar en vez de confiar ciegamente en el feed de WS.
+        """
+        now = time.monotonic()
+        for conn in self.connections.get("kds", []):
+            vencidos = sorted(
+                {
+                    pedido_id
+                    for _message_id, (sent_at, pedido_id) in conn.pending_acks.items()
+                    if pedido_id is not None and (now - sent_at) > ACK_TIMEOUT_SECONDS
+                }
+            )
+            if vencidos:
+                logger.warning(
+                    "KDS user=%s sin acuse >%ss para pedidos %s",
+                    conn.user_id,
+                    ACK_TIMEOUT_SECONDS,
+                    vencidos,
+                )
+                await self._send_to_connection(
+                    conn,
+                    {
+                        "type": "ack_timeout",
+                        "data": {"pedido_ids": vencidos, "timestamp": get_mexico_now().isoformat()},
+                    },
+                )
 
     async def connect(
         self, websocket: WebSocket, client_type: str, user_id: int, user_role: str, sucursal_id: int
@@ -135,9 +178,18 @@ class WebSocketManager:
             return False
 
     async def _broadcast_to_group(
-        self, client_type: str, message: dict, sucursal_id: Optional[int] = None
+        self,
+        client_type: str,
+        message: dict,
+        sucursal_id: Optional[int] = None,
+        pedido_id: Optional[int] = None,
     ):
-        """Enviar mensaje a todos los clientes de un grupo específico en paralelo"""
+        """Enviar mensaje a todos los clientes de un grupo específico en paralelo.
+
+        `pedido_id`: solo para client_type="kds" — adjunta un `message_id` al
+        envelope y lo registra como pendiente de acuse en cada conexión a la
+        que se envió con éxito (ver `ack_message` y `_cleanup_zombies`).
+        """
         if client_type not in self.connections:
             return
 
@@ -150,20 +202,37 @@ class WebSocketManager:
         if not connections:
             return
 
+        message_id = None
+        envelope = message
+        if client_type == "kds" and pedido_id is not None:
+            message_id = uuid.uuid4().hex
+            envelope = {**message, "message_id": message_id}
+
         # Crear tareas para enviar simultáneamente usando asyncio.gather
-        tasks = [self._send_to_connection(conn, message) for conn in connections]
+        tasks = [self._send_to_connection(conn, envelope) for conn in connections]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Encontrar conexiones que fallaron y procesarlas
         failed_connections = []
+        now = time.monotonic()
         for conn, success in zip(connections, results):
             if not success or isinstance(success, Exception):
                 failed_connections.append(conn)
+            elif message_id is not None:
+                conn.pending_acks[message_id] = (now, pedido_id)
 
         # Limpiar conexiones fallidas
         for failed_conn in failed_connections:
             if failed_conn in self.connections[client_type]:
                 self.connections[client_type].remove(failed_conn)
+
+    def ack_message(self, websocket: WebSocket, message_id: str) -> None:
+        """Registrar el acuse de un mensaje enviado a esta conexión."""
+        for connections in self.connections.values():
+            for conn in connections:
+                if conn.websocket == websocket:
+                    conn.pending_acks.pop(message_id, None)
+                    return
 
     async def notify_pedido_created(self, pedido_data: dict):
         """Notificar creación de nuevo pedido"""
@@ -175,7 +244,7 @@ class WebSocketManager:
         sucursal_id = pedido_data.get("sucursal_id")
 
         # Notificar a KDS (cocina ve nuevos pedidos)
-        await self._broadcast_to_group("kds", message, sucursal_id)
+        await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_data.get("id"))
 
         # Notificar a CAJA (necesita ver todos los pedidos nuevos para overview)
         await self._broadcast_to_group("caja", message, sucursal_id)
@@ -211,28 +280,28 @@ class WebSocketManager:
         # Lógica de notificación específica por estado
         if nuevo_estado in ["pendiente", "preparando"]:
             # Notificar a cocina
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         elif nuevo_estado == "listo":
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         elif nuevo_estado == "entregado":
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         elif nuevo_estado == "cuenta_solicitada":
             pass
 
         elif nuevo_estado == "pagado":
             # Notificar a todos (pedido completado)
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         elif nuevo_estado == "cancelado":
             # Notificar a todos
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         elif nuevo_estado == "dividido":
             # Notificar a todos para que retiren el pedido original
-            await self._broadcast_to_group("kds", message, sucursal_id)
+            await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
 
         # Siempre notificar a administradores
         await self._broadcast_to_group("admin", message, sucursal_id)
@@ -261,7 +330,7 @@ class WebSocketManager:
         await self._broadcast_to_group("mesero", message, sucursal_id)
 
         # Notificar principalmente a KDS y admin
-        await self._broadcast_to_group("kds", message, sucursal_id)
+        await self._broadcast_to_group("kds", message, sucursal_id, pedido_id=pedido_id)
         await self._broadcast_to_group("admin", message, sucursal_id)
 
         logger.info(

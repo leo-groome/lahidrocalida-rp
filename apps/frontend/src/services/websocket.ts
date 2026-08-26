@@ -6,6 +6,7 @@ export interface WebSocketMessage {
   type: string
   data: any
   timestamp?: string
+  message_id?: string
 }
 
 export interface WebSocketConfig {
@@ -327,6 +328,14 @@ export class WebSocketService {
       if (message.type === 'connection_established') {
         console.log('WebSocket: Conexión confirmada por servidor')
         return
+      }
+
+      // Acuse: el server solo adjunta message_id a los eventos de pedidos
+      // enviados al KDS (ver websocket_manager.py). Confirmarlo de inmediato
+      // es lo que permite al server distinguir "el cliente lo recibió" de
+      // "se perdió en tránsito" — sin esto, un mensaje caído era silencioso.
+      if (message.message_id) {
+        this.send({ type: 'ack', data: {}, message_id: message.message_id })
       }
 
       // Emitir evento a listeners

@@ -1,12 +1,15 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import websocket_routes
+from app import events, websocket_routes
 from app.core.config import settings
+from app.core.redis import check_redis, close_redis
 from app.db.session import get_db
 from app.routers import (
     admin,
@@ -20,6 +23,7 @@ from app.routers import (
     turnos,
     users,
 )
+from app.websocket_manager import websocket_manager
 
 # Sin esto, los logger.* de los módulos propios no salen en los logs del host
 logging.basicConfig(
@@ -27,7 +31,29 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 
-app = FastAPI(title="La Hidrocálida POS API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # asyncio.create_task requiere un loop corriendo: por eso vive aquí y no en
+    # el __init__ de WebSocketManager (ese side-effect de import truena en
+    # tests, que importan app.main sin loop activo).
+    stop_event = asyncio.Event()
+    tasks = [
+        asyncio.create_task(events.event_consumer(stop_event)),
+        asyncio.create_task(events.redis_subscriber(stop_event)),
+        asyncio.create_task(websocket_manager._cleanup_zombies()),
+    ]
+    try:
+        yield
+    finally:
+        stop_event.set()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await close_redis()
+
+
+app = FastAPI(title="La Hidrocálida POS API", lifespan=lifespan)
 
 # CORS: orígenes declarados en CORS_ORIGINS (env), nunca hardcodeados en el código.
 app.add_middleware(
@@ -72,3 +98,12 @@ def check_database_connection(db: Session = Depends(get_db)):
     except Exception:
         logging.getLogger(__name__).exception("Fallo de conexión a la base de datos")
         return {"status": "error"}
+
+
+@app.get("/health/redis")
+async def check_redis_connection():
+    """Verifica Redis (fan-out WS + rate limiter). Sin REDIS_URL configurada,
+    "disabled" es el estado esperado: el sistema opera en modo local."""
+    if not settings.REDIS_URL:
+        return {"status": "disabled"}
+    return {"status": "ok"} if await check_redis() else {"status": "error"}

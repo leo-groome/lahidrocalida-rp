@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # Zona horaria del restaurante
     TIMEZONE: str = "America/Mexico_City"
 
+    # Redis: fan-out de eventos WS entre workers/réplicas y backend del rate
+    # limiter (S2). None = degradar a fan-out local / rate limit en memoria.
+    REDIS_URL: str | None = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True
