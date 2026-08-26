@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 import requests
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import Integer as SAInteger
 from sqlalchemy import cast, func
 from sqlalchemy.exc import IntegrityError
@@ -883,6 +883,7 @@ async def dividir_por_montos(
 async def update_pedido(
     pedido_id: int,
     data: PedidoUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -933,14 +934,18 @@ async def update_pedido(
                 ),
             )
         if data.estado == EstadoPedido.CANCELADO:
-            admin_autorizador = verificar_pin_admin(db, data.pin_autorizacion)
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
             accion_autorizada = "cancelar_cuenta"
     else:
         # Mismo estado: actualización de metadatos/propinas.
         # Si el pedido es terminal (pagado), requiere PIN de administrador
         # (antes: bloqueado por completo salvo rol administrador).
         if pedido.estado == EstadoPedido.PAGADO:
-            admin_autorizador = verificar_pin_admin(db, data.pin_autorizacion)
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
             accion_autorizada = "editar_propina"
         elif pedido.estado in {EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO}:
             raise HTTPException(
@@ -1417,6 +1422,7 @@ async def agregar_articulos_pedido(
 async def actualizar_articulos_pedido(
     pedido_id: int,
     data: dict,  # {"articulos": [{"id": int, "cantidad": int, "modificaciones": str}]}
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("mesero", "administrador", "cajero")),
 ):
@@ -1461,7 +1467,9 @@ async def actualizar_articulos_pedido(
                     detail="Solo se pueden borrar artículos de un pedido pendiente",
                 )
         else:
-            admin_autorizador = verificar_pin_admin(db, data.get("pin_autorizacion"))
+            admin_autorizador = await verificar_pin_admin(
+                db, data.get("pin_autorizacion"), request, current_user
+            )
 
     # Obtener artículos actuales del pedido
     articulos_actuales = {a.id: a for a in pedido.articulos_pedido}

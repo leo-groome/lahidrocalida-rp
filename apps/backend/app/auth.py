@@ -1,18 +1,22 @@
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from typing import Optional as _Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.rate_limit import client_ip, clear_pin_success, enforce_pin_rate_limit, register_pin_failure
 from app.db.session import get_db
 from app.models import Usuario
 from app.services.jornada import reconciliar_jornada
 from app.utils.timezone import get_mexico_now, jornada_de, to_mexico_aware
+
+logger = logging.getLogger(__name__)
 
 # Configuración para hash de contraseñas
 # Usamos argon2 como esquema principal (sin límite de 72 bytes),
@@ -169,7 +173,9 @@ def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -
     return current_user
 
 
-def verificar_pin_admin(db: Session, pin: Optional[str]) -> Usuario:
+async def verificar_pin_admin(
+    db: Session, pin: Optional[str], request: Request, current_user: Usuario
+) -> Usuario:
     """Verifica `pin` contra el NIP de cualquier administrador activo.
 
     Usado para autorizar puntualmente acciones sensibles (cancelar cuenta,
@@ -177,12 +183,30 @@ def verificar_pin_admin(db: Session, pin: Optional[str]) -> Usuario:
     turno) cuando no hay un cajero fijo: la sesión de caja la comparte
     cualquier mesero, así que el control real vive en este PIN, no en el rol
     de la sesión activa. Devuelve el `Usuario` admin cuyo hash hizo match
-    (para auditoría de quién autorizó), o lanza 401/400.
+    (para auditoría de quién autorizó), o lanza 401/400/429.
+
+    Rate-limitado igual que los logins: un PIN de 4 dígitos sin límite de
+    intentos es fuerza-bruta trivial (10 000 combinaciones) para cualquiera
+    con un JWT de mesero/cajero válido — se limita por IP y por la cuenta que
+    intenta, no por el admin objetivo (ni se conoce hasta hacer match).
     """
+    rl_keys = await enforce_pin_rate_limit(request, str(current_user.id))
     if not pin:
         raise HTTPException(status_code=400, detail="PIN de administrador requerido")
     admins = db.query(Usuario).filter(Usuario.rol == "administrador", Usuario.activo == True).all()
     for admin in admins:
         if verify_password(pin, admin.pin):
+            await clear_pin_success(rl_keys)
             return admin
+    await register_pin_failure(rl_keys)
+    # Sin esto, un intento fallido de PIN no deja rastro: el rate limit lo
+    # frena pero nadie se entera de que alguien lo estuvo intentando hasta
+    # que el presupuesto se agota. No se loguea el PIN en sí (nunca datos de
+    # autenticación en logs), solo quién lo intentó y desde dónde.
+    logger.warning(
+        "PIN de administrador inválido: usuario_id=%s rol=%s ip=%s",
+        current_user.id,
+        current_user.rol,
+        client_ip(request),
+    )
     raise HTTPException(status_code=401, detail="PIN de administrador inválido")

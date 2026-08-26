@@ -233,6 +233,7 @@ async def registrar_asistencia(
 
 @router.post("/verify-admin-pin")
 async def verify_admin_pin(
+    request: Request,
     data: PinVerifyRequest,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
@@ -242,7 +243,7 @@ async def verify_admin_pin(
     Gate previo a mostrar las analíticas del turno (venta/propinas del día) —
     no hay cajero fijo, así que el rol de la sesión activa no basta.
     """
-    admin = verificar_pin_admin(db, data.pin)
+    admin = await verificar_pin_admin(db, data.pin, request, current_user)
     db.add(
         AutorizacionPin(
             accion="ver_analiticas",

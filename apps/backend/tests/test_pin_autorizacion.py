@@ -136,3 +136,19 @@ def test_verify_admin_pin_con_pin_incorrecto(client, admin_pin):
 def test_verify_admin_pin_sin_administradores_activos(client):
     r = client.post("/auth/verify-admin-pin", json={"pin": "1234"})
     assert r.status_code == 401
+
+
+def test_pin_incorrecto_repetido_dispara_rate_limit(client, admin_pin):
+    """Un PIN de 4 dígitos sin límite de intentos es fuerza-bruta trivial
+    (10 000 combinaciones) para cualquiera con un JWT de mesero/cajero
+    válido — debe cortar igual que el rate limit de login."""
+    for _ in range(8):
+        r = client.post("/auth/verify-admin-pin", json={"pin": "0000"})
+        assert r.status_code == 401
+
+    r = client.post("/auth/verify-admin-pin", json={"pin": "0000"})
+    assert r.status_code == 429
+
+    # Ni siquiera el PIN correcto pasa mientras el presupuesto está agotado
+    r = client.post("/auth/verify-admin-pin", json={"pin": admin_pin["pin"]})
+    assert r.status_code == 429
