@@ -334,6 +334,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { api } from '@/api/client'
+import { formatDate, formatTime, formatDetailedDate } from '@/utils/dateUtils'
 
 interface AsistenciaEmpleado {
   usuario_id: number
@@ -374,14 +375,6 @@ function getInitials(nombre: string): string {
 function getColor(nombre: string): string {
   const hash = nombre.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   return COLORS[hash % COLORS.length]
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 }
 
 function getDateStr(daysAgo: number): string {
@@ -488,11 +481,6 @@ async function openDetailModal(emp: AsistenciaEmpleado) {
   } finally {
     loadingRegistros.value = false
   }
-}
-
-function formatDetailedDate(iso: string): string {
-  const date = new Date(iso)
-  return date.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short' })
 }
 
 function applyRange(range: typeof quickRanges[0]) {

@@ -315,19 +315,19 @@ const formatCurrency = (val: number) => val.toLocaleString('es-MX', {
 const getDay = (dateStr: string) => {
   const d = parseSafeDate(dateStr)
   if (!d) return ''
-  return d.toLocaleDateString('es-MX', { weekday: 'short' }).replace('.', '').toUpperCase()
+  return d.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', weekday: 'short' }).replace('.', '').toUpperCase()
 }
 
 const getDayNum = (dateStr: string) => {
   const d = parseSafeDate(dateStr)
   if (!d) return ''
-  return d.getDate()
+  return d.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric' })
 }
 
 const getMonth = (dateStr: string) => {
   const d = parseSafeDate(dateStr)
   if (!d) return ''
-  return d.toLocaleDateString('es-MX', { month: 'short' }).replace('.', '').toUpperCase()
+  return d.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', month: 'short' }).replace('.', '').toUpperCase()
 }
 
 const loadProveedores = async () => {

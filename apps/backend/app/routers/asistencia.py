@@ -15,6 +15,7 @@ from app.schemas import (
     ConfirmarSalidaRequest,
     RegistroAsistenciaResponse,
 )
+from app.utils.timezone import MEXICO_TZ
 
 router = APIRouter(prefix="/asistencia", tags=["asistencia"])
 
@@ -57,7 +58,7 @@ def list_registros(
 
     if fecha_inicio:
         try:
-            dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
+            dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").replace(tzinfo=MEXICO_TZ)
             query = query.filter(RegistroAsistencia.fecha_entrada >= dt_inicio)
         except ValueError:
             raise HTTPException(
@@ -66,7 +67,9 @@ def list_registros(
 
     if fecha_fin:
         try:
-            dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=MEXICO_TZ
+            )
             query = query.filter(RegistroAsistencia.fecha_entrada <= dt_fin)
         except ValueError:
             raise HTTPException(status_code=400, detail="fecha_fin inválida. Formato: YYYY-MM-DD")
@@ -110,8 +113,10 @@ def resumen_asistencia(
     """Resumen de horas trabajadas por empleado en un rango de fechas. Solo admin."""
 
     try:
-        dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
-        dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").replace(tzinfo=MEXICO_TZ)
+        dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, tzinfo=MEXICO_TZ
+        )
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
 

@@ -170,6 +170,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { api } from '@/api/client'
 import NipKeypad from '@/components/NipKeypad.vue'
+import { formatTime } from '@/utils/dateUtils'
 
 interface StaffUser {
   id: number
@@ -241,10 +242,6 @@ async function selectUser(user: StaffUser) {
     console.error('Error al obtener estado de asistencia:', e)
     tieneTurnoActivo.value = null // fallback to neutral
   }
-}
-
-function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
 }
 
 async function handleConfirm(pin: string) {
