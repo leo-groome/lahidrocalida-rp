@@ -73,22 +73,37 @@
       <div v-else-if="step === 2" class="flex flex-col">
         <!-- Toggle modo (no aplica a nómina) -->
         <div v-if="tipoGasto !== 'nomina'" class="px-4 pt-4">
-          <div class="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-2xl">
+          <div class="grid grid-cols-3 gap-2 bg-slate-100 p-1 rounded-2xl">
             <button
-              @click="modoDetalle = false"
+              @click="modoCaptura = 'rapido'"
               class="py-2.5 rounded-xl text-xs font-black transition-all"
-              :class="!modoDetalle ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
+              :class="modoCaptura === 'rapido' ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
             >Monto rápido</button>
+            <button
+              @click="modoCaptura = 'texto'"
+              class="py-2.5 rounded-xl text-xs font-black transition-all"
+              :class="modoCaptura === 'texto' ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
+            >Texto rápido</button>
             <button
               @click="enableDesglose"
               class="py-2.5 rounded-xl text-xs font-black transition-all"
-              :class="modoDetalle ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
-            >Desglose de artículos</button>
+              :class="modoCaptura === 'desglose' ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500'"
+            >Desglose</button>
           </div>
         </div>
 
+        <!-- ── Modo texto rápido ── -->
+        <template v-if="modoCaptura === 'texto' && tipoGasto !== 'nomina'">
+          <CompraTextoQuickAdd
+            :articulos="articulos"
+            :categorias="categorias"
+            @agregar-detalles="onAgregarDetalles"
+            @articulo-creado="onArticuloCreado"
+          />
+        </template>
+
         <!-- ── Modo desglose ── -->
-        <template v-if="modoDetalle && tipoGasto !== 'nomina'">
+        <template v-else-if="modoCaptura === 'desglose' && tipoGasto !== 'nomina'">
           <div class="p-4 max-h-[55vh] overflow-y-auto">
             <GastoDetallesEditor
               v-model:detalles="detalles"
@@ -175,7 +190,7 @@
             </div>
             <div class="text-right">
               <p class="text-2xl font-black text-[#00126D]">${{ amountFormatted }}</p>
-              <p v-if="modoDetalle && detalles.length" class="text-[10px] text-slate-400 font-bold">{{ detalles.length }} artículo(s)</p>
+              <p v-if="modoCaptura === 'desglose' && detalles.length" class="text-[10px] text-slate-400 font-bold">{{ detalles.length }} artículo(s)</p>
             </div>
           </div>
 
@@ -268,6 +283,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
 import GastoDetallesEditor from './GastoDetallesEditor.vue'
+import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
 
 const props = defineProps<{
   turnoId?: number | null
@@ -293,14 +309,15 @@ const tiposGasto = [
 function selectTipo(id: string) {
   tipoGasto.value = id
   // Nómina nunca lleva desglose de artículos.
-  if (id === 'nomina') modoDetalle.value = false
+  if (id === 'nomina') modoCaptura.value = 'rapido'
 }
 
-// ── Step 2 — Modo desglose de artículos ──────────
-const modoDetalle = ref(false)
+// ── Step 2 — Modo de captura: monto rápido / texto rápido / desglose ──
+const modoCaptura = ref<'rapido' | 'texto' | 'desglose'>('rapido')
 const detalles = ref<any[]>([])
 const totalManualDetalle = ref<number | null>(null)
 const articulos = ref<any[]>([])
+const categorias = ref<any[]>([])
 
 const sumaDetalles = computed(() =>
   detalles.value.reduce((sum, d) => {
@@ -312,17 +329,26 @@ const sumaDetalles = computed(() =>
 )
 
 function enableDesglose() {
-  modoDetalle.value = true
+  modoCaptura.value = 'desglose'
   if (detalles.value.length === 0) {
     detalles.value.push({ articulo_id: null, cantidad: 1, precio_unitario: 0, subtotal_linea: 0, _editadoManual: false })
   }
+}
+
+function onAgregarDetalles(nuevasLineas: any[]) {
+  detalles.value.push(...nuevasLineas)
+  modoCaptura.value = 'desglose'
+}
+
+function onArticuloCreado(articulosActualizados: any[]) {
+  articulos.value = articulosActualizados
 }
 
 // ── Step 2 — Currency keypad ─────────────────────
 const amountDisplay = ref('0')
 
 const amountValue = computed(() => {
-  if (modoDetalle.value && tipoGasto.value !== 'nomina') {
+  if (modoCaptura.value === 'desglose' && tipoGasto.value !== 'nomina') {
     return totalManualDetalle.value != null ? Number(totalManualDetalle.value) : sumaDetalles.value
   }
   return parseFloat(amountDisplay.value) || 0
@@ -415,7 +441,7 @@ async function submit() {
     submitError.value = 'Selecciona un proveedor'
     return
   }
-  const usaDesglose = modoDetalle.value && tipoGasto.value !== 'nomina'
+  const usaDesglose = modoCaptura.value === 'desglose' && tipoGasto.value !== 'nomina'
   const detallesValidos = detalles.value.filter(d => d.articulo_id)
   if (usaDesglose && detallesValidos.length === 0) {
     submitError.value = 'Agrega al menos un artículo o usa monto rápido'
@@ -459,12 +485,14 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    const [provs, arts] = await Promise.all([
+    const [provs, arts, cats] = await Promise.all([
       api.get('/gastos/proveedores'),
       api.get('/gastos/articulos'),
+      api.get('/gastos/categorias-articulo'),
     ])
     proveedores.value = provs.data
     articulos.value = arts.data
+    categorias.value = cats.data
   } catch { /* silently ignore */ }
 })
 </script>
