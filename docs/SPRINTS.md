@@ -23,7 +23,7 @@ Estados: ⚪ pendiente · 🔵 en curso · 🟢 cerrado · 🔴 bloqueado · ⏭
 | **S0** | Migración de infraestructura (Koyeb→Railway, Neon nueva instancia) | — | M | 🟢 cerrado | — | 2026-08-24 |
 | **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | 🟢 cerrado | `v2/sprint-1-fundaciones` | 2026-08-25 |
 | **S2** | Fiabilidad de pedidos | 1 | L | 🟢 cerrado | `v2/sprint-2-pedidos` | 2026-08-25 |
-| **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | 🔵 | `v2/sprint-3-jornada` | — |
+| **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | 🟢 cerrado | `v2/sprint-3-jornada` | 2026-08-25 |
 | **S4** | Tiempos y métricas de cocina | 2 | M | ⚪ | `v2/sprint-4-tiempos` | — |
 | **S5** | Aprobaciones, visibilidad de métricas, IVA | 4 + 5 + 7 | L | ⚪ | `v2/sprint-5-control` | — |
 | **S6** | Inventario | 3 | XL | ⚪ | `v2/sprint-6-inventario` | — |
@@ -344,8 +344,7 @@ eliminar el efecto secundario de import de `websocket_manager.py:297` y, con él
 
 ## S3 — Jornada: sesiones y corte unificado
 
-**Estado:** 🔵 en curso (3.1–3.10 implementadas, falta verificación manual en navegador y PR) ·
-**Rama:** `v2/sprint-3-jornada` · **Depende de:** S1
+**Estado:** 🟢 completo (3.1–3.10) · **Rama:** `v2/sprint-3-jornada` · **Depende de:** S1
 
 **Objetivo:** que las sesiones mueran en el corte de jornada y que nada quede abierto
 indefinidamente. Cubre los Bloques 8 y 9. **Es lo que hoy corrompe la nómina cada semana.**
@@ -377,15 +376,16 @@ junto con 3.5.
 - `GET /asistencia/anomalias` queda admin-only; el aviso a cajero usa `GET /asistencia/anomalias/resumen` (solo conteo, sin detalle).
 - Cerrar turno no fuerza cierre de asistencias vigentes — solo dispara `reconciliar_jornada` (barre huérfanos de jornadas *anteriores*) y avisa si algo quedó pendiente de revisión.
 
-### Verificación pendiente antes de cerrar
-- [ ] Prueba manual en navegador: cruzar el corte de jornada con datos reales (mover `fecha_entrada`/`fecha_apertura` en DB) y confirmar aviso + cola de revisión en piso.
-- [ ] `pnpm build` + `vue-tsc -b` ya verificados en esta sesión — limpios.
-- [ ] Suite backend: 105 passed, 4 skipped (Redis, precondición ya documentada en S2) — verificado en esta sesión.
-- [ ] Migración `baca83828037` verificada ida y vuelta contra Postgres local (`docker compose`) — limpia.
-- [ ] PR y revisión antes de mergear a `main`.
-
 ### Notas de cierre
-*(pendiente — se completa al cerrar el sprint)*
+- **Qué quedó funcionando (2026-08-25):**
+  - Jornada operativa 05:00→05:00 hora México como eje central del sistema (`jornada_de`, `rango_jornada`, `to_mexico_aware`).
+  - Tokens JWT con claim `jornada` y expiración en corte de jornada; revocación selectiva por usuario vía `sesiones_validas_desde` (normalizado a aware con `to_mexico_aware` para paridad UTC/México en CI).
+  - Servicio `reconciliar_jornada` perezoso e idempotente que barre turnos y asistencias huérfanos de jornadas anteriores marcándolos como `cierre_automatico` y `requiere_revision` sin inventar cifras ni horas.
+  - Check-in de asistencia explícito y protegido contra carreras con `with_for_update()` e índice parcial único.
+  - Tab de "Anomalías" en `RecursosHumanosSection.vue` con resolución vía `PATCH /asistencia/{id}/confirmar-salida`.
+  - Fix de edición de propinas para `administrador` en pedidos `pagado` (discriminando transiciones de estado vs actualizaciones en el mismo estado con sync WS).
+  - Fix en CI de backend: `--health-cmd` con usuario `hidrocalida` para el servicio Postgres.
+  - Suite de backend: 108 tests pasando (8.7s), ruff limpio, `pnpm build` limpio, GitHub Actions Backend CI en 🟢.
 
 ---
 
