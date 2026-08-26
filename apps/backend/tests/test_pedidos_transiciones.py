@@ -46,3 +46,42 @@ def test_estado_invalido_devuelve_400(como_rol, seed, db_session):
     pedido = _crear_pedido_pendiente(db_session, seed)
     r = como_rol("administrador").put(f"/pedidos/{pedido.id}", json={"estado": "no-existe"})
     assert r.status_code == 400
+
+
+def test_administrador_puede_editar_propina_de_pedido_pagado(como_rol, seed, db_session):
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    pedido.estado = "pagado"
+    pedido.propina_tarjeta = 0
+    db_session.commit()
+
+    r = como_rol("administrador").put(
+        f"/pedidos/{pedido.id}",
+        json={"estado": "pagado", "propina_tarjeta": 50.0, "propina_efectivo": 0.0},
+    )
+    assert r.status_code == 200
+    assert float(r.json()["propina_tarjeta"]) == 50.0
+    assert float(r.json()["propina_efectivo"]) == 0.0
+
+
+def test_cajero_no_puede_editar_propina_de_pedido_pagado(como_rol, seed, db_session):
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    pedido.estado = "pagado"
+    db_session.commit()
+
+    r = como_rol("cajero").put(
+        f"/pedidos/{pedido.id}",
+        json={"estado": "pagado", "propina_tarjeta": 50.0},
+    )
+    assert r.status_code == 403
+
+
+def test_pedido_cancelado_o_dividido_no_admite_modificaciones(como_rol, seed, db_session):
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    pedido.estado = "cancelado"
+    db_session.commit()
+
+    r = como_rol("administrador").put(
+        f"/pedidos/{pedido.id}",
+        json={"estado": "cancelado", "propina_tarjeta": 20.0},
+    )
+    assert r.status_code == 403

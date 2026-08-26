@@ -906,18 +906,39 @@ async def update_pedido(
             detail=f"Estado inválido. Valores permitidos: {', '.join(EstadoPedido)}",
         )
 
-    # Máquina de estados real: valida origen (pedido.estado) y destino
-    # (data.estado) según el rol, no solo el destino como antes de S2. Un
-    # pedido en estado terminal (pagado/cancelado/dividido) no admite
-    # ninguna transición, sin importar el rol.
-    if not transicion_permitida(pedido.estado, data.estado, current_user.rol):
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                f"Tu rol ({current_user.rol}) no puede cambiar el pedido de "
-                f"'{pedido.estado}' a '{data.estado}'"
-            ),
-        )
+    # Validar permisos para cambiar estado o editar pedido en mismo estado
+    old_estado = pedido.estado
+    old_propina_efectivo = pedido.propina_efectivo
+    old_propina_tarjeta = pedido.propina_tarjeta
+    old_metodo_pago = pedido.metodo_pago
+
+    if pedido.estado != data.estado:
+        # Máquina de estados real: valida origen (pedido.estado) y destino
+        # (data.estado) según el rol, no solo el destino como antes de S2. Un
+        # pedido en estado terminal (pagado/cancelado/dividido) no admite
+        # ninguna transición, sin importar el rol.
+        if not transicion_permitida(pedido.estado, data.estado, current_user.rol):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Tu rol ({current_user.rol}) no puede cambiar el pedido de "
+                    f"'{pedido.estado}' a '{data.estado}'"
+                ),
+            )
+    else:
+        # Mismo estado: actualización de metadatos/propinas.
+        # Si el pedido es terminal (pagado), solo administrador puede modificarlo.
+        if pedido.estado == EstadoPedido.PAGADO:
+            if current_user.rol != "administrador":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Solo administradores pueden modificar pedidos pagados",
+                )
+        elif pedido.estado in {EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO}:
+            raise HTTPException(
+                status_code=403,
+                detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'",
+            )
 
     # Validar propinas (no negativas)
     if data.propina_efectivo is not None and data.propina_efectivo < 0:
@@ -926,7 +947,6 @@ async def update_pedido(
         raise HTTPException(status_code=400, detail="La propina en tarjeta no puede ser negativa")
 
     # Actualizar estado
-    old_estado = pedido.estado
     pedido.estado = data.estado
 
     # Registrar fecha de pago cuando se marca como pagado
@@ -963,8 +983,13 @@ async def update_pedido(
     db.commit()
     db.refresh(pedido)
 
-    # Notificar cambio de estado via WebSocket (solo si cambió)
-    if old_estado != data.estado:
+    # Notificar cambio de estado o actualización de propinas/pago via WebSocket
+    hubo_cambio_propina_o_pago = (
+        (data.propina_efectivo is not None and data.propina_efectivo != old_propina_efectivo)
+        or (data.propina_tarjeta is not None and data.propina_tarjeta != old_propina_tarjeta)
+        or (data.metodo_pago is not None and data.metodo_pago != old_metodo_pago)
+    )
+    if old_estado != data.estado or hubo_cambio_propina_o_pago:
         try:
             pedido_data = {
                 "id": pedido.id,

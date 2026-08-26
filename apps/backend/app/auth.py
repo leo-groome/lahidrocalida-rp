@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models import Usuario
 from app.services.jornada import reconciliar_jornada
-from app.utils.timezone import get_mexico_now, jornada_de
+from app.utils.timezone import get_mexico_now, jornada_de, to_mexico_aware
 
 # Configuración para hash de contraseñas
 # Usamos argon2 como esquema principal (sin límite de 72 bytes),
@@ -125,7 +125,7 @@ def _resolve_user_from_token(token: str, db: Session) -> Optional[Usuario]:
 
     iat = payload.get("iat")
     if user.sesiones_validas_desde is not None and iat is not None:
-        if iat < user.sesiones_validas_desde.timestamp():
+        if iat < to_mexico_aware(user.sesiones_validas_desde).timestamp():
             return None
 
     return user
