@@ -6,10 +6,38 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.deps import require_roles
+from app.domain.estados import MAX_HORAS_JORNADA
 from app.models import RegistroAsistencia, Usuario
-from app.schemas import AsistenciaResumenItem, AsistenciaResumenResponse, RegistroAsistenciaResponse
+from app.schemas import (
+    AsistenciaAnomaliasResumen,
+    AsistenciaResumenItem,
+    AsistenciaResumenResponse,
+    ConfirmarSalidaRequest,
+    RegistroAsistenciaResponse,
+)
 
 router = APIRouter(prefix="/asistencia", tags=["asistencia"])
+
+
+def _to_response(
+    r: RegistroAsistencia, usuario_nombre: Optional[str] = None
+) -> RegistroAsistenciaResponse:
+    horas = None
+    if r.fecha_salida:
+        delta = r.fecha_salida - r.fecha_entrada
+        horas = round(min(delta.total_seconds() / 3600, MAX_HORAS_JORNADA), 2)
+    return RegistroAsistenciaResponse(
+        id=r.id,
+        usuario_id=r.usuario_id,
+        fecha_entrada=r.fecha_entrada,
+        fecha_salida=r.fecha_salida,
+        notas=r.notas,
+        usuario_nombre=usuario_nombre or (r.usuario.nombre if r.usuario else None),
+        horas_trabajadas=horas,
+        cierre_automatico=r.cierre_automatico,
+        requiere_revision=r.requiere_revision,
+        fecha_salida_estimada=r.fecha_salida_estimada,
+    )
 
 
 @router.get("/", response_model=List[RegistroAsistenciaResponse])
@@ -45,25 +73,7 @@ def list_registros(
 
     registros = query.order_by(RegistroAsistencia.fecha_entrada.desc()).all()
 
-    result = []
-    for r in registros:
-        horas = None
-        if r.fecha_salida:
-            delta = r.fecha_salida - r.fecha_entrada
-            horas = round(delta.total_seconds() / 3600, 2)
-        result.append(
-            RegistroAsistenciaResponse(
-                id=r.id,
-                usuario_id=r.usuario_id,
-                fecha_entrada=r.fecha_entrada,
-                fecha_salida=r.fecha_salida,
-                notas=r.notas,
-                usuario_nombre=r.usuario.nombre if r.usuario else None,
-                horas_trabajadas=horas,
-            )
-        )
-
-    return result
+    return [_to_response(r) for r in registros]
 
 
 @router.get("/usuario/{usuario_id}", response_model=List[RegistroAsistenciaResponse])
@@ -87,25 +97,7 @@ def historial_usuario(
         .all()
     )
 
-    result = []
-    for r in registros:
-        horas = None
-        if r.fecha_salida:
-            delta = r.fecha_salida - r.fecha_entrada
-            horas = round(delta.total_seconds() / 3600, 2)
-        result.append(
-            RegistroAsistenciaResponse(
-                id=r.id,
-                usuario_id=r.usuario_id,
-                fecha_entrada=r.fecha_entrada,
-                fecha_salida=r.fecha_salida,
-                notas=r.notas,
-                usuario_nombre=usuario.nombre,
-                horas_trabajadas=horas,
-            )
-        )
-
-    return result
+    return [_to_response(r, usuario_nombre=usuario.nombre) for r in registros]
 
 
 @router.get("/resumen", response_model=AsistenciaResumenResponse)
@@ -150,9 +142,12 @@ def resumen_asistencia(
         ultima_salida = None
 
         for r in registros:
-            if r.fecha_salida:
+            # Un registro requiere_revision no cuenta para nómina hasta que
+            # un admin confirme la hora real (S3.7) — sin fecha_salida real
+            # no hay horas que sumar de todas formas.
+            if r.fecha_salida and not r.requiere_revision:
                 delta = r.fecha_salida - r.fecha_entrada
-                horas_totales += delta.total_seconds() / 3600
+                horas_totales += min(delta.total_seconds() / 3600, MAX_HORAS_JORNADA)
             if ultima_entrada is None or r.fecha_entrada > ultima_entrada:
                 ultima_entrada = r.fecha_entrada
             if r.fecha_salida and (ultima_salida is None or r.fecha_salida > ultima_salida):
@@ -175,3 +170,62 @@ def resumen_asistencia(
         fecha_fin=dt_fin,
         empleados=empleados_resumen,
     )
+
+
+@router.get("/anomalias", response_model=List[RegistroAsistenciaResponse])
+def listar_anomalias(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    """Registros cerrados automáticamente por reconciliar_jornada que esperan
+    que un admin confirme la hora real de salida. Detalle completo (nombres,
+    horas) — admin-only; el aviso a cajero usa el resumen sin detalle de
+    `GET /asistencia/anomalias/resumen`."""
+    registros = (
+        db.query(RegistroAsistencia)
+        .filter(RegistroAsistencia.requiere_revision == True)
+        .order_by(RegistroAsistencia.fecha_entrada.desc())
+        .all()
+    )
+    return [_to_response(r) for r in registros]
+
+
+@router.get("/anomalias/resumen", response_model=AsistenciaAnomaliasResumen)
+def resumen_anomalias_sucursal(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador", "cajero", "mesero", "cocina")),
+):
+    """Conteo de anomalías pendientes en la sucursal del usuario — sin
+    nombres ni horas, solo lo necesario para el aviso al abrir turno en Caja.
+    Accesible a cualquier rol de staff, no solo admin."""
+    pendientes = (
+        db.query(RegistroAsistencia)
+        .join(Usuario, Usuario.id == RegistroAsistencia.usuario_id)
+        .filter(
+            Usuario.sucursal_id == current_user.sucursal_id,
+            RegistroAsistencia.requiere_revision == True,
+        )
+        .count()
+    )
+    return AsistenciaAnomaliasResumen(sucursal_id=current_user.sucursal_id, pendientes=pendientes)
+
+
+@router.patch("/{registro_id}/confirmar-salida", response_model=RegistroAsistenciaResponse)
+def confirmar_salida(
+    registro_id: int,
+    data: ConfirmarSalidaRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    """Un admin fija la hora real de salida de un registro cerrado
+    automáticamente. Limpia `requiere_revision`; conserva `cierre_automatico`
+    como histórico de que este registro fue auto-cerrado."""
+    registro = db.query(RegistroAsistencia).filter(RegistroAsistencia.id == registro_id).first()
+    if not registro:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+
+    registro.fecha_salida = data.fecha_salida
+    registro.requiere_revision = False
+    db.commit()
+    db.refresh(registro)
+    return _to_response(registro)

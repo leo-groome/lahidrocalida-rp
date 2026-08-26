@@ -16,6 +16,7 @@ from app.schemas import (
     TurnoResponse,
     TurnoUpdate,
 )
+from app.services.jornada import reconciliar_jornada
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
 
 router = APIRouter(prefix="/turnos", tags=["turnos"])
@@ -34,8 +35,7 @@ def _validar_permisos_turnos(usuario: Usuario):
 
 
 def _get_turno_diferencia(turno: Turno) -> Optional[float]:
-    diferencia = getattr(turno, "diferencia", None)
-    return float(diferencia) if diferencia is not None else None
+    return float(turno.diferencia) if turno.diferencia is not None else None
 
 
 def _obtener_turno_activo_sucursal(db: Session, sucursal_id: int) -> Optional[Turno]:
@@ -165,6 +165,10 @@ def iniciar_turno(
     """
     _validar_permisos_turnos(current_user)
 
+    # Barre turnos huérfanos de una jornada anterior antes de chequear "ya hay
+    # turno activo" — así un turno de ayer nunca bloquea abrir el de hoy.
+    reconciliar_jornada(db, current_user.sucursal_id)
+
     # Verificar que no haya turno activo en la sucursal
     turno_activo = _obtener_turno_activo_sucursal(db, current_user.sucursal_id)
     if turno_activo:
@@ -248,6 +252,7 @@ def iniciar_turno(
         denominaciones_iniciales=denominaciones_iniciales,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+        cerrado_automatico=turno.cerrado_automatico,
     )
 
 
@@ -323,6 +328,7 @@ def obtener_turno_activo(
         denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+        cerrado_automatico=turno.cerrado_automatico,
     )
 
 
@@ -388,6 +394,7 @@ def cerrar_turno(
     turno.total_final = total_final
     turno.ventas_efectivo = movs_info["ventas_efectivo"]
     turno.propinas_efectivo = movs_info["propinas_efectivo"]
+    turno.diferencia = diferencia
 
     if cierre_data.observaciones:
         turno.observaciones = (
@@ -403,6 +410,12 @@ def cerrar_turno(
     )
 
     db.commit()
+
+    # Reconciliar jornada tras cerrar: barre cualquier otro huérfano que haya
+    # quedado de una jornada anterior en la sucursal. No fuerza el cierre de
+    # asistencias vigentes de hoy — el personal de piso puede seguir
+    # trabajando después de que caja cierra.
+    reconciliar_jornada(db, turno.sucursal_id)
 
     # Cargar relaciones para respuesta
     db.refresh(turno)
@@ -438,15 +451,18 @@ def cerrar_turno(
         fecha_cierre=turno.fecha_cierre,
         estado=turno.estado,
         total_inicial=float(turno.total_inicial),
-        total_final=float(turno.total_final),
-        ventas_efectivo=float(turno.ventas_efectivo),
-        propinas_efectivo=float(turno.propinas_efectivo),
+        total_final=float(turno.total_final) if turno.total_final is not None else None,
+        ventas_efectivo=float(turno.ventas_efectivo) if turno.ventas_efectivo is not None else None,
+        propinas_efectivo=float(turno.propinas_efectivo)
+        if turno.propinas_efectivo is not None
+        else None,
         diferencia=_get_turno_diferencia(turno),
         observaciones=turno.observaciones,
         denominaciones_iniciales=denominaciones_iniciales,
         denominaciones_finales=denominaciones_finales,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+        cerrado_automatico=turno.cerrado_automatico,
     )
 
 
@@ -564,6 +580,7 @@ def listar_turnos(
                 denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
                 usuario_nombre=turno.usuario.nombre if turno.usuario else None,
                 sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+                cerrado_automatico=turno.cerrado_automatico,
             )
         )
 
@@ -630,6 +647,7 @@ def obtener_turno(
         denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+        cerrado_automatico=turno.cerrado_automatico,
     )
 
 
@@ -777,6 +795,7 @@ def editar_turno(
         denominaciones_finales=denominaciones_finales if denominaciones_finales else None,
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
+        cerrado_automatico=turno.cerrado_automatico,
     )
 
 
