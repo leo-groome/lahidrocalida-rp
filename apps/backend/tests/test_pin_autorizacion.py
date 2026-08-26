@@ -92,7 +92,9 @@ def test_cajero_borrar_articulo_con_pin_de_admin_funciona(como_rol, seed, db_ses
     assert r.json()["articulos_pedido"] == []
 
 
-def test_cajero_borra_articulo_de_pedido_no_pendiente_con_pin(como_rol, seed, db_session, admin_pin):
+def test_cajero_borra_articulo_de_pedido_no_pendiente_con_pin(
+    como_rol, seed, db_session, admin_pin
+):
     """A diferencia del mesero, cajero/admin no tienen la restricción de
     estado 'pendiente' — solo necesitan el PIN."""
     pedido, articulo = _crear_pedido_con_articulo(db_session, seed)
@@ -109,7 +111,9 @@ def test_cajero_borra_articulo_de_pedido_no_pendiente_con_pin(como_rol, seed, db
     assert r.status_code == 200
 
 
-def test_cajero_borrar_articulo_con_pin_incorrecto_es_rechazado(como_rol, seed, db_session, admin_pin):
+def test_cajero_borrar_articulo_con_pin_incorrecto_es_rechazado(
+    como_rol, seed, db_session, admin_pin
+):
     pedido, articulo = _crear_pedido_con_articulo(db_session, seed)
 
     r = como_rol("cajero").put(
