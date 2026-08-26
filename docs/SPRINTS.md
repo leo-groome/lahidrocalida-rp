@@ -333,9 +333,7 @@ eliminar el efecto secundario de import de `websocket_manager.py:297` y, con él
 - 2.7: `articulos_pedido.client_request_id` pasó de `String(36)` a `String(72)` porque cada
   fila ahora guarda `"<client_request_id>:<índice>"` (un batch de `agregar-articulos` comparte
   un client_request_id pero puede traer varios artículos). Migración `799190d9c93b`.
-- 2.8/2.9 solo tienen tests manuales de humo (build, type-check, dev server) — no hay suite de
-  tests de frontend en el proyecto todavía; la lógica de cola offline y acuse no se probó con
-  un corte de red real en navegador.
+- 2.8/2.9 verificados manualmente en navegador (2026-08-25): cola offline de mesero probada con corte de red (Network Offline) y persistencia/reanudación tras reload; acuse de KDS y alerta visual (>60s) verificados bajo Slow 3G (banner disparado correctamente). Suite de tests backend pasando 80 tests + 4 tests de Redis contra docker-compose, type-check y build de frontend limpios.
 - Deuda heredada, explícitamente fuera de alcance: `pedidos.py` mezcla endpoints `async def`
   con queries síncronas de SQLAlchemy (psycopg2), lo que puede retrasar el drenado de la cola
   de eventos bajo carga alta compartiendo el mismo event loop. Migrar a AsyncSession/asyncpg es
