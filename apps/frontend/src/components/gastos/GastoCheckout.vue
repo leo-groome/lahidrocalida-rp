@@ -117,14 +117,19 @@
           </div>
           <p v-else class="text-center py-6 text-xs font-bold text-slate-300">Aún no agregas artículos.</p>
 
-          <div class="flex items-center justify-between px-1">
+          <div class="flex items-center justify-between px-1 gap-2">
             <div>
               <p class="text-[10px] font-black tracking-widest text-slate-400 uppercase">Suma</p>
               <p class="text-lg font-black text-slate-900">${{ fmt(suma) }}</p>
             </div>
-            <button type="button" @click="openAdd" class="px-5 py-3 bg-[#00126D] text-white rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all">
-              <Plus class="w-4 h-4" /> Agregar artículo
-            </button>
+            <div class="flex items-center gap-2">
+              <button type="button" @click="showTexto = true" class="px-5 py-3 bg-indigo-50 text-indigo-600 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all">
+                <Sparkles class="w-4 h-4" /> Texto rápido
+              </button>
+              <button type="button" @click="openAdd" class="px-5 py-3 bg-[#00126D] text-white rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 transition-all">
+                <Plus class="w-4 h-4" /> Agregar artículo
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -280,6 +285,26 @@
       </div>
     </div>
 
+    <!-- ══ Sub-modal: captura rápida de artículos por texto ══ -->
+    <div v-if="showTexto" class="fixed inset-0 z-[160] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
+      <div class="bg-white w-full sm:max-w-md rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col max-h-[90vh] animate-in">
+        <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <h3 class="text-lg font-black text-slate-900">Texto rápido</h3>
+          <button type="button" @click="showTexto = false" class="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 text-slate-400 hover:bg-slate-900 hover:text-white transition-all">
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+        <div class="overflow-y-auto">
+          <CompraTextoQuickAdd
+            :articulos="articulos"
+            :categorias="categorias"
+            @agregar-detalles="onAgregarDetallesTexto"
+            @articulo-creado="onArticuloCreadoTexto"
+          />
+        </div>
+      </div>
+    </div>
+
     <!-- ══ Sub-modal: agregar / editar empleado (nómina) ══ -->
     <div v-if="showAddEmp" class="fixed inset-0 z-[160] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
       <div class="bg-white w-full sm:max-w-md rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col max-h-[90vh] animate-in">
@@ -320,7 +345,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
-import { Plus, Trash2, Pencil, X } from 'lucide-vue-next'
+import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
+import { Plus, Trash2, Pencil, X, Sparkles } from 'lucide-vue-next'
 
 const emit = defineEmits<{ saved: [] }>()
 
@@ -339,7 +365,9 @@ const tipoGasto = ref<string | null>(null)
 const proveedorId = ref<number | null>(null)
 const proveedores = ref<any[]>([])
 const articulos = ref<any[]>([])
+const categorias = ref<any[]>([])
 const empleados = ref<any[]>([])
+const showTexto = ref(false)
 
 const detalles = ref<any[]>([])
 const nominaLineas = ref<any[]>([]) // { usuario_id, monto, notas }
@@ -459,6 +487,14 @@ function confirmAdd() {
 }
 function removeLinea(idx: number) { detalles.value.splice(idx, 1) }
 
+function onAgregarDetallesTexto(nuevasLineas: any[]) {
+  detalles.value.push(...nuevasLineas)
+  showTexto.value = false
+}
+function onArticuloCreadoTexto(articulosActualizados: any[]) {
+  articulos.value = articulosActualizados
+}
+
 // ── tanda nómina ──
 function openAddEmp() {
   empEditIdx.value = null
@@ -522,14 +558,16 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    const [provs, arts, emps] = await Promise.all([
+    const [provs, arts, emps, cats] = await Promise.all([
       api.get('/gastos/proveedores'),
       api.get('/gastos/articulos'),
       api.get('/gastos/empleados'),
+      api.get('/gastos/categorias-articulo'),
     ])
     proveedores.value = provs.data
     articulos.value = arts.data
     empleados.value = emps.data
+    categorias.value = cats.data
   } catch { /* ignore */ }
 })
 </script>

@@ -2,6 +2,8 @@
  * utilidades para manejo de fechas y horas en La Hidrocálida
  */
 
+export const TIMEZONE = 'America/Mexico_City';
+
 /**
  * Parsea una cadena de fecha de forma segura, manejando formatos ISO con espacios
  * Ej: "2026-02-05 22:10:23.245896+00" -> Date object
@@ -11,7 +13,7 @@ export const parseSafeDate = (dateStr: any): Date | null => {
   
   try {
     // Si la fecha ya es un objeto Date
-    if (dateStr instanceof Date) return dateStr;
+    if (dateStr instanceof Date) return isNaN(dateStr.getTime()) ? null : dateStr;
 
     // Si es una cadena en formato YYYY-MM-DD (solo fecha), parsear localmente
     // para evitar el desplazamiento de zona horaria (UTC vs Local)
@@ -43,41 +45,89 @@ export const parseSafeDate = (dateStr: any): Date | null => {
 };
 
 /**
- * Formatea una fecha a HH:mm (24h o 12h según configuración regional es-MX)
+ * Formatea una fecha a HH:mm en la zona horaria del restaurante (America/Mexico_City)
  */
-export const formatTime = (dateStr: string | null | undefined): string => {
+export const formatTime = (dateStr: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions): string => {
   const date = parseSafeDate(dateStr);
   if (!date) return '--:--';
   
   return date.toLocaleTimeString('es-MX', {
+    timeZone: TIMEZONE,
     hour: '2-digit',
     minute: '2-digit',
-    hour12: true
+    ...options
   });
 };
 
 /**
- * Formatea una fecha a DD/MM/YYYY HH:mm
+ * Formatea una fecha a DD/MM/YYYY HH:mm en la zona horaria del restaurante (America/Mexico_City)
  */
-export const formatDateTime = (dateStr: string | null | undefined): string => {
+export const formatDateTime = (dateStr: string | Date | null | undefined): string => {
   const date = parseSafeDate(dateStr);
   if (!date) return '--:--';
   
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('es-MX', {
+    timeZone: TIMEZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  return formatter.format(date).replace(',', '');
+};
+
+/**
+ * Formatea una fecha a formato corto con fecha y hora (ej: "26 ago, 12:15")
+ */
+export const formatDateTimeShort = (dateStr: string | Date | null | undefined): string => {
+  const date = parseSafeDate(dateStr);
+  if (!date) return '--:--';
   
-  const day = pad(date.getDate());
-  const month = pad(date.getMonth() + 1);
-  const year = date.getFullYear();
-  const hours = pad(date.getHours());
-  const minutes = pad(date.getMinutes());
+  return date.toLocaleString('es-MX', {
+    timeZone: TIMEZONE,
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+/**
+ * Formatea una fecha a "DD MMM YYYY" (ej: "26 ago 2026")
+ */
+export const formatDate = (dateStr: string | Date | null | undefined): string => {
+  const date = parseSafeDate(dateStr);
+  if (!date) return '--/--/----';
   
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  return date.toLocaleDateString('es-MX', {
+    timeZone: TIMEZONE,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+};
+
+/**
+ * Formatea una fecha a "Día, D de Mes" (ej: "miércoles, 26 de ago")
+ */
+export const formatDetailedDate = (dateStr: string | Date | null | undefined): string => {
+  const date = parseSafeDate(dateStr);
+  if (!date) return '';
+  
+  return date.toLocaleDateString('es-MX', {
+    timeZone: TIMEZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short'
+  });
 };
 
 /**
  * Calcula minutos transcurridos desde una fecha hasta ahora
  */
-export const getMinutesElapsed = (dateStr: string | null | undefined): number => {
+export const getMinutesElapsed = (dateStr: string | Date | null | undefined): number => {
   const date = parseSafeDate(dateStr);
   if (!date) return 0;
   
@@ -89,7 +139,7 @@ export const getMinutesElapsed = (dateStr: string | null | undefined): number =>
 /**
  * Formatea tiempo transcurrido (mm:ss o hh:mm)
  */
-export const formatElapsed = (dateStr: string | null | undefined): string => {
+export const formatElapsed = (dateStr: string | Date | null | undefined): string => {
   const date = parseSafeDate(dateStr);
   if (!date) return '0s';
   
@@ -111,3 +161,4 @@ export const formatElapsed = (dateStr: string | null | undefined): string => {
     return `${seconds}s`;
   }
 };
+

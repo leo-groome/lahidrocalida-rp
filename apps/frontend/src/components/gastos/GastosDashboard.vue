@@ -327,7 +327,7 @@ const lineChartData = computed(() => {
   return {
     labels: timeline.map((t) => {
       const date = parseSafeDate(t.fecha)
-      return date ? date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).toUpperCase() : ''
+      return date ? date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'short' }).toUpperCase() : ''
     }),
     datasets: [{
       label: 'Gasto Diario',

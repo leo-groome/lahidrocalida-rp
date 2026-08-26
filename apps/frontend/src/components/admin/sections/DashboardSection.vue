@@ -463,7 +463,7 @@ const chartData = computed(() => {
   const timeline = analyticsData.value.timeline
   const labels = timeline.map((d: any) => {
     const date = parseSafeDate(d.fecha)
-    return date ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''
+    return date ? date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'short' }) : ''
   })
   
   return {

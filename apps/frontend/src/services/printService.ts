@@ -187,7 +187,7 @@ class PrintService {
    * Genera HTML para impresión con window.print()
    */
   private generatePrintHTML(ticketData: PrintTicketData): string {
-    const fecha = new Date().toLocaleString('es-MX')
+    const fecha = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' })
     
     return `
       <!DOCTYPE html>

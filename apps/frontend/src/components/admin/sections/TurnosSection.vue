@@ -117,6 +117,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { api } from '@/api/client'
 import type { Turno } from '@/types'
 import { EstadoTurno } from '@/constants/estados'
+import { formatDateTimeShort as formatDateTime } from '@/utils/dateUtils'
 
 const turnos = ref<Turno[]>([])
 const loading = ref(false)
@@ -129,13 +130,6 @@ function getDateStr(daysAgo: number): string {
 
 const fechaInicio = ref(getDateStr(7))
 const fechaFin = ref(getDateStr(0))
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('es-MX', {
-    month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
 
 function discrepanciaClass(diferencia: number | null): string {
   if (diferencia === null) return 'bg-slate-50'
