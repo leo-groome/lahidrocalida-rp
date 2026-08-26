@@ -10,7 +10,12 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.rate_limit import client_ip, clear_pin_success, enforce_pin_rate_limit, register_pin_failure
+from app.core.rate_limit import (
+    clear_pin_success,
+    client_ip,
+    enforce_pin_rate_limit,
+    register_pin_failure,
+)
 from app.db.session import get_db
 from app.models import Usuario
 from app.services.jornada import reconciliar_jornada

@@ -23,7 +23,11 @@ from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
-from app.auth import get_current_active_user, get_optional_current_user, get_password_hash  # noqa: E402
+from app.auth import (  # noqa: E402
+    get_current_active_user,
+    get_optional_current_user,
+    get_password_hash,
+)
 from app.core import cache as cache_module  # noqa: E402
 from app.core.rate_limit import login_limiter  # noqa: E402
 from app.db.session import get_db  # noqa: E402
