@@ -384,11 +384,12 @@ export const usePedidosStore = defineStore('pedidos', () => {
   }
 
   async function updatePedidoEstado(
-    pedidoId: number, 
-    nuevoEstado: string, 
-    metodoPago?: string, 
-    propinaEfectivo?: number, 
-    propinaTarjeta?: number
+    pedidoId: number,
+    nuevoEstado: string,
+    metodoPago?: string,
+    propinaEfectivo?: number,
+    propinaTarjeta?: number,
+    opts?: { pinAutorizacion?: string; throwOnError?: boolean }
   ): Promise<boolean> {
     // NO poner loading = true para updates individuales
     error.value = null
@@ -404,19 +405,25 @@ export const usePedidosStore = defineStore('pedidos', () => {
       if (propinaTarjeta !== undefined) {
         updateData.propina_tarjeta = propinaTarjeta
       }
+      if (opts?.pinAutorizacion !== undefined) {
+        updateData.pin_autorizacion = opts.pinAutorizacion
+      }
 
       const { data } = await api.put<PedidoResponse>(`/pedidos/${pedidoId}`, updateData)
       console.log(`✅ Estado actualizado via REST: #${data.numero_display} → ${nuevoEstado}`)
-      
+
       // El WebSocket debería notificar automáticamente
       if (!wsConnected.value) {
         handlePedidoEstadoChanged(pedidoId, nuevoEstado, data)
       }
-      
+
       return true
     } catch (e: any) {
       error.value = e?.response?.data?.detail || 'Error actualizando pedido'
       console.error('❌ Error actualizando pedido:', e)
+      // Acciones con PIN (cancelar cuenta) necesitan distinguir "PIN inválido"
+      // (401/400, reintentable) de otros errores — el caller decide con try/catch.
+      if (opts?.throwOnError) throw e
       return false
     }
     // NO hay finally que ponga loading = false

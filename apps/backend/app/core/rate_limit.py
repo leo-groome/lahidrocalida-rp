@@ -240,3 +240,41 @@ async def clear_login_failures(keys: list[str]) -> None:
     for key in keys:
         if key.startswith("user:"):
             await login_limiter.clear(key)
+
+
+# Mismo limiter subyacente que el login (comparte Redis/memoria), pero con
+# prefijo de clave distinto: `verificar_pin_admin` protege un PIN de 4
+# dígitos usado para autorizar acciones desde una sesión YA autenticada
+# (cancelar cuenta, borrar artículo, editar propina, ver analíticas) — sin
+# este límite, cualquier mesero/cajero con JWT válido podría probar los
+# 10 000 PIN posibles sin fricción, ya que ese endpoint no pasa por
+# `enforce_login_rate_limit` (que solo cubre los flujos de login).
+async def enforce_pin_rate_limit(request: Request, identity: str) -> list[str]:
+    """Lanza 429 si la IP o la cuenta que intenta el PIN agotaron su presupuesto.
+
+    Se limita por IP y por la cuenta que ESTÁ INTENTANDO el PIN (no por el
+    admin objetivo, que ni siquiera se conoce hasta hacer match) — así rotar
+    de sesión mesero/cajero no da presupuesto extra.
+    """
+    keys = [f"pin-ip:{client_ip(request)}", f"pin-user:{identity}"]
+    for key in keys:
+        delay = await login_limiter.retry_after(key)
+        if delay:
+            logger.warning("Rate limit de PIN de administrador agotado: clave=%s", key)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Demasiados intentos de PIN incorrectos. Espera antes de reintentar.",
+                headers={"Retry-After": str(delay)},
+            )
+    return keys
+
+
+async def register_pin_failure(keys: list[str]) -> None:
+    for key in keys:
+        await login_limiter.register_failure(key)
+
+
+async def clear_pin_success(keys: list[str]) -> None:
+    for key in keys:
+        if key.startswith("pin-user:"):
+            await login_limiter.clear(key)

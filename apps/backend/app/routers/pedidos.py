@@ -5,18 +5,18 @@ from decimal import Decimal
 from typing import List, Optional
 
 import requests
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import Integer as SAInteger
 from sqlalchemy import cast, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.auth import get_current_active_user, get_optional_current_user
+from app.auth import get_current_active_user, get_optional_current_user, verificar_pin_admin
 from app.db.session import get_db
 from app.deps import require_roles
 from app.domain.estados import EstadoPedido, transicion_permitida
 from app.events import WsEvent, enqueue_event
-from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
+from app.models import ArticuloPedido, AutorizacionPin, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
     AgregarArticulosRequest,
     ArticuloPedidoUpdate,
@@ -883,6 +883,7 @@ async def dividir_por_montos(
 async def update_pedido(
     pedido_id: int,
     data: PedidoUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_active_user),
 ):
@@ -912,6 +913,13 @@ async def update_pedido(
     old_propina_tarjeta = pedido.propina_tarjeta
     old_metodo_pago = pedido.metodo_pago
 
+    # Sin cajero fijo, la sesión de caja la usa cualquier mesero de confianza:
+    # cancelar una cuenta o editar la propina de un ticket ya pagado exige PIN
+    # de un administrador activo, sin importar el rol de la sesión (incluido
+    # el propio administrador, que también debe reconfirmar).
+    admin_autorizador: Optional[Usuario] = None
+    accion_autorizada: Optional[str] = None
+
     if pedido.estado != data.estado:
         # Máquina de estados real: valida origen (pedido.estado) y destino
         # (data.estado) según el rol, no solo el destino como antes de S2. Un
@@ -925,15 +933,20 @@ async def update_pedido(
                     f"'{pedido.estado}' a '{data.estado}'"
                 ),
             )
+        if data.estado == EstadoPedido.CANCELADO:
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
+            accion_autorizada = "cancelar_cuenta"
     else:
         # Mismo estado: actualización de metadatos/propinas.
-        # Si el pedido es terminal (pagado), solo administrador puede modificarlo.
+        # Si el pedido es terminal (pagado), requiere PIN de administrador
+        # (antes: bloqueado por completo salvo rol administrador).
         if pedido.estado == EstadoPedido.PAGADO:
-            if current_user.rol != "administrador":
-                raise HTTPException(
-                    status_code=403,
-                    detail="Solo administradores pueden modificar pedidos pagados",
-                )
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
+            accion_autorizada = "editar_propina"
         elif pedido.estado in {EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO}:
             raise HTTPException(
                 status_code=403,
@@ -979,6 +992,16 @@ async def update_pedido(
         pedido.propina_efectivo = data.propina_efectivo
     if data.propina_tarjeta is not None:
         pedido.propina_tarjeta = data.propina_tarjeta
+
+    if admin_autorizador is not None:
+        db.add(
+            AutorizacionPin(
+                accion=accion_autorizada,
+                ejecutado_por_id=current_user.id,
+                autorizado_por_id=admin_autorizador.id,
+                pedido_id=pedido.id,
+            )
+        )
 
     db.commit()
     db.refresh(pedido)
@@ -1399,6 +1422,7 @@ async def agregar_articulos_pedido(
 async def actualizar_articulos_pedido(
     pedido_id: int,
     data: dict,  # {"articulos": [{"id": int, "cantidad": int, "modificaciones": str}]}
+    request: Request,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("mesero", "administrador", "cajero")),
 ):
@@ -1425,6 +1449,27 @@ async def actualizar_articulos_pedido(
     # Validar estructura de data
     if "articulos" not in data or not isinstance(data["articulos"], list):
         raise HTTPException(status_code=400, detail="Se requiere campo 'articulos' como lista")
+
+    # Borrar un artículo (cantidad=0): dos caminos según de dónde viene la
+    # request. Desde la tablet del propio mesero (MeseroView) solo se permite
+    # mientras el pedido sigue 'pendiente' — sin PIN, es su propio pedido
+    # recién tomado. Desde caja (cajero/administrador editando una mesa) no
+    # hay esa restricción de estado, pero sí exige PIN de un administrador
+    # activo — ahí es donde de verdad se necesita el control, porque no hay
+    # cajero fijo y cualquier mesero puede estar usando esa sesión.
+    hay_eliminaciones = any(a.get("cantidad") == 0 for a in data["articulos"])
+    admin_autorizador = None
+    if hay_eliminaciones:
+        if current_user.rol == "mesero":
+            if pedido.estado != EstadoPedido.PENDIENTE:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Solo se pueden borrar artículos de un pedido pendiente",
+                )
+        else:
+            admin_autorizador = await verificar_pin_admin(
+                db, data.get("pin_autorizacion"), request, current_user
+            )
 
     # Obtener artículos actuales del pedido
     articulos_actuales = {a.id: a for a in pedido.articulos_pedido}
@@ -1471,6 +1516,16 @@ async def actualizar_articulos_pedido(
 
     # Actualizar total del pedido
     pedido.total = nuevo_total
+
+    if admin_autorizador is not None:
+        db.add(
+            AutorizacionPin(
+                accion="borrar_articulo",
+                ejecutado_por_id=current_user.id,
+                autorizado_por_id=admin_autorizador.id,
+                pedido_id=pedido.id,
+            )
+        )
 
     # Commit cambios
     db.commit()

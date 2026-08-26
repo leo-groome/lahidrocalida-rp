@@ -1,26 +1,27 @@
 <template>
-  <div class="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+  <div class="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 backdrop-blur-sm">
     <div class="bg-white rounded-2xl p-8 w-full max-w-sm mx-4 shadow-2xl">
       <!-- Header -->
       <div class="text-center mb-6 flex flex-col items-center">
-        <div v-if="userName" class="text-xl font-black text-[#00126D] mb-2">{{ userName }}</div>
-        
+        <div v-if="titulo" class="text-xl font-black text-[#00126D] mb-2">{{ titulo }}</div>
+        <div v-else-if="userName" class="text-xl font-black text-[#00126D] mb-2">{{ userName }}</div>
+
         <!-- Status indicator badge -->
-        <div v-if="tieneTurnoActivo !== undefined" class="inline-flex items-center justify-center mb-4">
-          <span 
-            v-if="tieneTurnoActivo === true" 
+        <div v-if="!titulo && tieneTurnoActivo !== undefined" class="inline-flex items-center justify-center mb-4">
+          <span
+            v-if="tieneTurnoActivo === true"
             class="px-3.5 py-1 rounded-full text-xs font-black bg-rose-100 text-rose-600 border border-rose-200 animate-pulse shadow-sm"
           >
             🔴 CERRAR TURNO / SALIDA
           </span>
-          <span 
-            v-else-if="tieneTurnoActivo === false" 
+          <span
+            v-else-if="tieneTurnoActivo === false"
             class="px-3.5 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-600 border border-emerald-200 shadow-sm"
           >
             🟢 INICIAR TURNO / ENTRADA
           </span>
-          <span 
-            v-else 
+          <span
+            v-else
             class="px-3.5 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-400 border border-slate-200 animate-pulse shadow-sm"
           >
             Cargando estado...
@@ -28,7 +29,8 @@
         </div>
 
         <p class="text-sm text-slate-500 font-semibold tracking-wide">
-          <template v-if="tieneTurnoActivo === true">
+          <template v-if="mensaje">{{ mensaje }}</template>
+          <template v-else-if="tieneTurnoActivo === true">
             Ingresa tu NIP para registrar tu salida
           </template>
           <template v-else-if="tieneTurnoActivo === false">
@@ -88,6 +90,8 @@ import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   userName?: string
+  titulo?: string
+  mensaje?: string
   error?: string | null
   loading?: boolean
   maxDigits?: number

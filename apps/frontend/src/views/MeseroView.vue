@@ -1182,12 +1182,16 @@ const irAAgregarMasArticulos = () => {
   pedidoConfigurado.value = true
 }
 
+// Borrar un artículo solo se permite con el pedido en estado 'pendiente'
+// (gateado por esPedidoPendiente arriba) — sin PIN: es la tablet del propio
+// mesero, no la caja compartida. El PIN de administrador para borrar
+// artículos vive en CajaView (editar mesa desde caja), no aquí.
 const guardarCambiosPedido = async () => {
   if (!esPedidoPendiente.value || !pedidoActual.value) return
-  
+
   loading.value = true
   error.value = ''
-  
+
   try {
     // Mapear TODOS los artículos editables - INCLUIR eliminados con cantidad 0
     const articulosActualizados = articulosEditables.value
@@ -1196,14 +1200,14 @@ const guardarCambiosPedido = async () => {
         cantidad: articulo.cantidad, // Puede ser 0 para eliminar
         modificaciones: articulo.modificaciones?.trim() || '' // Limpiar espacios
       }))
-    
+
     console.log('📡 Enviando artículos al backend:', articulosActualizados)
-    
+
     // Llamar al endpoint para actualizar el pedido
     const response = await api.put(`/pedidos/${pedidoActual.value.id}/actualizar-articulos`, {
       articulos: articulosActualizados
     })
-    
+
     if (response.status === 200) {
       showSuccessNotification(`Pedido #${pedidoActual.value.numero_display} actualizado`)
       
