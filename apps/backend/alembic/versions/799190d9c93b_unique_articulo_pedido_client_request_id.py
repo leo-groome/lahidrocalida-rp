@@ -32,6 +32,25 @@ def upgrade() -> None:
         type_=sa.String(length=72),
         existing_nullable=True,
     )
+    # 2. Backfill de datos históricos: antes de S2, agregar_articulos guardaba el mismo
+    # client_request_id (UUID plano) en todas las filas del batch. Para que la unicidad
+    # no truene sobre datos existentes, añadimos :<índice> a los duplicados históricos.
+    op.execute(
+        sa.text("""
+            WITH numbered AS (
+                SELECT id, client_request_id,
+                       ROW_NUMBER() OVER (PARTITION BY pedido_id, client_request_id ORDER BY id) - 1 AS idx,
+                       COUNT(*) OVER (PARTITION BY pedido_id, client_request_id) AS cnt
+                FROM articulos_pedido
+                WHERE client_request_id IS NOT NULL
+            )
+            UPDATE articulos_pedido ap
+            SET client_request_id = numbered.client_request_id || ':' || numbered.idx
+            FROM numbered
+            WHERE ap.id = numbered.id AND numbered.cnt > 1 AND numbered.client_request_id NOT LIKE '%:%';
+        """)
+    )
+
     op.create_unique_constraint(
         "uq_articulo_pedido_client_request_id",
         "articulos_pedido",
