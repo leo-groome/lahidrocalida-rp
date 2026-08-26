@@ -1725,6 +1725,20 @@ const cargarTurnoActivo = async () => {
   }
 }
 
+const avisarAnomaliasAsistencia = async () => {
+  try {
+    const { data } = await api.get('/asistencia/anomalias/resumen')
+    if (data.pendientes > 0) {
+      showErrorNotification(
+        `Aviso: ${data.pendientes} registro(s) de asistencia de una jornada anterior esperan revisión de un administrador.`
+      )
+    }
+  } catch (e) {
+    // No bloquear el flujo de turno si este aviso falla — es informativo.
+    console.warn('No se pudo consultar anomalías de asistencia:', e)
+  }
+}
+
 const manejarClickTurno = async () => {
   if (tieneTurnoActivo.value) {
     modalTipo.value = 'cierre'
@@ -1732,6 +1746,7 @@ const manejarClickTurno = async () => {
   } else {
     modalTipo.value = 'inicio'
     reporteTurno.value = null
+    await avisarAnomaliasAsistencia()
   }
   showTurnoModal.value = true
 }
@@ -1775,6 +1790,9 @@ const cerrarTurno = async (conteoFinal: any) => {
 
     await cargarTurnoActivo()
     showTurnoModal.value = false
+    // El backend ya reconcilió jornadas anteriores al cerrar (nunca fuerza el
+    // cierre de asistencias vigentes de hoy) — solo informamos si quedó algo.
+    await avisarAnomaliasAsistencia()
   } catch (error: any) {
     console.error('Error cerrando turno:', error)
     showErrorNotification(error.response?.data?.detail || 'Error al cerrar turno')

@@ -24,7 +24,13 @@ __all__ = [
     "EstadoTurno",
     "TRANSICIONES_PEDIDO",
     "transicion_permitida",
+    "MAX_HORAS_JORNADA",
 ]
+
+# Tope duro de horas por jornada — usado por reconciliar_jornada (S3) y como
+# recorte defensivo en cualquier cálculo de horas trabajadas, para que un
+# registro corrupto (o sin cerrar por días) no infle nómina.
+MAX_HORAS_JORNADA = 16
 
 
 class EstadoPedido(StrEnum):

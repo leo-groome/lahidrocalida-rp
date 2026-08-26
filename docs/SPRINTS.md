@@ -23,7 +23,7 @@ Estados: ⚪ pendiente · 🔵 en curso · 🟢 cerrado · 🔴 bloqueado · ⏭
 | **S0** | Migración de infraestructura (Koyeb→Railway, Neon nueva instancia) | — | M | 🟢 cerrado | — | 2026-08-24 |
 | **S1** | Fundaciones: Alembic, `deps.py`, `estados.py`, seguridad crítica | 0 + críticos 6 | M | 🟢 cerrado | `v2/sprint-1-fundaciones` | 2026-08-25 |
 | **S2** | Fiabilidad de pedidos | 1 | L | 🟢 cerrado | `v2/sprint-2-pedidos` | 2026-08-25 |
-| **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | ⚪ | `v2/sprint-3-jornada` | — |
+| **S3** | Jornada: sesiones y corte unificado | 8 + 9 | L | 🔵 | `v2/sprint-3-jornada` | — |
 | **S4** | Tiempos y métricas de cocina | 2 | M | ⚪ | `v2/sprint-4-tiempos` | — |
 | **S5** | Aprobaciones, visibilidad de métricas, IVA | 4 + 5 + 7 | L | ⚪ | `v2/sprint-5-control` | — |
 | **S6** | Inventario | 3 | XL | ⚪ | `v2/sprint-6-inventario` | — |
@@ -344,30 +344,48 @@ eliminar el efecto secundario de import de `websocket_manager.py:297` y, con él
 
 ## S3 — Jornada: sesiones y corte unificado
 
-**Estado:** ⚪ pendiente · **Rama:** `v2/sprint-3-jornada` · **Depende de:** S1
+**Estado:** 🔵 en curso (3.1–3.10 implementadas, falta verificación manual en navegador y PR) ·
+**Rama:** `v2/sprint-3-jornada` · **Depende de:** S1
 
 **Objetivo:** que las sesiones mueran en el corte de jornada y que nada quede abierto
 indefinidamente. Cubre los Bloques 8 y 9. **Es lo que hoy corrompe la nómina cada semana.**
 
 | # | Tarea | Bloque | Estado |
 |---|---|---|---|
-| 3.1 | `jornada_de(ts)` en `utils/timezone.py`; jornada 05:00→05:00, corte a la 1:00 AM | 8.1 | ⚪ |
-| 3.2 | JWT lleva `jornada`; `get_current_user` la compara contra la actual → 401. Sin cron, sin blacklist | 8.2 | ⚪ |
-| 3.3 | `Usuario.sesiones_validas_desde` para revocación selectiva | 8.4 | ⚪ |
-| 3.4 | `reconciliar_jornada(db, sucursal_id)` idempotente, disparo perezoso desde la dependencia de auth y puntos de entrada | 9.1 | ⚪ |
-| 3.5 | Check-in explícito, no interruptor: un registro abierto de jornada anterior nunca se lee como salida | 9.2 | ⚪ |
-| 3.6 | `MAX_HORAS_JORNADA` (16 h) como tope duro | 9.2 | ⚪ |
-| 3.7 | No inventar horas: `cierre_automatico`, `requiere_revision`, `fecha_salida_estimada`; fuera de nómina hasta que un admin fije la hora | 9.3 | ⚪ |
-| 3.8 | Turno de caja `cerrado_automatico` con `total_final`/`diferencia` en NULL | 9.4 | ⚪ |
-| 3.9 | `GET /asistencia/anomalias` + marcar los registros basura existentes en la migración (no borrarlos) | 9.5 | ⚪ |
-| 3.10 | Cola de revisión en `RecursosHumanosSection.vue`; aviso al abrir turno; cerrar asistencias al cerrar turno | 9.2/9.3 | ⚪ |
+| 3.1 | `jornada_de(ts)` en `utils/timezone.py`; jornada 05:00→05:00, corte a la 1:00 AM | 8.1 | 🟢 — más `rango_jornada()` y `to_mexico_aware()` (normaliza naive→México, necesario porque SQLite no preserva tzinfo en los tests) |
+| 3.2 | JWT lleva `jornada`; `get_current_user` la compara contra la actual → 401. Sin cron, sin blacklist | 8.2 | 🟢 — helper único `_resolve_user_from_token` (antes duplicado en `get_current_user`/`get_optional_current_user`); token sin claim `jornada` (legado pre-S3) se acepta, no fuerza re-login masivo |
+| 3.3 | `Usuario.sesiones_validas_desde` para revocación selectiva | 8.4 | 🟢 — comparación contra `iat` del JWT en el mismo helper |
+| 3.4 | `reconciliar_jornada(db, sucursal_id)` idempotente, disparo perezoso desde la dependencia de auth y puntos de entrada | 9.1 | 🟢 — `app/services/jornada.py`; se dispara desde `get_current_user`, los 3 logins y `iniciar_turno` |
+| 3.5 | Check-in explícito, no interruptor: un registro abierto de jornada anterior nunca se lee como salida | 9.2 | 🟢 — `with_for_update()` + índice único parcial (`WHERE fecha_salida IS NULL AND cierre_automatico = false`, migración) cierran la carrera; huérfanos ya reconciliados no cuentan como "abierto" |
+| 3.6 | `MAX_HORAS_JORNADA` (16 h) como tope duro | 9.2 | 🟢 — `domain/estados.py`; aplicado como recorte defensivo en `/auth/asistencia` y `/asistencia/resumen` |
+| 3.7 | No inventar horas: `cierre_automatico`, `requiere_revision`, `fecha_salida_estimada`; fuera de nómina hasta que un admin fije la hora | 9.3 | 🟢 — `resumen_asistencia` excluye `requiere_revision` del cómputo de horas |
+| 3.8 | Turno de caja `cerrado_automatico` con `total_final`/`diferencia` en NULL | 9.4 | 🟢 — de paso se pagó la deuda de S0: `turnos.diferencia` **ya existía** en el schema real (mirror de prod), el ORM nunca la mapeaba; ahora `cerrar_turno` la persiste de verdad |
+| 3.9 | `GET /asistencia/anomalias` + marcar los registros basura existentes en la migración (no borrarlos) | 9.5 | 🟢 — admin-only; backfill en la migración marca huérfanos preexistentes con `requiere_revision`/`cierre_automatico`, sin borrar ni inventar `fecha_salida` |
+| 3.10 | Cola de revisión en `RecursosHumanosSection.vue`; aviso al abrir turno; cerrar asistencias al cerrar turno | 9.2/9.3 | 🟢 — tab "Anomalías" con confirmación de hora real; aviso en `CajaView` vía `GET /asistencia/anomalias/resumen` (endpoint ligero, accesible a staff, sin nombres/horas) al abrir y al cerrar turno; cerrar turno **no** fuerza cierre de asistencias vigentes de hoy (confirmado con Leo: caja puede cerrar antes de que el personal de piso termine) |
 
-**Detalle a no perder:** `POST /auth/asistencia` (`routers/auth.py:114-118`) tampoco tiene lock —
-dos requests simultáneos con el mismo `usuario_id` pueden crear dos entradas abiertas. Se arregla
+**Detalle a no perder:** `POST /auth/asistencia` (`routers/auth.py:114-118`) tampoco tenía lock —
+dos requests simultáneos con el mismo `usuario_id` podían crear dos entradas abiertas. Resuelto
 junto con 3.5.
 
+**Endpoint no listado originalmente, agregado por necesidad de 3.9/3.10:**
+`PATCH /asistencia/{id}/confirmar-salida` (admin-only) — fija la hora real de salida y limpia
+`requiere_revision`, conservando `cierre_automatico` como histórico.
+
+**Decisiones tomadas durante la implementación (confirmadas con Leo):**
+- `Turno.diferencia` se agregó como columna mapeada en esta migración (ver 3.8).
+- Tokens JWT legado sin claim `jornada` se tratan como válidos — no se fuerza re-login masivo al desplegar.
+- `GET /asistencia/anomalias` queda admin-only; el aviso a cajero usa `GET /asistencia/anomalias/resumen` (solo conteo, sin detalle).
+- Cerrar turno no fuerza cierre de asistencias vigentes — solo dispara `reconciliar_jornada` (barre huérfanos de jornadas *anteriores*) y avisa si algo quedó pendiente de revisión.
+
+### Verificación pendiente antes de cerrar
+- [ ] Prueba manual en navegador: cruzar el corte de jornada con datos reales (mover `fecha_entrada`/`fecha_apertura` en DB) y confirmar aviso + cola de revisión en piso.
+- [ ] `pnpm build` + `vue-tsc -b` ya verificados en esta sesión — limpios.
+- [ ] Suite backend: 105 passed, 4 skipped (Redis, precondición ya documentada en S2) — verificado en esta sesión.
+- [ ] Migración `baca83828037` verificada ida y vuelta contra Postgres local (`docker compose`) — limpia.
+- [ ] PR y revisión antes de mergear a `main`.
+
 ### Notas de cierre
-*(pendiente)*
+*(pendiente — se completa al cerrar el sprint)*
 
 ---
 

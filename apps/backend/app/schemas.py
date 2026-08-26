@@ -408,6 +408,7 @@ class TurnoResponse(BaseModel):
     denominaciones_finales: Optional[List[DenominacionBase]] = None
     usuario_nombre: Optional[str] = None
     sucursal_nombre: Optional[str] = None
+    cerrado_automatico: bool = False
 
     class Config:
         from_attributes = True
@@ -425,6 +426,10 @@ class AsistenciaPinRequest(BaseModel):
     notas: Optional[str] = None
 
 
+class ConfirmarSalidaRequest(BaseModel):
+    fecha_salida: datetime
+
+
 class RegistroAsistenciaResponse(BaseModel):
     id: int
     usuario_id: int
@@ -433,6 +438,9 @@ class RegistroAsistenciaResponse(BaseModel):
     notas: Optional[str] = None
     usuario_nombre: Optional[str] = None
     horas_trabajadas: Optional[float] = None
+    cierre_automatico: bool = False
+    requiere_revision: bool = False
+    fecha_salida_estimada: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -452,3 +460,11 @@ class AsistenciaResumenResponse(BaseModel):
     fecha_inicio: datetime
     fecha_fin: datetime
     empleados: List[AsistenciaResumenItem]
+
+
+class AsistenciaAnomaliasResumen(BaseModel):
+    """Resumen ligero para el aviso al cajero al abrir turno — sin detalle
+    (nombres/horas) que solo debe ver un admin."""
+
+    sucursal_id: int
+    pendientes: int

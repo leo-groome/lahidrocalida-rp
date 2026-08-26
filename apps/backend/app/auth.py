@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.models import Usuario
+from app.services.jornada import reconciliar_jornada
+from app.utils.timezone import get_mexico_now, jornada_de
 
 # Configuración para hash de contraseñas
 # Usamos argon2 como esquema principal (sin límite de 72 bytes),
@@ -53,14 +55,27 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Crea un token JWT"""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    """Crea un token JWT.
 
-    to_encode.update({"exp": expire})
+    Lleva `jornada` (día de jornada operativa al momento del login, ISO date)
+    e `iat` — ambos usados en `_decode_token` para cortar la sesión en el
+    corte de jornada (S3.2) y para revocación selectiva (S3.3), sin cron ni
+    blacklist: se comparan contra el estado actual en cada request.
+    """
+    to_encode = data.copy()
+    now = datetime.utcnow()
+    if expires_delta:
+        expire = now + expires_delta
+    else:
+        expire = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": now,
+            "jornada": jornada_de(get_mexico_now()).isoformat(),
+        }
+    )
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -81,6 +96,41 @@ def authenticate_user(db: Session, user_id: str, password: str) -> Optional[Usua
     return user
 
 
+def _resolve_user_from_token(token: str, db: Session) -> Optional[Usuario]:
+    """Decodifica el JWT y resuelve el `Usuario`, o `None` si el token no es
+    válido por cualquier motivo: firma/formato, usuario inexistente, jornada
+    del token distinta de la jornada actual (S3.2 — sin cron ni blacklist,
+    solo comparación en vivo), o sesión revocada selectivamente vía
+    `sesiones_validas_desde` (S3.3).
+
+    Un token SIN claim `jornada` (emitido antes de S3) se trata como válido
+    en cuanto a jornada — no se fuerza re-login masivo al desplegar.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+    usuario_id = payload.get("sub")
+    if usuario_id is None:
+        return None
+
+    user = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    if user is None:
+        return None
+
+    jornada_token = payload.get("jornada")
+    if jornada_token is not None and jornada_token != jornada_de(get_mexico_now()).isoformat():
+        return None
+
+    iat = payload.get("iat")
+    if user.sesiones_validas_desde is not None and iat is not None:
+        if iat < user.sesiones_validas_desde.timestamp():
+            return None
+
+    return user
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)
 ) -> Usuario:
@@ -91,18 +141,12 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    try:
-        token = credentials.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        usuario_id: int = payload.get("sub")
-        if usuario_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    user = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+    user = _resolve_user_from_token(credentials.credentials, db)
     if user is None:
         raise credentials_exception
+
+    if user.sucursal_id is not None:
+        reconciliar_jornada(db, user.sucursal_id)
 
     return user
 
@@ -114,16 +158,8 @@ def get_optional_current_user(
     """Retorna el usuario autenticado o None si no hay token (para endpoints públicos como KDS)."""
     if credentials is None:
         return None
-    try:
-        token = credentials.credentials
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        usuario_id: int = payload.get("sub")
-        if usuario_id is None:
-            return None
-        user = db.query(Usuario).filter(Usuario.id == usuario_id).first()
-        return user if user and user.activo else None
-    except JWTError:
-        return None
+    user = _resolve_user_from_token(credentials.credentials, db)
+    return user if user and user.activo else None
 
 
 def get_current_active_user(current_user: Usuario = Depends(get_current_user)) -> Usuario:

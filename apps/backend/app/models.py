@@ -49,6 +49,9 @@ class Usuario(Base):
     pin = Column(String(255), nullable=False)  # Hash del NIP (admins usan password como NIP)
     activo = Column(Boolean, default=True)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
+    # Revocación selectiva de sesiones: un JWT con `iat` anterior a este valor
+    # se rechaza en get_current_user, aunque no haya expirado todavía.
+    sesiones_validas_desde = Column(DateTime(timezone=True), nullable=True)
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="usuarios")
@@ -267,7 +270,12 @@ class Turno(Base):
     total_final = Column(DECIMAL(10, 2))
     ventas_efectivo = Column(DECIMAL(10, 2))
     propinas_efectivo = Column(DECIMAL(10, 2))
+    diferencia = Column(DECIMAL(10, 2), nullable=True)
     observaciones = Column(Text)
+    # True cuando reconciliar_jornada cerró este turno por quedar abierto de
+    # una jornada anterior — en ese caso total_final/diferencia quedan NULL,
+    # nunca se inventan cifras de caja.
+    cerrado_automatico = Column(Boolean, nullable=False, default=False, server_default="false")
 
     # Relaciones
     sucursal = relationship("Sucursal")
@@ -323,6 +331,15 @@ class RegistroAsistencia(Base):
     fecha_entrada = Column(DateTime(timezone=True), nullable=False, default=get_local_datetime)
     fecha_salida = Column(DateTime(timezone=True), nullable=True)
     notas = Column(Text, nullable=True)
+    # True cuando reconciliar_jornada cerró este registro por quedar abierto
+    # de una jornada anterior (nunca lo hace el toggle de /auth/asistencia).
+    cierre_automatico = Column(Boolean, nullable=False, default=False, server_default="false")
+    # True mientras un admin no confirme la hora real de salida vía
+    # PATCH /asistencia/{id}/confirmar-salida — mientras tanto, fuera de nómina.
+    requiere_revision = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Estimado por reconciliar_jornada (entrada + MAX_HORAS_JORNADA, acotado al
+    # fin de la jornada de entrada). Nunca se usa como fecha_salida real.
+    fecha_salida_estimada = Column(DateTime(timezone=True), nullable=True)
 
     # Relaciones
     usuario = relationship("Usuario", back_populates="registros_asistencia")

@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -16,6 +17,7 @@ from app.core.rate_limit import (
     register_login_failure,
 )
 from app.db.session import get_db
+from app.domain.estados import MAX_HORAS_JORNADA
 from app.models import RegistroAsistencia, Usuario
 from app.schemas import (
     AdminLogin,
@@ -25,7 +27,8 @@ from app.schemas import (
     UsuarioLogin,
     UsuarioResponse,
 )
-from app.utils.timezone import get_mexico_now
+from app.services.jornada import reconciliar_jornada
+from app.utils.timezone import get_mexico_now, jornada_de
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
@@ -50,6 +53,8 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     await clear_login_failures(rl_keys)
+    if user.sucursal_id is not None:
+        reconciliar_jornada(db, user.sucursal_id)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -82,6 +87,8 @@ async def login_simple(request: Request, user_data: UsuarioLogin, db: Session = 
         )
 
     await clear_login_failures(rl_keys)
+    if user.sucursal_id is not None:
+        reconciliar_jornada(db, user.sucursal_id)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -109,6 +116,8 @@ async def login_admin(request: Request, user_data: AdminLogin, db: Session = Dep
         )
 
     await clear_login_failures(rl_keys)
+    if user.sucursal_id is not None:
+        reconciliar_jornada(db, user.sucursal_id)
     access_token = create_access_token(data={"sub": str(user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -144,40 +153,70 @@ async def registrar_asistencia(
 
     await clear_login_failures(rl_keys)
 
-    # Buscar registro abierto (sin fecha_salida)
+    ahora = get_mexico_now()
+    jornada_actual = jornada_de(ahora)
+
+    # Registro realmente abierto de HOY: excluye tanto los ya cerrados como
+    # los huérfanos de una jornada anterior que reconciliar_jornada marcó con
+    # cierre_automatico=True (fecha_salida sigue NULL a propósito ahí — no se
+    # inventa la hora real — pero ya no cuentan como "abierto" para este
+    # toggle: eso es lo que respeta el índice único parcial de la migración).
+    # `with_for_update()` cierra la carrera de dos clock-out simultáneos.
     registro_abierto = (
         db.query(RegistroAsistencia)
         .filter(
             RegistroAsistencia.usuario_id == data.usuario_id,
-            RegistroAsistencia.fecha_salida == None,
+            RegistroAsistencia.fecha_salida.is_(None),
+            RegistroAsistencia.cierre_automatico.is_(False),
         )
+        .with_for_update()
         .first()
     )
 
-    if registro_abierto:
+    if registro_abierto and jornada_de(registro_abierto.fecha_entrada) == jornada_actual:
         # Clock-Out
-        registro_abierto.fecha_salida = get_mexico_now()
+        registro_abierto.fecha_salida = ahora
         if data.notas:
             registro_abierto.notas = data.notas
         db.commit()
         db.refresh(registro_abierto)
         registro = registro_abierto
     else:
-        # Clock-In
+        # Clock-In. Si `registro_abierto` existe pero es de otra jornada, se
+        # ignora para este toggle (nunca se lee como salida de hoy).
         registro = RegistroAsistencia(
             usuario_id=data.usuario_id,
-            fecha_entrada=get_mexico_now(),
+            fecha_entrada=ahora,
             notas=data.notas,
         )
         db.add(registro)
-        db.commit()
-        db.refresh(registro)
+        try:
+            db.commit()
+        except IntegrityError:
+            # Carrera: otro request ganó la inserción del check-in de hoy
+            # (índice único parcial de la migración). Se resuelve al estado
+            # actual en vez de fallar la request.
+            db.rollback()
+            registro = (
+                db.query(RegistroAsistencia)
+                .filter(
+                    RegistroAsistencia.usuario_id == data.usuario_id,
+                    RegistroAsistencia.fecha_salida.is_(None),
+                    RegistroAsistencia.cierre_automatico.is_(False),
+                )
+                .order_by(RegistroAsistencia.fecha_entrada.desc())
+                .first()
+            )
+            if registro is None:
+                raise
+        else:
+            db.refresh(registro)
 
-    # Calcular horas trabajadas si hay salida
+    # Calcular horas trabajadas si hay salida, con tope defensivo de MAX_HORAS_JORNADA
     horas = None
     if registro.fecha_salida:
         delta = registro.fecha_salida - registro.fecha_entrada
-        horas = round(delta.total_seconds() / 3600, 2)
+        horas = round(min(delta.total_seconds() / 3600, MAX_HORAS_JORNADA), 2)
 
     return RegistroAsistenciaResponse(
         id=registro.id,
@@ -217,7 +256,9 @@ async def check_asistencia_status(usuario_id: int, db: Session = Depends(get_db)
     registro_abierto = (
         db.query(RegistroAsistencia)
         .filter(
-            RegistroAsistencia.usuario_id == usuario_id, RegistroAsistencia.fecha_salida == None
+            RegistroAsistencia.usuario_id == usuario_id,
+            RegistroAsistencia.fecha_salida.is_(None),
+            RegistroAsistencia.cierre_automatico.is_(False),
         )
         .first()
     )

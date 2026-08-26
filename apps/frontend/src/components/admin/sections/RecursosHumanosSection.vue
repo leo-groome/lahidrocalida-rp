@@ -7,7 +7,27 @@
         <p class="text-sm text-slate-500 mt-0.5">Horas trabajadas y registro de asistencia por empleado</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 ml-auto">
+      <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+        <button
+          @click="activeTab = 'resumen'"
+          class="px-4 py-1.5 text-xs font-bold rounded-lg transition-colors"
+          :class="activeTab === 'resumen' ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+        >
+          Resumen
+        </button>
+        <button
+          @click="activeTab = 'anomalias'; loadAnomalias()"
+          class="px-4 py-1.5 text-xs font-bold rounded-lg transition-colors relative"
+          :class="activeTab === 'anomalias' ? 'bg-white text-[#00126D] shadow-sm' : 'text-slate-500 hover:text-slate-700'"
+        >
+          Anomalías
+          <span v-if="anomalias.length > 0" class="ml-1.5 inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-amber-500 text-white text-[10px] font-black">
+            {{ anomalias.length }}
+          </span>
+        </button>
+      </div>
+
+      <div v-if="activeTab === 'resumen'" class="flex flex-wrap items-center gap-3 ml-auto">
         <!-- Quick range buttons -->
         <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
           <button
@@ -46,6 +66,7 @@
       </div>
     </div>
 
+    <template v-if="activeTab === 'resumen'">
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-16">
       <div class="w-8 h-8 border-4 border-slate-200 border-t-[#00126D] rounded-full animate-spin"/>
@@ -130,6 +151,62 @@
               <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Últ. Salida</p>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+    </template>
+
+    <!-- Tab Anomalías -->
+    <div v-if="activeTab === 'anomalias'" class="space-y-4">
+      <div v-if="loadingAnomalias" class="flex items-center justify-center py-16">
+        <div class="w-8 h-8 border-4 border-slate-200 border-t-[#00126D] rounded-full animate-spin"/>
+      </div>
+
+      <div v-else-if="errorAnomalias" class="p-4 bg-red-50 border border-red-200 rounded-2xl">
+        <p class="text-red-600 text-sm font-medium">{{ errorAnomalias }}</p>
+      </div>
+
+      <div v-else-if="anomalias.length === 0" class="text-center py-16 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+        <p class="text-slate-400 font-medium">Sin registros pendientes de revisión</p>
+      </div>
+
+      <div v-else class="border border-slate-100 rounded-2xl overflow-hidden bg-white">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-100">
+                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Empleado</th>
+                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Entrada</th>
+                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Salida estimada</th>
+                <th class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide text-right">Confirmar salida</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-50">
+              <tr v-for="reg in anomalias" :key="reg.id" class="hover:bg-slate-50/50 transition-colors">
+                <td class="px-4 py-3 text-sm font-bold text-slate-700">{{ reg.usuario_nombre }}</td>
+                <td class="px-4 py-3 text-sm text-slate-600 font-medium">{{ formatDetailedDate(reg.fecha_entrada) }} {{ formatTime(reg.fecha_entrada) }}</td>
+                <td class="px-4 py-3 text-sm text-amber-700 font-medium">
+                  {{ reg.fecha_salida_estimada ? `${formatDetailedDate(reg.fecha_salida_estimada)} ${formatTime(reg.fecha_salida_estimada)}` : '—' }}
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <div class="flex items-center justify-end gap-2">
+                    <input
+                      v-model="confirmaciones[reg.id]"
+                      type="datetime-local"
+                      class="px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00126D]/20 focus:border-[#00126D]"
+                    />
+                    <button
+                      @click="confirmarSalida(reg.id)"
+                      :disabled="!confirmaciones[reg.id]"
+                      class="px-3 py-1.5 bg-[#00126D] text-white text-xs font-bold rounded-lg hover:bg-[#001a8f] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Confirmar
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -274,6 +351,17 @@ interface AsistenciaResumen {
   empleados: AsistenciaEmpleado[]
 }
 
+interface RegistroAnomalia {
+  id: number
+  usuario_id: number
+  usuario_nombre: string | null
+  fecha_entrada: string
+  fecha_salida: string | null
+  fecha_salida_estimada: string | null
+  cierre_automatico: boolean
+  requiere_revision: boolean
+}
+
 const COLORS = [
   'bg-blue-500', 'bg-emerald-500', 'bg-violet-500',
   'bg-amber-500', 'bg-rose-500', 'bg-cyan-500',
@@ -321,6 +409,39 @@ const quickRanges = [
   { label: 'Semana pasada', getInicio: () => getDateStr(13), getFin: () => getDateStr(7) },
   { label: 'Este mes', getInicio: getFirstOfMonth, getFin: () => getDateStr(0) },
 ]
+
+const activeTab = ref<'resumen' | 'anomalias'>('resumen')
+const anomalias = ref<RegistroAnomalia[]>([])
+const loadingAnomalias = ref(false)
+const errorAnomalias = ref<string | null>(null)
+const confirmaciones = ref<Record<number, string>>({})
+
+async function loadAnomalias() {
+  loadingAnomalias.value = true
+  errorAnomalias.value = null
+  try {
+    const { data } = await api.get('/asistencia/anomalias')
+    anomalias.value = data
+  } catch (e: any) {
+    errorAnomalias.value = e?.response?.data?.detail || 'Error al cargar anomalías'
+  } finally {
+    loadingAnomalias.value = false
+  }
+}
+
+async function confirmarSalida(registroId: number) {
+  const valor = confirmaciones.value[registroId]
+  if (!valor) return
+  try {
+    await api.patch(`/asistencia/${registroId}/confirmar-salida`, {
+      fecha_salida: new Date(valor).toISOString(),
+    })
+    delete confirmaciones.value[registroId]
+    await loadAnomalias()
+  } catch (e: any) {
+    errorAnomalias.value = e?.response?.data?.detail || 'Error al confirmar la salida'
+  }
+}
 
 const currentRoleFilter = ref('todos')
 const fechaInicio = ref(getMondayStr())
@@ -396,6 +517,9 @@ async function loadResumen() {
   }
 }
 
-onMounted(loadResumen)
+onMounted(() => {
+  loadResumen()
+  loadAnomalias()
+})
 onActivated(loadResumen)
 </script>
