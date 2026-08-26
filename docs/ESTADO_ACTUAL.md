@@ -1,6 +1,6 @@
 # La Hidrocálida POS — Estado actual del sistema
 
-**Última revisión:** 2026-08-25 · rama `v2/sprint-2-pedidos` · **Sprint 1 "Fundaciones" completo** (1.1–1.9 en 🟢) y **Sprint 2 "Fiabilidad de pedidos" completo** (2.1–2.10 en 🟢, ver detalle y notas de cierre en [SPRINTS.md](./SPRINTS.md)). Deuda pendiente para triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`; `pedidos.py` mezcla endpoints `async def` con queries síncronas de SQLAlchemy (migración a AsyncSession/asyncpg, fuera de alcance de S2).
+**Última revisión:** 2026-08-25 · rama `v2/sprint-3-jornada` · **Sprint 1 "Fundaciones" (🟢), Sprint 2 "Fiabilidad de pedidos" (🟢) y Sprint 3 "Jornada y sesiones" (🟢) completos** (ver detalle y notas de cierre en [SPRINTS.md](./SPRINTS.md)). Deuda pendiente para triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`; `pedidos.py` mezcla endpoints `async def` con queries síncronas de SQLAlchemy (migración a AsyncSession/asyncpg, fuera de alcance de S2).
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
 a construir está en [PLAN_V2.md](./PLAN_V2.md), y el avance por sprints en
@@ -245,7 +245,7 @@ silencio para no bloquear el cobro. Cola con reintentos (máx. 5).
 | DB | Neon Cloud (AWS us-east-2) | Activo — instancia nueva, migrada de Azure el 2026-08-24 (S0) |
 | Redis | Railway | En uso desde S2 — fan-out de eventos WS entre workers y backend del rate limiter de login |
 | Migraciones | Alembic (1 baseline colapsado, head `1af66464b276`) en `apps/backend/alembic/` | Completas |
-| Tests | pytest — 80 tests (backend), sin suite de tests en frontend todavía | `apps/backend/tests/` |
+| Tests | pytest — 108 tests (backend), sin suite de tests en frontend todavía | `apps/backend/tests/` |
 | CI/CD backend | GitHub Actions `backend-ci.yml` | ✅ Activo — ruff + pytest en cada push a `apps/backend/**` |
 | CI/CD frontend | GitHub Actions `frontend-ci.yml` | ✅ Activo — vue-tsc + build en cada push a `apps/frontend/**` |
 | Seguridad | GitHub Actions `security-sast.yml` | ✅ Activo — Gitleaks cada lunes, alerta Telegram |
@@ -275,11 +275,11 @@ query string de los WS).
 | Sin rate limiting en logins | Alta | `routers/auth.py` |
 | Fallback de password en texto plano | Alta | `auth.py:35-38` |
 | JWT de sesión completo en el query string de los `/ws/*` → queda en texto plano en logs de acceso de Railway | Alta | `websocket_routes.py` (hallazgo del 2026-08-24, ver SPRINTS.md) |
-| `models.py` desincronizado del schema real (6 divergencias, la más grave: `turnos.diferencia` se calcula pero nunca se persiste) | Alta | `models.py` — detalle en SPRINTS.md, sección "Hallazgos de 0.1/0.2" |
+| ~~`models.py` desincronizado del schema real (turnos.diferencia)~~ | — | Resuelto en S3 3.8: `turnos.diferencia` mapeada en ORM y persistida en `cerrar_turno` |
 | Secreto de Neon (la instancia vieja, ya apagada) trackeado en el historial de `alembic.ini` | Media | recuperable con `git log -p -- alembic.ini`; sin efecto práctico ya que la credencial está muerta, pero sigue en el historial |
-| Cobertura de tests casi nula | Alta | Todo el proyecto |
-| Check-in por NIP ignora la fecha del registro abierto | Alta | `routers/auth.py:114-128` |
-| Turno sin cerrar bloquea el siguiente y sigue capturando pedidos | Alta | `turnos.py:179-184` |
+| Cobertura de tests casi nula | Alta | Todo el proyecto (mitigado: 108 tests en backend) |
+| ~~Check-in por NIP ignora la fecha del registro abierto~~ | — | Resuelto en S3 3.5: check-in explícito con lock `with_for_update()` e índice único parcial |
+| ~~Turno sin cerrar bloquea el siguiente y sigue capturando pedidos~~ | — | Resuelto en S3 3.4/3.8: `reconciliar_jornada` perezosa + cierre automático |
 | Fechas naive comparadas contra `TIMESTAMPTZ` | Media | `asistencia.py:42-50,127-128` |
 | N+1 en `resumen_asistencia` | Media | `asistencia.py:142-151` |
 | `CajaView.vue` 4 093 líneas · `MeseroView.vue` 2 580 | Media | `views/` |
