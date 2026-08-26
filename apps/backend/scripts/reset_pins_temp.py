@@ -14,6 +14,7 @@ El script lee DATABASE_URL del .env local. Si apunta a Postgres local en vez de 
 pásala manualmente:
     DATABASE_URL="postgresql://..." uv run python scripts/reset_pins_temp.py
 """
+
 import os
 import sys
 

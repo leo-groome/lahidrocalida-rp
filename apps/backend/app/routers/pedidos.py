@@ -661,14 +661,16 @@ async def dividir_cuenta(
         }
 
         if old_estado != pedido.estado:
-            enqueue_event(WsEvent(
-                type="pedido_estado_changed",
-                payload={
-                    "pedido_id": pedido.id,
-                    "nuevo_estado": pedido.estado,
-                    "pedido_data": pedido_original_data,
-                },
-            ))
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": pedido.estado,
+                        "pedido_data": pedido_original_data,
+                    },
+                )
+            )
 
         for cuenta_pedido in cuentas_creadas:
             cuenta_data = {
@@ -833,14 +835,16 @@ async def dividir_por_montos(
         }
 
         if old_estado != pedido.estado:
-            enqueue_event(WsEvent(
-                type="pedido_estado_changed",
-                payload={
-                    "pedido_id": pedido.id,
-                    "nuevo_estado": pedido.estado,
-                    "pedido_data": pedido_original_data,
-                },
-            ))
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": pedido.estado,
+                        "pedido_data": pedido_original_data,
+                    },
+                )
+            )
 
         for cuenta_pedido in cuentas_creadas:
             cuenta_data = {
@@ -994,14 +998,16 @@ async def update_pedido(
                     for a in pedido.articulos_pedido
                 ],
             }
-            enqueue_event(WsEvent(
-                type="pedido_estado_changed",
-                payload={
-                    "pedido_id": pedido.id,
-                    "nuevo_estado": data.estado,
-                    "pedido_data": pedido_data,
-                },
-            ))
+            enqueue_event(
+                WsEvent(
+                    type="pedido_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "nuevo_estado": data.estado,
+                        "pedido_data": pedido_data,
+                    },
+                )
+            )
 
             # Integración automática con servicio de impresión
             if data.estado == "cuenta_solicitada":
@@ -1117,26 +1123,30 @@ async def update_articulo_estado(
             }
 
             # Notificar cambio de artículo
-            enqueue_event(WsEvent(
-                type="articulo_estado_changed",
-                payload={
-                    "pedido_id": pedido.id,
-                    "articulo_id": articulo.id,
-                    "nuevo_estado": data.estado_item,
-                    "pedido_data": pedido_data,
-                },
-            ))
+            enqueue_event(
+                WsEvent(
+                    type="articulo_estado_changed",
+                    payload={
+                        "pedido_id": pedido.id,
+                        "articulo_id": articulo.id,
+                        "nuevo_estado": data.estado_item,
+                        "pedido_data": pedido_data,
+                    },
+                )
+            )
 
             # Si el pedido también cambió de estado, notificar eso también
             if pedido_estado_changed:
-                enqueue_event(WsEvent(
-                    type="pedido_estado_changed",
-                    payload={
-                        "pedido_id": pedido.id,
-                        "nuevo_estado": "listo",
-                        "pedido_data": pedido_data,
-                    },
-                ))
+                enqueue_event(
+                    WsEvent(
+                        type="pedido_estado_changed",
+                        payload={
+                            "pedido_id": pedido.id,
+                            "nuevo_estado": "listo",
+                            "pedido_data": pedido_data,
+                        },
+                    )
+                )
 
         except Exception as e:
             # Log del error pero no fallar la actualización del artículo
@@ -1340,14 +1350,16 @@ async def agregar_articulos_pedido(
 
         # Siempre enviar actualización del pedido completo
         # Esto agrupa los artículos nuevos con los existentes visualmente en lugar de crear un "-A" temporal
-        enqueue_event(WsEvent(
-            type="pedido_estado_changed",
-            payload={
-                "pedido_id": pedido.id,
-                "nuevo_estado": pedido.estado,
-                "pedido_data": pedido_data,
-            },
-        ))
+        enqueue_event(
+            WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_data,
+                },
+            )
+        )
 
     except Exception as e:
         # Log del error pero no fallar la operación
@@ -1466,14 +1478,16 @@ async def actualizar_articulos_pedido(
             ],
         }
 
-        enqueue_event(WsEvent(
-            type="pedido_estado_changed",
-            payload={
-                "pedido_id": pedido.id,
-                "nuevo_estado": pedido.estado,
-                "pedido_data": pedido_data,
-            },
-        ))
+        enqueue_event(
+            WsEvent(
+                type="pedido_estado_changed",
+                payload={
+                    "pedido_id": pedido.id,
+                    "nuevo_estado": pedido.estado,
+                    "pedido_data": pedido_data,
+                },
+            )
+        )
         logger.info("Evento WS encolado: pedido %s actualizado", pedido.id)
 
     except Exception as e:

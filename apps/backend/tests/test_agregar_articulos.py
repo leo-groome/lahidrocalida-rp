@@ -39,9 +39,7 @@ def test_batch_de_varios_articulos_con_mismo_client_request_id_no_colisiona(
         },
     )
     assert r.status_code == 200
-    articulos = (
-        db_session.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
-    )
+    articulos = db_session.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
     assert len(articulos) == 3
     assert {a.client_request_id for a in articulos} == {"batch-1:0", "batch-1:1", "batch-1:2"}
 
@@ -59,9 +57,7 @@ def test_replay_con_mismo_client_request_id_no_duplica(como_rol, seed, db_sessio
     r2 = mesero.put(f"/pedidos/{pedido.id}/agregar-articulos", json=payload)
     assert r2.status_code == 200
 
-    articulos = (
-        db_session.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
-    )
+    articulos = db_session.query(ArticuloPedido).filter(ArticuloPedido.pedido_id == pedido.id).all()
     assert len(articulos) == 1  # no se duplicó
 
 

@@ -40,9 +40,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_articulo_pedido_client_request_id", "articulos_pedido", type_="unique"
-    )
+    op.drop_constraint("uq_articulo_pedido_client_request_id", "articulos_pedido", type_="unique")
     op.alter_column(
         "articulos_pedido",
         "client_request_id",
