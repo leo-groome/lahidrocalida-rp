@@ -16,8 +16,8 @@ from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
-from app.domain.estados import MAX_HORAS_JORNADA, EstadoTurno
-from app.models import RegistroAsistencia, Turno, Usuario
+from app.domain.estados import MAX_HORAS_JORNADA
+from app.models import RegistroAsistencia, Usuario
 from app.utils.timezone import get_mexico_now, jornada_de, rango_jornada, to_mexico_aware
 
 MAX_HORAS_JORNADA_DELTA = timedelta(hours=MAX_HORAS_JORNADA)

@@ -10,7 +10,7 @@ from app.services.jornada import reconciliar_jornada
 from app.utils.timezone import get_mexico_now
 
 
-def test_turno_de_jornada_anterior_se_cierra_marcado(db_session, seed):
+def test_turno_de_jornada_anterior_permanece_abierto(db_session, seed):
     ayer = get_mexico_now() - timedelta(days=2)
     turno = Turno(
         sucursal_id=seed["sucursal"].id,
@@ -25,10 +25,8 @@ def test_turno_de_jornada_anterior_se_cierra_marcado(db_session, seed):
     reconciliar_jornada(db_session, seed["sucursal"].id)
     db_session.refresh(turno)
 
-    assert turno.estado == "cerrado"
-    assert turno.cerrado_automatico is True
-    assert turno.total_final is None
-    assert turno.diferencia is None
+    assert turno.estado == "abierto"
+    assert turno.cerrado_automatico is False
 
 
 def test_turno_de_jornada_actual_no_se_toca(db_session, seed):
