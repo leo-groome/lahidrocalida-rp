@@ -13,6 +13,14 @@
           </div>
         </div>
         <div class="flex items-center gap-3 flex-shrink-0">
+          <button
+            @click="router.push('/rapido')"
+            class="flex items-center gap-2 px-3 sm:px-4 h-10 rounded-2xl bg-[#00126D] text-white text-xs font-black uppercase tracking-widest hover:opacity-90 active:scale-95 transition-all"
+            title="Registro rápido de gastos"
+          >
+            <Zap class="w-4 h-4" />
+            <span class="hidden sm:inline">Registro rápido</span>
+          </button>
           <div class="text-right hidden sm:block">
             <p class="text-sm font-black text-slate-800 leading-none">{{ auth.user?.nombre }}</p>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{{ auth.role }}</p>
@@ -101,7 +109,7 @@ import ArticulosView from '@/components/gastos/ArticulosView.vue'
 import CategoriasView from '@/components/gastos/CategoriasView.vue'
 import GastoFormModal from '@/components/gastos/GastoFormModal.vue'
 import GastoCheckout from '@/components/gastos/GastoCheckout.vue'
-import { ShoppingCart, LogOut, ReceiptText, History, Truck, Package, Tags } from 'lucide-vue-next'
+import { ShoppingCart, LogOut, ReceiptText, History, Truck, Package, Tags, Zap } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const router = useRouter()

@@ -94,6 +94,11 @@
 
     </template>
 
+    <!-- Prompt de instalación PWA (se auto-oculta si ya está instalada o descartada) -->
+    <div class="px-6 pb-4 max-w-xs w-full mx-auto">
+      <InstallPWA />
+    </div>
+
     <!-- Global Floating Button: Registrar Asistencia -->
     <div class="fixed bottom-6 left-0 right-0 flex justify-center pointer-events-none z-50">
       <router-link
@@ -126,6 +131,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/api/client'
 import NipKeypad from '@/components/NipKeypad.vue'
+import InstallPWA from '@/components/InstallPWA.vue'
 
 interface StaffUser {
   id: number

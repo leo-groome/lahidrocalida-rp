@@ -108,3 +108,78 @@ export function parseComprasTexto(textoMultilinea: string): LineaParseada[] {
     .filter((linea) => linea.length > 0)
     .map(parseLineaCompra)
 }
+
+// ── Fila editable en la UI de resolución (texto rápido / registro rápido) ──
+// Es una LineaParseada + el artículo del catálogo al que se resolvió.
+export interface FilaCompra {
+  id: number
+  raw: string
+  nombreArticulo: string
+  cantidad: number | null
+  unidad: UnidadCanonica | null
+  monto: number | null
+  articulo_id: number | null
+  ok: boolean
+  error?: string
+}
+
+let filaSeq = 1
+
+/** Match de un nombre libre contra el catálogo: exacto, luego parcial único. */
+export function buscarArticuloMatch(nombre: string, articulos: { id: number; nombre: string }[]): number | null {
+  const objetivo = normalizar(nombre)
+  if (!objetivo) return null
+  const exacto = articulos.find((a) => normalizar(a.nombre) === objetivo)
+  if (exacto) return exacto.id
+  const parcial = articulos.filter(
+    (a) => normalizar(a.nombre).includes(objetivo) || objetivo.includes(normalizar(a.nombre)),
+  )
+  return parcial.length === 1 ? parcial[0].id : null
+}
+
+/** Texto multilínea + catálogo -> filas listas para editar/resolver. */
+export function construirFilas(
+  textoMultilinea: string,
+  articulos: { id: number; nombre: string }[],
+): FilaCompra[] {
+  return parseComprasTexto(textoMultilinea).map((p) => ({
+    id: filaSeq++,
+    raw: p.raw,
+    nombreArticulo: p.nombreArticulo,
+    cantidad: p.cantidad,
+    unidad: p.unidad ?? 'kg',
+    monto: p.monto,
+    articulo_id: buscarArticuloMatch(p.nombreArticulo, articulos),
+    ok: p.ok,
+    error: p.error,
+  }))
+}
+
+export function precioUnitarioFila(fila: Pick<FilaCompra, 'cantidad' | 'monto'>): number {
+  const cantidad = Number(fila.cantidad) || 0
+  const monto = Number(fila.monto) || 0
+  if (cantidad <= 0) return 0
+  return Math.round((monto / cantidad) * 100) / 100
+}
+
+export function filaLista(fila: FilaCompra): boolean {
+  return !!fila.articulo_id && Number(fila.cantidad) > 0 && Number(fila.monto) > 0
+}
+
+export function filasListas(filas: FilaCompra[]): boolean {
+  return filas.length > 0 && filas.every(filaLista)
+}
+
+/** Filas resueltas -> `detalles[]` del payload de POST /gastos/. */
+export function filasToDetalles(filas: FilaCompra[]) {
+  return filas.map((f) => {
+    const precio_unitario = precioUnitarioFila(f)
+    return {
+      articulo_id: f.articulo_id,
+      cantidad: f.cantidad,
+      precio_unitario,
+      subtotal_linea: Math.round(Number(f.cantidad) * precio_unitario * 100) / 100,
+      _editadoManual: false,
+    }
+  })
+}

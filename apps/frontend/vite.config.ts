@@ -34,12 +34,25 @@ export default defineConfig({
           { src: '/icons/icon-maskable-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
           { src: '/icons/icon-maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        shortcuts: [
+          {
+            name: 'Registrar gasto',
+            short_name: 'Gasto',
+            description: 'Captura rápida de compras por texto',
+            url: '/rapido?src=shortcut',
+            icons: [{ src: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.port === '8000',
+            // La API nunca se cachea: cualquier origen distinto al de la app
+            // (prod: Vercel vs Railway) o rutas de API en dev (mismo host, :8000).
+            urlPattern: ({ url, sameOrigin }) =>
+              !sameOrigin ||
+              /^\/(auth|gastos|pedidos|admin|reportes|turnos|asistencia|users|products|propinas|health|ws)\b/.test(url.pathname),
             handler: 'NetworkOnly',
           },
         ],
