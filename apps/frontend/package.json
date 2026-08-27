@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:analyze": "vite build && echo '🚀 Bundle analysis available at dist/bundle-analysis.html'",
     "preview": "vite preview",
+    "test": "vitest run",
     "bundle-size": "du -sh dist/assets/* | sort -hr"
   },
   "dependencies": {
@@ -34,6 +35,7 @@
     "typescript": "~5.8.3",
     "vite": "^7.1.7",
     "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.1.11",
     "vue-tsc": "^3.0.7"
   }
 }
