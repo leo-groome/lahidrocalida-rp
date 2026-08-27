@@ -24,21 +24,12 @@ MAX_HORAS_JORNADA_DELTA = timedelta(hours=MAX_HORAS_JORNADA)
 
 
 def reconciliar_jornada(db: Session, sucursal_id: int) -> None:
-    """Cierra turnos y asistencias huérfanos de una jornada anterior en `sucursal_id`."""
+    """Reconcilia asistencias huérfanas de una jornada anterior en `sucursal_id`.
+    NOTA: Los turnos de caja NUNCA se cierran automáticamente por jornada;
+    permanecen abiertos hasta que el cajero realice su cierre manual.
+    """
     ahora = get_mexico_now()
     jornada_actual = jornada_de(ahora)
-
-    turno_abierto = (
-        db.query(Turno)
-        .filter(Turno.sucursal_id == sucursal_id, Turno.estado == EstadoTurno.ABIERTO)
-        .first()
-    )
-    if turno_abierto and jornada_de(turno_abierto.fecha_apertura) != jornada_actual:
-        turno_abierto.estado = EstadoTurno.CERRADO
-        turno_abierto.fecha_cierre = ahora
-        turno_abierto.cerrado_automatico = True
-        turno_abierto.total_final = None
-        turno_abierto.diferencia = None
 
     huerfanos = (
         db.query(RegistroAsistencia)

@@ -56,19 +56,21 @@
         />
       </div>
 
-      <!-- Error -->
-      <p v-if="error" class="text-center text-sm text-red-500 font-medium mb-4 -mt-2">
+      <!-- Error / Cooldown Alert -->
+      <div v-if="error" class="text-center text-sm font-bold mb-4 -mt-2 px-3 py-2 rounded-xl transition-all"
+        :class="(cooldownSeconds && cooldownSeconds > 0) ? 'bg-amber-100 text-amber-800 border border-amber-300 animate-pulse' : 'text-red-500 bg-red-50/50'"
+      >
         {{ error }}
-      </p>
+      </div>
 
       <!-- Keypad grid -->
       <div class="grid grid-cols-3 gap-3">
         <button
           v-for="key in keys"
           :key="key.label"
-          :disabled="loading"
+          :disabled="loading || (cooldownSeconds !== undefined && cooldownSeconds > 0)"
           @click="handleKey(key.action)"
-          class="flex items-center justify-center min-h-[64px] rounded-2xl text-2xl font-black transition-all duration-100 select-none disabled:opacity-40"
+          class="flex items-center justify-center min-h-[64px] rounded-2xl text-2xl font-black transition-all duration-100 select-none disabled:opacity-40 disabled:cursor-not-allowed"
           :class="key.variant === 'cancel'
             ? 'bg-red-50 text-red-400 active:bg-red-100'
             : key.variant === 'back'
@@ -96,9 +98,11 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   maxDigits?: number
   tieneTurnoActivo?: boolean | null
+  cooldownSeconds?: number
 }>(), {
   maxDigits: 4,
-  tieneTurnoActivo: undefined
+  tieneTurnoActivo: undefined,
+  cooldownSeconds: 0
 })
 
 const emit = defineEmits<{
@@ -124,7 +128,7 @@ const keys = [
 ]
 
 function handleKey(action: string) {
-  if (props.loading) return
+  if (props.loading || (props.cooldownSeconds ?? 0) > 0) return
   if (action === 'cancel') {
     digits.value = []
     emit('cancel')
@@ -139,7 +143,7 @@ function handleKey(action: string) {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-  if (props.loading) return
+  if (props.loading || (props.cooldownSeconds ?? 0) > 0) return
 
   // Digit keys: '0'-'9' or 'Numpad0'-'Numpad9'
   if (/^[0-9]$/.test(e.key)) {

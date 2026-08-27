@@ -19,9 +19,15 @@ api.interceptors.request.use((config) => {
 })
 
 // Endpoints donde un 401 significa "credencial incorrecta" (login, clock-in
-// por NIP), no "sesión expirada" — ahí NO hay que cerrar sesión ni redirigir,
-// el propio formulario ya maneja el error.
-const RUTAS_401_SIN_LOGOUT = ['/auth/login', '/auth/asistencia']
+// por NIP, verificación de PIN admin), no "sesión expirada" — ahí NO hay que cerrar sesión ni redirigir.
+const RUTAS_401_SIN_LOGOUT = [
+  '/auth/login',
+  '/auth/asistencia',
+  '/auth/verify-admin-pin',
+  '/pedidos',
+  '/gastos',
+  '/turnos'
+]
 
 // Import dinámico (no estático) de la store de auth y el router: ambos
 // importan `api` de este módulo, así que un `import` estático aquí crearía
@@ -31,8 +37,11 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       const url: string = error.config?.url ?? ''
+      const detail: string = String(error.response?.data?.detail || '')
+      const esMensajePin = detail.toLowerCase().includes('pin') || detail.toLowerCase().includes('administrador')
       const esRutaDeCredenciales = RUTAS_401_SIN_LOGOUT.some((ruta) => url.includes(ruta))
-      if (!esRutaDeCredenciales) {
+      
+      if (!esRutaDeCredenciales && !esMensajePin) {
         const [{ useAuthStore }, { router }] = await Promise.all([
           import('../stores/auth'),
           import('../router'),

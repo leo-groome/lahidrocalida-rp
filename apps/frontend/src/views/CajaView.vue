@@ -4117,6 +4117,7 @@ const handleGastoSaved = async () => {
       :titulo="analyticsPin.titulo"
       :mensaje="analyticsPin.mensaje"
       :error="analyticsPin.error.value"
+      :cooldown-seconds="analyticsPin.cooldownSeconds.value"
       @confirm="analyticsPin.onConfirm"
       @cancel="analyticsPin.onCancel"
     />
@@ -4127,6 +4128,7 @@ const handleGastoSaved = async () => {
       :titulo="cancelarPin.titulo"
       :mensaje="cancelarPin.mensaje"
       :error="cancelarPin.error.value"
+      :cooldown-seconds="cancelarPin.cooldownSeconds.value"
       @confirm="cancelarPin.onConfirm"
       @cancel="cancelarPin.onCancel"
     />
@@ -4137,6 +4139,7 @@ const handleGastoSaved = async () => {
       :titulo="borrarArticuloPin.titulo"
       :mensaje="borrarArticuloPin.mensaje"
       :error="borrarArticuloPin.error.value"
+      :cooldown-seconds="borrarArticuloPin.cooldownSeconds.value"
       @confirm="borrarArticuloPin.onConfirm"
       @cancel="borrarArticuloPin.onCancel"
     />
@@ -4147,6 +4150,7 @@ const handleGastoSaved = async () => {
       :titulo="propinaPin.titulo"
       :mensaje="propinaPin.mensaje"
       :error="propinaPin.error.value"
+      :cooldown-seconds="propinaPin.cooldownSeconds.value"
       @confirm="propinaPin.onConfirm"
       @cancel="propinaPin.onCancel"
     />
