@@ -264,9 +264,39 @@ curl http://localhost:3001/health
 12. **Manual beverage delivery (mesero/admin)**: bebidas (Platillo.categoria == `Bebidas`) are NOT auto-delivered; mesero/admin can mark beverage items as `entregado` from Mesero "Ver pedido actual". Caja shows item status read-only.
 13. **Ticket math and metadata**: ticket line items must use unit price (precio_cobrado / cantidad) to avoid inflated totals; include `Mesero`, `Hora llegada` (fecha_creacion), and `Hora salida` (fecha_pago, set when order becomes `pagado`).
 14. **KDS beverage filter**: cocina/KDS must hide Bebidas; if a pedido has only Bebidas it should not appear in KDS.
+15. **Keyboard & Numpad Keybinds**: NIP entry modals (`NipKeypad.vue`) listen to physical keyboard digits (`0-9`, `Numpad0-9`), `Backspace`, `Escape`, `Enter`. POS Payment flow (`CajaView.vue`) supports `E` (Efectivo), `T` (Tarjeta), `R` (Transfer), `D` (Dividir), `Enter` (Confirmar), `Esc` (Cancelar) with UI visual key badges.
 
+---
 
-## 💸 Gestión de Gastos
+## ⌨️ Sistema de Atajos de Teclado (Keybinds y Numpad)
+
+### 1. Entrada de NIP / PIN / Claves (`NipKeypad.vue`)
+Funciona en login, asistencia, turnos y autorizaciones de administrador en Caja.
+- **`0` – `9`** / **`Numpad0` – `Numpad9`**: Ingresar dígitos directamente.
+- **`Backspace` / `Delete`**: Borrar el último dígito.
+- **`Escape` / `C`**: Cancelar / Limpiar NIP.
+- **`Enter` / `NumpadEnter`**: Confirmar clave (si aplica).
+
+### 2. Flujo de Cobro Rápido en Caja (`CajaView.vue`)
+- **Selección de método de pago**:
+  - **`E` / `1`**: Efectivo (Abre calculadora de efectivo con auto-foco).
+  - **`T` / `2`**: Tarjeta (Abre modal de propina).
+  - **`R` / `3`**: Transferencia (Abre modal de propina).
+  - **`D`**: Dividir Cuenta (si aplica).
+  - **`Esc`**: Volver / cerrar modal.
+- **Calculadora de Efectivo**:
+  - Entrada directa de recibido con Numpad.
+  - **`Enter`**: Confirmar pago en efectivo.
+  - **`Esc`**: Cancelar calculadora.
+- **Modal de Propina**:
+  - **`1`**: 5% | **`2`**: 10% | **`3`**: 15% | **`0`**: 0% (Sin propina).
+  - **`Enter`**: Confirmar pago con propina.
+  - **`Esc`**: Cancelar modal.
+- **Navegación General**:
+  - **`F2` / `Ctrl + F`**: Enfocar buscador de pedidos.
+  - **`Esc`**: Desseleccionar pedido activo.
+
+---
 
 **Modelo y flujo:**
 - `Gasto` es cabecera de compra con proveedor, tipo de gasto, método de pago, subtotal/total y `total_manual` opcional.

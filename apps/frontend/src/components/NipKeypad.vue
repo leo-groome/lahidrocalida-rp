@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 
 const props = withDefaults(defineProps<{
   userName?: string
@@ -137,6 +137,56 @@ function handleKey(action: string) {
   if (digits.value.length >= (props.maxDigits ?? 4)) return
   digits.value = [...digits.value, action]
 }
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (props.loading) return
+
+  // Digit keys: '0'-'9' or 'Numpad0'-'Numpad9'
+  if (/^[0-9]$/.test(e.key)) {
+    e.preventDefault()
+    handleKey(e.key)
+    return
+  }
+
+  if (e.code && e.code.startsWith('Numpad') && e.code.length === 7) {
+    const digit = e.code.replace('Numpad', '')
+    if (/^[0-9]$/.test(digit)) {
+      e.preventDefault()
+      handleKey(digit)
+      return
+    }
+  }
+
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    e.preventDefault()
+    handleKey('back')
+    return
+  }
+
+  if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') {
+    e.preventDefault()
+    handleKey('cancel')
+    return
+  }
+
+  if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+    e.preventDefault()
+    if (digits.value.length === (props.maxDigits ?? 4)) {
+      const pin = digits.value.join('')
+      emit('confirm', pin)
+      digits.value = []
+    }
+    return
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 // Auto-confirm when maxDigits reached
 watch(digits, (val) => {

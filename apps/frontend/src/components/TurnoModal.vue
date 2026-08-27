@@ -213,7 +213,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps<{
   tipo: 'inicio' | 'cierre'
@@ -239,6 +239,43 @@ const emit = defineEmits<{
     observaciones?: string
   }]
 }>()
+
+function handleKeyDown(e: KeyboardEvent) {
+  if (showConfirmCero.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      showConfirmCero.value = false
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+      e.preventDefault()
+      confirmarCero()
+      return
+    }
+  }
+
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    emit('cancelar')
+    return
+  }
+
+  // Only handle Enter if user is not actively typing in observations or number inputs
+  if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+    const target = e.target as HTMLElement
+    if (target && target.tagName === 'TEXTAREA') return
+    e.preventDefault()
+    onConfirmClick()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 const denominaciones = [
   { value: 1000, label: '$1,000' },

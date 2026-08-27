@@ -449,13 +449,145 @@ const onGlobalClick = (ev: MouseEvent) => {
   closeEstadoMenu()
 }
 
+function handleGlobalKeyDown(e: KeyboardEvent) {
+  const activeEl = document.activeElement as HTMLElement
+  const isInputOrTextarea = activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)
+
+  // 1. Si modales de NIP o modales auxiliares están abiertos, no interferir
+  if (
+    analyticsPin.isOpen.value ||
+    cancelarPin.isOpen.value ||
+    borrarArticuloPin.isOpen.value ||
+    propinaPin.isOpen.value ||
+    showTurnoModal.value ||
+    showGastoModal.value
+  ) {
+    return
+  }
+
+  // 2. Si la calculadora de efectivo está abierta
+  if (showEfectivoCalculator.value && selectedPedido.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cerrarCalculadoraEfectivo()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+      e.preventDefault()
+      if (!processingPayment.value && cambioCalculado.value >= 0 && efectivoRecibido.value) {
+        confirmarPagoEfectivo()
+      }
+      return
+    }
+    return
+  }
+
+  // 3. Si el modal de propina (Tarjeta/Transferencia) está abierto
+  if (showPropinaTarjetaModal.value && selectedPedido.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cerrarModalPropina()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+      e.preventDefault()
+      if (!processingPayment.value) {
+        confirmarPagoConPropina()
+      }
+      return
+    }
+    if (!isInputOrTextarea) {
+      if (e.key === '1' || e.code === 'Numpad1') {
+        e.preventDefault()
+        aplicarPropinaPorcentaje(5)
+        return
+      }
+      if (e.key === '2' || e.code === 'Numpad2') {
+        e.preventDefault()
+        aplicarPropinaPorcentaje(10)
+        return
+      }
+      if (e.key === '3' || e.code === 'Numpad3') {
+        e.preventDefault()
+        aplicarPropinaPorcentaje(15)
+        return
+      }
+      if (e.key === '0' || e.code === 'Numpad0') {
+        e.preventDefault()
+        propinaTarjeta.value = '0'
+        actualizarTotalConPropina()
+        return
+      }
+    }
+    return
+  }
+
+  // 4. Si hay un pedido seleccionado para cobro
+  if (selectedPedido.value && !processingPayment.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      closeModal()
+      return
+    }
+
+    if (!isInputOrTextarea) {
+      const keyLower = e.key.toLowerCase()
+      // Efectivo: E / e o 1 / Numpad1
+      if (keyLower === 'e' || e.key === '1' || e.code === 'Numpad1') {
+        e.preventDefault()
+        procesarPago(selectedPedido.value, 'efectivo')
+        return
+      }
+      // Tarjeta: T / t o 2 / Numpad2
+      if (keyLower === 't' || e.key === '2' || e.code === 'Numpad2') {
+        e.preventDefault()
+        procesarPago(selectedPedido.value, 'tarjeta')
+        return
+      }
+      // Transferencia: R / r o F / f o 3 / Numpad3
+      if (keyLower === 'r' || keyLower === 'f' || e.key === '3' || e.code === 'Numpad3') {
+        e.preventDefault()
+        procesarPago(selectedPedido.value, 'transferencia')
+        return
+      }
+      // Dividir Cuenta: D / d o S / s
+      if ((keyLower === 'd' || keyLower === 's') && canSplitSelectedPedido.value) {
+        e.preventDefault()
+        openSplitModalForPedido(selectedPedido.value)
+        return
+      }
+    }
+  }
+
+  // 5. Atajos generales de Caja
+  if (e.key === 'Escape') {
+    if (selectedPedido.value) {
+      e.preventDefault()
+      closeModal()
+    }
+    return
+  }
+
+  if (e.key === 'F2' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f')) {
+    e.preventDefault()
+    const searchInput = document.querySelector('input[type="text"]') as HTMLInputElement
+    if (searchInput) {
+      searchInput.focus()
+      searchInput.select()
+    }
+    return
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', onGlobalClick)
+  window.addEventListener('keydown', handleGlobalKeyDown)
 })
 
 onUnmounted(() => {
   console.log('👋 Caja View: Cleanup...')
   document.removeEventListener('click', onGlobalClick)
+  window.removeEventListener('keydown', handleGlobalKeyDown)
   if (timer) {
     clearInterval(timer)
   }
@@ -2968,7 +3100,7 @@ const handleGastoSaved = async () => {
             class="w-full mb-4 py-2.5 px-4 flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 text-sm font-bold rounded-xl border border-amber-200/50 transition-all active:scale-[0.98] disabled:opacity-50"
           >
             <Scissors class="w-4 h-4" />
-            Dividir Cuenta
+            Dividir Cuenta <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-amber-200/80 text-amber-900 rounded font-black ml-1">[D]</kbd>
           </button>
 
           <!-- Métodos de Pago Premium -->
@@ -2982,7 +3114,9 @@ const handleGastoSaved = async () => {
                 <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <Banknote class="w-6 h-6" />
                 </div>
-                <span class="font-bold tracking-wide">EFECTIVO</span>
+                <span class="font-bold tracking-wide flex items-center gap-2">
+                  EFECTIVO <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-white/20 text-white rounded font-black border border-white/30">[E / 1]</kbd>
+                </span>
               </div>
               <ChevronRight class="w-5 h-5 opacity-50 z-10" />
               <div class="absolute right-0 bottom-0 w-24 h-24 bg-white/10 rounded-full translate-x-12 translate-y-12 blur-3xl"></div>
@@ -2995,7 +3129,9 @@ const handleGastoSaved = async () => {
                 class="group flex flex-col items-center justify-center gap-2 p-4 bg-[#00126D] hover:bg-[#000E5A] text-white rounded-xl transition-all shadow-md shadow-blue-200 active:scale-[0.98] disabled:opacity-50"
               >
                 <CreditCard class="w-6 h-6 group-hover:scale-110 transition-transform" />
-                <span class="text-xs font-bold tracking-widest">TARJETA</span>
+                <span class="text-xs font-bold tracking-widest flex items-center gap-1">
+                  TARJETA <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-white/20 text-white rounded font-black border border-white/30">[T / 2]</kbd>
+                </span>
               </button>
               
               <button
@@ -3004,7 +3140,9 @@ const handleGastoSaved = async () => {
                 class="group flex flex-col items-center justify-center gap-2 p-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl transition-all shadow-md shadow-purple-200 active:scale-[0.98] disabled:opacity-50"
               >
                 <Smartphone class="w-6 h-6 group-hover:scale-110 transition-transform" />
-                <span class="text-xs font-bold tracking-widest">TRANSFER</span>
+                <span class="text-xs font-bold tracking-widest flex items-center gap-1">
+                  TRANSFER <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-white/20 text-white rounded font-black border border-white/30">[R / 3]</kbd>
+                </span>
               </button>
             </div>
           </div>
@@ -3013,9 +3151,9 @@ const handleGastoSaved = async () => {
           <button
             @click="closeModal"
             :disabled="processingPayment"
-            class="w-full mt-8 py-3 text-slate-400 hover:text-slate-600 text-sm font-bold transition-colors"
+            class="w-full mt-8 py-3 text-slate-400 hover:text-slate-600 text-sm font-bold transition-colors flex items-center justify-center gap-1"
           >
-            Volver a la caja
+            Volver a la caja <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-slate-200 text-slate-600 rounded font-black ml-1">[Esc]</kbd>
           </button>
         </div>
       </div>
@@ -3132,15 +3270,16 @@ const handleGastoSaved = async () => {
               :disabled="processingPayment || cambioCalculado < 0 || !efectivoRecibido"
               class="w-full py-4 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold text-lg rounded-lg transition-all disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar Pago' }}
+              <span>{{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar Pago' }}</span>
+              <kbd v-if="!processingPayment" class="px-2 py-0.5 text-xs font-mono bg-white/20 text-white rounded font-black border border-white/30">[Enter ↵]</kbd>
             </button>
 
             <button
               @click="cerrarCalculadoraEfectivo"
               :disabled="processingPayment"
-              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              Cancelar
+              Cancelar <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-gray-300 text-gray-700 rounded font-bold">[Esc]</kbd>
             </button>
           </div>
         </div>
@@ -3185,27 +3324,27 @@ const handleGastoSaved = async () => {
 
           <!-- Opciones de porcentaje -->
           <div class="mb-6">
-            <label class="block text-sm font-bold text-gray-700 mb-3">
-              🎯 Selecciona porcentaje de propina
+            <label class="block text-sm font-bold text-gray-700 mb-3 flex justify-between items-center">
+              <span>🎯 Selecciona porcentaje de propina</span>
             </label>
             <div class="grid grid-cols-3 gap-3">
               <button
                 @click="aplicarPropinaPorcentaje(5)"
-                class="py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-lg transition-all hover:scale-105"
+                class="py-3 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-lg transition-all hover:scale-105 flex items-center justify-center gap-1.5"
               >
-                5%
+                5% <kbd class="px-1 py-0.2 text-[10px] font-mono bg-blue-200/80 text-blue-900 rounded font-black">[1]</kbd>
               </button>
               <button
                 @click="aplicarPropinaPorcentaje(10)"
-                class="py-3 bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold rounded-lg transition-all hover:scale-105"
+                class="py-3 bg-blue-200 hover:bg-blue-300 text-blue-800 font-bold rounded-lg transition-all hover:scale-105 flex items-center justify-center gap-1.5"
               >
-                10%
+                10% <kbd class="px-1 py-0.2 text-[10px] font-mono bg-blue-300/80 text-blue-900 rounded font-black">[2]</kbd>
               </button>
               <button
                 @click="aplicarPropinaPorcentaje(15)"
-                class="py-3 bg-blue-300 hover:bg-blue-400 text-blue-900 font-bold rounded-lg transition-all hover:scale-105"
+                class="py-3 bg-blue-300 hover:bg-blue-400 text-blue-900 font-bold rounded-lg transition-all hover:scale-105 flex items-center justify-center gap-1.5"
               >
-                15%
+                15% <kbd class="px-1 py-0.2 text-[10px] font-mono bg-blue-400/80 text-blue-950 rounded font-black">[3]</kbd>
               </button>
             </div>
           </div>
@@ -3247,23 +3386,24 @@ const handleGastoSaved = async () => {
               :disabled="processingPayment"
               class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-lg rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar con Propina' }}
+              <span>{{ processingPayment ? '⏳ Procesando...' : '✅ Confirmar con Propina' }}</span>
+              <kbd v-if="!processingPayment" class="px-2 py-0.5 text-xs font-mono bg-white/20 text-white rounded font-black border border-white/30">[Enter ↵]</kbd>
             </button>
 
             <button
               @click="confirmarPagoSinPropina"
               :disabled="processingPayment"
-              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50"
+              class="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              💳 Pagar sin propina
+              💳 Pagar sin propina <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-gray-300 text-gray-700 rounded font-bold">[0]</kbd>
             </button>
 
             <button
               @click="cerrarModalPropina"
               :disabled="processingPayment"
-              class="w-full py-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-all disabled:opacity-50"
+              class="w-full py-3 bg-red-100 hover:bg-red-200 text-red-700 font-medium rounded-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              Cancelar
+              Cancelar <kbd class="px-1.5 py-0.5 text-[10px] font-mono bg-red-200 text-red-800 rounded font-bold">[Esc]</kbd>
             </button>
           </div>
         </div>
