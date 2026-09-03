@@ -388,3 +388,9 @@ apps/print-service/logs/
 
 # root monorepo
 node_modules/
+
+# Go Print Service — binario y config local (no subir al repo)
+apps/go-print-service/go-print-service.exe
+apps/go-print-service/go-print-service-dev
+apps/go-print-service/config.yaml
+apps/go-print-service/*.log

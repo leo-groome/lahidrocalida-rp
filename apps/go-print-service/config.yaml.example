@@ -1,0 +1,19 @@
+# Configuración del Print Service La Hidrocalida
+# Copiar a config.yaml y editar con los valores correctos (config.yaml está en .gitignore)
+
+printer:
+  # Nombre EXACTO de la impresora como aparece en "Dispositivos e impresoras" de Windows
+  # Ejemplo: "Easytime SP-POS891ED", "Generic / Text Only", "POS-80"
+  name: "Generic / Text Only"
+  timeout_ms: 5000
+
+server:
+  port: 3001
+  host: "localhost"   # Solo acepta conexiones locales por seguridad
+
+dedup:
+  ttl_seconds: 60   # Segundos antes de permitir reimprimir el mismo ticket
+
+log:
+  level: "info"   # debug | info | warn | error
+  file: "print-service.log"

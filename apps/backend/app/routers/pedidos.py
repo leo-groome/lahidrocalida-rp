@@ -61,7 +61,7 @@ async def print_ticket_automatic(pedido_data):
             "numero_display": pedido_data.get("numero_display", "N/A"),
             "mesa": pedido_data.get("mesa"),
             "nombre_cliente": pedido_data.get("nombre_cliente"),
-            "mesero_nombre": None,  # Se puede agregar si se tiene la información
+            "mesero_nombre": pedido_data.get("usuario_nombre"),
             "fecha_llegada": pedido_data.get("fecha_creacion"),
             "fecha_salida": pedido_data.get("fecha_salida"),
             "articulos": [
