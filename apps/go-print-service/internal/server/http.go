@@ -108,9 +108,9 @@ func handleTest(w http.ResponseWriter, r *http.Request) {
 		FechaLlegada:  now.Add(-30 * time.Minute).Format(time.RFC3339),
 		FechaSalida:   now.Format(time.RFC3339),
 		Articulos: []ticket.Articulo{
-			{Nombre: "Pozole Rojo Grande", Cantidad: 2, Precio: 240.00, Modificaciones: "Extra picante, sin oregano"},
+			{Nombre: "Pozole Rojo Grande", Cantidad: 2, Precio: 120.00, Modificaciones: "Extra picante, sin oregano"},
 			{Nombre: "Agua de Horchata", Cantidad: 1, Precio: 35.00},
-			{Nombre: "Tostadas de Tinga", Cantidad: 3, Precio: 84.00, Modificaciones: "Sin crema"},
+			{Nombre: "Tostadas de Tinga", Cantidad: 3, Precio: 28.00, Modificaciones: "Sin crema"},
 		},
 		Total: 359.00,
 	}

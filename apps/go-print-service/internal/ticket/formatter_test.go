@@ -6,8 +6,8 @@ import (
 )
 
 func TestFormat_PrecioUnitarioCorrecto(t *testing.T) {
-	// Bug conocido: precio_cobrado = total de línea (NO precio unitario)
-	// 2 Pozoles a $120 c/u → precio = 240.00 (total de línea)
+	// Contrato: Articulo.Precio = precio unitario
+	// 2 Pozoles a $120 c/u → Precio = 120.00, subtotal de línea = $240.00
 	data := TicketData{
 		NumeroDisplay: "042",
 		Mesa:          "12",
@@ -15,7 +15,7 @@ func TestFormat_PrecioUnitarioCorrecto(t *testing.T) {
 		FechaLlegada:  "2026-09-02T14:30:00",
 		FechaSalida:   "2026-09-02T15:05:00",
 		Articulos: []Articulo{
-			{Nombre: "Pozole Rojo Grande", Cantidad: 2, Precio: 240.00},
+			{Nombre: "Pozole Rojo Grande", Cantidad: 2, Precio: 120.00},
 		},
 		Total: 240.00,
 	}
@@ -28,12 +28,12 @@ func TestFormat_PrecioUnitarioCorrecto(t *testing.T) {
 		t.Errorf("Se esperaba '$120.00 c/u' en el ticket — precio unitario incorrecto\nTicket:\n%s", text)
 	}
 
-	// NO debe mostrar $240.00 c/u (precio inflado del bug anterior)
-	if strings.Contains(text, "$240.00 c/u") {
-		t.Errorf("Ticket muestra precio unitario inflado '$240.00 c/u' — bug no corregido\nTicket:\n%s", text)
+	// NO debe mostrar $60.00 c/u (bug de división doble sobre precio unitario)
+	if strings.Contains(text, "$60.00 c/u") {
+		t.Errorf("Ticket muestra precio unitario dividido erróneamente '$60.00 c/u' — bug no corregido\nTicket:\n%s", text)
 	}
 
-	// Total correcto
+	// Subtotal de línea y total deben mostrar $240.00
 	if !strings.Contains(text, "$240.00") {
 		t.Errorf("El total $240.00 no aparece en el ticket")
 	}
@@ -209,7 +209,7 @@ func TestFormat_MultiplesArticulos_UnidadPlural(t *testing.T) {
 	data := TicketData{
 		NumeroDisplay: "001",
 		Articulos: []Articulo{
-			{Nombre: "Tostada", Cantidad: 3, Precio: 84.00},
+			{Nombre: "Tostada", Cantidad: 3, Precio: 28.00},
 		},
 		Total: 84.00,
 	}
@@ -219,5 +219,11 @@ func TestFormat_MultiplesArticulos_UnidadPlural(t *testing.T) {
 	// 3 unidades → "pzs" (plural)
 	if !strings.Contains(text, "pzs") {
 		t.Errorf("Múltiples artículos deben mostrar 'pzs' (plural)")
+	}
+	if !strings.Contains(text, "$28.00 c/u") {
+		t.Errorf("Precio unitario $28.00 c/u no encontrado en ticket")
+	}
+	if !strings.Contains(text, "$84.00") {
+		t.Errorf("Total de línea $84.00 no encontrado en ticket")
 	}
 }
