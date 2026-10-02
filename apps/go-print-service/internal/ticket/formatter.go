@@ -12,8 +12,8 @@ import (
 
 const maxChars = 48
 
-// TicketData representa los datos del ticket recibidos desde el backend.
-// El campo Precio en Articulo es precio_cobrado (total de línea, NO precio unitario).
+// TicketData representa los datos del ticket recibidos desde el backend o frontend.
+// El campo Precio en Articulo es precio unitario.
 type TicketData struct {
 	NumeroDisplay string     `json:"numero_display"`
 	Mesa          string     `json:"mesa"`
@@ -29,7 +29,7 @@ type TicketData struct {
 type Articulo struct {
 	Nombre         string  `json:"nombre"`
 	Cantidad       int     `json:"cantidad"`
-	Precio         float64 `json:"precio"`         // precio_cobrado = TOTAL de línea
+	Precio         float64 `json:"precio"` // Precio unitario
 	Modificaciones string  `json:"modificaciones"`
 }
 
@@ -123,14 +123,14 @@ func Format(t TicketData) []byte {
 		// Nombre del artículo
 		writeln(truncate(a.Nombre, maxChars))
 
-		// Calcular precio unitario correctamente
-		// precio_cobrado del backend = total de línea (ya incluye cantidad)
+		// Calcular precio unitario y total de línea correctamente
+		// a.Precio es el precio unitario del artículo
 		cantidad := a.Cantidad
 		if cantidad < 1 {
 			cantidad = 1
 		}
-		precioUnitario := a.Precio / float64(cantidad)
-		totalLinea := a.Precio
+		precioUnitario := a.Precio
+		totalLinea := a.Precio * float64(cantidad)
 
 		// Unidad: pza / pzs
 		unidad := "pza"

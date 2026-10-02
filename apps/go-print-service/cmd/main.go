@@ -53,7 +53,12 @@ func main() {
 		Name:        "LaHidrocalidaPrint",
 		DisplayName: "La Hidrocalida Print Service",
 		Description: "Servicio de impresion termica POS — Valta Operative",
-		// Auto-restart en caso de crash: configurable en services.msc
+		// Auto-restart en caso de crash: configurado para Windows y Linux
+		Option: service.KeyValue{
+			"Restart":                "always",  // Linux / Systemd
+			"OnFailure":              "restart", // Windows
+			"OnFailureDelayDuration": "3s",      // Espera de 3s en Windows
+		},
 	}
 
 	prg := &program{cfg: cfg}
