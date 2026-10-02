@@ -39,6 +39,15 @@
           
           <!-- Vertical Separator -->
           <div class="hidden xs:block h-6 sm:h-8 w-px bg-slate-200"></div>
+
+          <button
+            v-if="auth.role === 'administrador'"
+            @click="router.push({ name: 'admin-hub' })"
+            class="flex items-center gap-1 text-slate-400 hover:text-blue-600 font-black text-[10px] uppercase tracking-widest transition-all duration-300"
+          >
+            <Grid2X2 class="w-4 h-4" />
+            <span class="hidden lg:inline">Áreas</span>
+          </button>
           
           <!-- Action Buttons -->
           <button 
@@ -61,7 +70,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { websocketService } from '@/services/websocket'
-import { User, LogOut } from 'lucide-vue-next'
+import { Grid2X2, User, LogOut } from 'lucide-vue-next'
 
 interface Props {
   title: string

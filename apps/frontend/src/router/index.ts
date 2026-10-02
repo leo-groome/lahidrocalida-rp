@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/auth'
 
 const Login = () => import('../views/Login.vue')
 const AdminLogin = () => import('../views/AdminLogin.vue')
+const AdminHub = () => import('../views/AdminHub.vue')
 const ClockInView = () => import('../views/ClockInView.vue')
 const MeseroView = () => import('../views/MeseroView.vue')
 const CajaView = () => import('../views/CajaView.vue')
@@ -19,6 +20,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/caja', name: 'caja', component: CajaView, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },
   { path: '/kds-view', name: 'kds-view', component: KDSView, meta: { public: true } },
   { path: '/kds-manager', name: 'kds-manager', component: KDSManager, meta: { requiresAuth: true, roles: ['cocina', 'administrador'] } },
+  { path: '/admin-hub', name: 'admin-hub', component: AdminHub, meta: { requiresAuth: true, roles: ['administrador'] } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresAuth: true, roles: ['administrador'] } },
   { path: '/compras', name: 'compras', component: ComprasView, meta: { requiresAuth: true, roles: ['compras', 'administrador'] } },
   { path: '/rapido', name: 'registro-rapido', component: RegistroRapidoView, meta: { requiresAuth: true, roles: ['compras', 'administrador', 'cajero'] } },
