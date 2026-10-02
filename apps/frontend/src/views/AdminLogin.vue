@@ -77,7 +77,7 @@ const password = ref('')
 async function onSubmit() {
   await auth.loginAdmin(email.value, password.value)
   if (!auth.error) {
-    router.replace({ name: 'admin' })
+    router.replace({ name: 'admin-hub' })
   }
 }
 </script>

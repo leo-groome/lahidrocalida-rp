@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { isTokenExpired } from '../utils/jwt'
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -10,24 +11,35 @@ const api = axios.create({
 export { api }
 export default api
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem('token')
   if (token) {
+    // El temporizador puede retrasarse mientras una PWA está suspendida. Esta
+    // segunda barrera evita mandar un request con un JWT ya vencido.
+    if (isTokenExpired(token)) {
+      const { useAuthStore } = await import('../stores/auth')
+      useAuthStore().expireSession()
+      return Promise.reject(new axios.CanceledError('Sesión expirada'))
+    }
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
 
-// Endpoints donde un 401 significa "credencial incorrecta" (login, clock-in
-// por NIP, verificación de PIN admin), no "sesión expirada" — ahí NO hay que cerrar sesión ni redirigir.
-const RUTAS_401_SIN_LOGOUT = [
+// Solo estos endpoints usan 401 para indicar credenciales de una acción
+// concreta, no que la sesión actual haya expirado. No incluir prefijos como
+// `/pedidos`: sus operaciones protegidas deben cerrar la sesión ante un 401.
+const RUTAS_401_SIN_LOGOUT = new Set([
   '/auth/login',
+  '/auth/login-simple',
+  '/auth/login-admin',
   '/auth/asistencia',
   '/auth/verify-admin-pin',
-  '/pedidos',
-  '/gastos',
-  '/turnos'
-]
+])
+
+function isCredentialEndpoint(url: string): boolean {
+  return RUTAS_401_SIN_LOGOUT.has(url.split('?')[0])
+}
 
 // Import dinámico (no estático) de la store de auth y el router: ambos
 // importan `api` de este módulo, así que un `import` estático aquí crearía
@@ -37,19 +49,9 @@ api.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       const url: string = error.config?.url ?? ''
-      const detail: string = String(error.response?.data?.detail || '')
-      const esMensajePin = detail.toLowerCase().includes('pin') || detail.toLowerCase().includes('administrador')
-      const esRutaDeCredenciales = RUTAS_401_SIN_LOGOUT.some((ruta) => url.includes(ruta))
-      
-      if (!esRutaDeCredenciales && !esMensajePin) {
-        const [{ useAuthStore }, { router }] = await Promise.all([
-          import('../stores/auth'),
-          import('../router'),
-        ])
-        useAuthStore().logout()
-        if (router.currentRoute.value.name !== 'login') {
-          router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
-        }
+      if (!isCredentialEndpoint(url)) {
+        const { useAuthStore } = await import('../stores/auth')
+        useAuthStore().expireSession()
       }
     }
     return Promise.reject(error)

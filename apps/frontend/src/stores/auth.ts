@@ -1,5 +1,23 @@
 import { defineStore } from 'pinia'
 import { api } from '../api/client'
+import { getSessionExpiration, isTokenExpired } from '../utils/jwt'
+
+const storedToken = localStorage.getItem('token')
+const initialToken = storedToken && !isTokenExpired(storedToken) ? storedToken : null
+if (storedToken && !initialToken) {
+  localStorage.removeItem('token')
+}
+
+let expirationTimer: ReturnType<typeof window.setTimeout> | null = null
+
+function redirectToLogin(): void {
+  void import('../router').then(({ router }) => {
+    const currentRoute = router.currentRoute.value
+    if (!currentRoute.meta.public) {
+      router.replace({ name: 'login', query: { redirect: currentRoute.fullPath } })
+    }
+  })
+}
 
 export type Rol = 'mesero' | 'cajero' | 'cocina' | 'administrador' | 'compras'
 
@@ -20,7 +38,7 @@ interface State {
 
 export const useAuthStore = defineStore('auth', {
   state: (): State => ({
-    token: localStorage.getItem('token'),
+    token: initialToken,
     user: null,
     loading: false,
     error: null,
@@ -35,15 +53,12 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
       try {
         const { data } = await api.post('/auth/login-simple', { user_id, pin })
-        const token: string = data.access_token
-        this.token = token
-        localStorage.setItem('token', token)
+        this.setToken(data.access_token as string)
         await this.fetchMe()
       } catch (e: any) {
         const detail = e?.response?.data?.detail
         this.error = Array.isArray(detail) ? 'Error de validación' : (detail || 'Error de autenticación')
-        this.token = null
-        localStorage.removeItem('token')
+        this.logout()
         throw e
       } finally {
         this.loading = false
@@ -54,21 +69,53 @@ export const useAuthStore = defineStore('auth', {
       this.error = null
       try {
         const { data } = await api.post('/auth/login-admin', { email, password })
-        const token: string = data.access_token
-        this.token = token
-        localStorage.setItem('token', token)
+        this.setToken(data.access_token as string)
         await this.fetchMe()
       } catch (e: any) {
         this.error = e?.response?.data?.detail || 'Credenciales incorrectas'
-        this.token = null
-        localStorage.removeItem('token')
+        this.logout()
         throw e
       } finally {
         this.loading = false
       }
     },
+    initializeSession() {
+      if (!this.token) return
+      if (isTokenExpired(this.token)) {
+        this.expireSession()
+        return
+      }
+      this.scheduleExpiration()
+    },
+    setToken(token: string) {
+      this.token = token
+      localStorage.setItem('token', token)
+      this.scheduleExpiration()
+    },
+    scheduleExpiration() {
+      if (expirationTimer) {
+        clearTimeout(expirationTimer)
+        expirationTimer = null
+      }
+      if (!this.token) return
+
+      const expiration = getSessionExpiration(this.token)
+      if (expiration === null || expiration <= Date.now()) {
+        this.expireSession()
+        return
+      }
+      expirationTimer = window.setTimeout(() => this.expireSession(), expiration - Date.now())
+    },
+    expireSession() {
+      this.logout()
+      redirectToLogin()
+    },
     async fetchMe() {
       if (!this.token) return
+      if (isTokenExpired(this.token)) {
+        this.expireSession()
+        return
+      }
       try {
         const { data } = await api.get('/auth/me')
         this.user = data as Usuario
@@ -77,6 +124,10 @@ export const useAuthStore = defineStore('auth', {
       }
     },
     logout() {
+      if (expirationTimer) {
+        clearTimeout(expirationTimer)
+        expirationTimer = null
+      }
       this.token = null
       this.user = null
       localStorage.removeItem('token')
