@@ -142,3 +142,28 @@ def test_analytics_dia_no_suma_uber_en_ingresos(como_rol, seed, db_session):
     body = r.json()
     assert body["ingresos"]["total"] == 300.0
     assert body["uber_eats"] == {"pedidos": 1, "total": 250.0}
+
+
+def test_mesero_de_otra_sucursal_no_marca_entregado_repartidor(como_rol, seed, db_session):
+    turno = _turno_abierto(db_session, seed)
+    pedido = _pedido(db_session, seed, turno, tipo="uber_eats", estado="listo", total=250)
+
+    r = como_rol("mesero", sucursal_id=seed["sucursal"].id + 1).put(
+        f"/pedidos/{pedido.id}", json={"estado": "entregado_repartidor"}
+    )
+    assert r.status_code == 403
+
+
+def test_no_se_agregan_ni_editan_articulos_tras_entrega_al_repartidor(como_rol, seed, db_session):
+    turno = _turno_abierto(db_session, seed)
+    pedido = _pedido(
+        db_session, seed, turno, tipo="uber_eats", estado="entregado_repartidor", total=250
+    )
+
+    client = como_rol("administrador")
+    r = client.put(f"/pedidos/{pedido.id}/agregar-articulos", json={"articulos": []})
+    assert r.status_code in (400, 422)
+    r = client.put(f"/pedidos/{pedido.id}/actualizar-articulos", json={"articulos": []})
+    assert r.status_code in (400, 422)
+    db_session.refresh(pedido)
+    assert float(pedido.total) == 250.0

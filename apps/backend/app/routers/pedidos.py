@@ -904,7 +904,7 @@ async def update_pedido(
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
     # Validar permisos de acceso
-    if current_user.rol == "cajero" and pedido.sucursal_id != current_user.sucursal_id:
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
         raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
     # Estado inválido (fuera del vocabulario) antes de evaluar la transición.
@@ -987,6 +987,14 @@ async def update_pedido(
     # la hora de entrega y turno_id ubica el pedido en el corte del turno
     # (bloque "Uber Eats" aparte, fuera del efectivo esperado).
     if data.estado == EstadoPedido.ENTREGADO_REPARTIDOR:
+        # Pedido que sale del flujo de cobro: queda rastro de quién lo marcó
+        # para poder conciliar contra el depósito de Uber.
+        logger.info(
+            "Uber Eats entregado_repartidor: pedido=%s total=%s por usuario=%s",
+            pedido.id,
+            pedido.total,
+            current_user.id,
+        )
         if pedido.fecha_pago is None:
             pedido.fecha_pago = get_mexico_now()
         if pedido.turno_id is None:
@@ -1288,7 +1296,12 @@ async def agregar_articulos_pedido(
             return pedido
 
     # Validar que el pedido no esté en estados finales
-    if pedido.estado in ["cuenta_solicitada", "pagado", "cancelado"]:
+    if pedido.estado in [
+        "cuenta_solicitada",
+        "pagado",
+        "cancelado",
+        EstadoPedido.ENTREGADO_REPARTIDOR,
+    ]:
         raise HTTPException(
             status_code=400,
             detail=f"No se pueden agregar artículos a pedidos en estado '{pedido.estado}'",
@@ -1468,7 +1481,7 @@ async def actualizar_articulos_pedido(
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
     # Validar que el pedido no esté en estados finales
-    if pedido.estado in ["pagado", "cancelado", "dividido"]:
+    if pedido.estado in ["pagado", "cancelado", "dividido", EstadoPedido.ENTREGADO_REPARTIDOR]:
         raise HTTPException(
             status_code=400, detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'"
         )
