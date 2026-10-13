@@ -167,3 +167,24 @@ def test_no_se_agregan_ni_editan_articulos_tras_entrega_al_repartidor(como_rol, 
     assert r.status_code in (400, 422)
     db_session.refresh(pedido)
     assert float(pedido.total) == 250.0
+
+
+def test_tickets_del_dia_incluye_uber_entregado_con_su_estado(como_rol, seed, db_session):
+    turno = _turno_abierto(db_session, seed)
+    _pedido(
+        db_session, seed, turno, tipo="aqui", estado="pagado", total=300,
+        metodo_pago="efectivo", numero="A1",
+    )  # fmt: skip
+    uber = _pedido(db_session, seed, turno, tipo="uber_eats", estado="listo", total=250,
+                   numero="U1")  # fmt: skip
+    como_rol("mesero").put(f"/pedidos/{uber.id}", json={"estado": "entregado_repartidor"})
+
+    r = como_rol("cajero").get("/reportes/dia/tickets")
+    assert r.status_code == 200, r.text
+    por_numero = {t["numero_display"]: t for t in r.json()}
+    assert set(por_numero) == {"A1", "U1"}
+    assert por_numero["U1"]["estado"] == "entregado_repartidor"
+    assert por_numero["U1"]["tipo_orden"] == "uber_eats"
+    assert por_numero["U1"]["metodo_pago"] is None
+    # La hora del evento es la de entrega al repartidor, no la de creación.
+    assert por_numero["U1"]["fecha_evento"] == por_numero["U1"]["fecha_pago"]

@@ -38,8 +38,12 @@ def tickets_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
+    # Uber Eats entregado al repartidor entra a la auditoría con su hora de
+    # entrega (fecha_pago); el frontend lo separa de los totales de terminal.
+    estados_con_fecha_pago = ["pagado", EstadoPedido.ENTREGADO_REPARTIDOR]
+
     fecha_evento_expr = case(
-        (Pedido.estado == "pagado", Pedido.fecha_pago),
+        (Pedido.estado.in_(estados_con_fecha_pago), Pedido.fecha_pago),
         else_=Pedido.fecha_creacion,
     )
 
@@ -74,7 +78,7 @@ def tickets_del_dia(
     if tid:
         query = query.filter(
             Pedido.turno_id == tid,
-            Pedido.estado.in_(["pagado", "cancelado"]),
+            Pedido.estado.in_(["pagado", "cancelado", EstadoPedido.ENTREGADO_REPARTIDOR]),
         )
     else:
         # Fallback: fecha del día
@@ -87,7 +91,7 @@ def tickets_del_dia(
         query = query.filter(
             or_(
                 and_(
-                    Pedido.estado == "pagado",
+                    Pedido.estado.in_(estados_con_fecha_pago),
                     Pedido.fecha_pago.isnot(None),
                     Pedido.fecha_pago >= start_dt,
                     Pedido.fecha_pago < end_dt,
@@ -106,7 +110,9 @@ def tickets_del_dia(
     rows = query.order_by(fecha_evento_expr.desc()).limit(limit).offset(offset).all()
 
     def _serialize_ticket(row: Any) -> dict[str, Any]:
-        fecha_evento = row.fecha_pago if row.estado == "pagado" else row.fecha_creacion
+        fecha_evento = (
+            row.fecha_pago if row.estado in estados_con_fecha_pago else row.fecha_creacion
+        )
 
         return {
             "id": row.id,

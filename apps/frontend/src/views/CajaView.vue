@@ -251,7 +251,10 @@ const searchQuery = ref<string>('')
 const showMesaMap = ref(false)
 
 // Estados para tabla de pedidos del día en analíticas
-const selectedPaymentMethod = ref<'todos' | 'efectivo' | 'tarjeta' | 'transferencia'>('todos')
+const selectedPaymentMethod = ref<'todos' | 'efectivo' | 'tarjeta' | 'transferencia' | 'uber_eats'>('todos')
+
+// Uber Eats no se cobra en Caja: se audita aparte y NUNCA entra a los totales de terminal
+const esTicketUber = (t: ReporteDiaTicket) => t.tipo_orden === 'uber_eats'
 const sortDescending = ref(true)
 
 const filteredPedidosDelDia = computed(() => {
@@ -260,7 +263,9 @@ const filteredPedidosDelDia = computed(() => {
   let result = [...ticketsDelDia.value]
 
   // Filtrar por método de pago
-  if (selectedPaymentMethod.value !== 'todos') {
+  if (selectedPaymentMethod.value === 'uber_eats') {
+    result = result.filter(esTicketUber)
+  } else if (selectedPaymentMethod.value !== 'todos') {
     result = result.filter(p => p.metodo_pago === selectedPaymentMethod.value)
   }
 
@@ -275,8 +280,18 @@ const filteredPedidosDelDia = computed(() => {
   return result
 })
 
+// Resumen de Uber Eats de la tabla filtrada (fila propia, fuera de "Total Filtro")
+const uberSummary = computed(() => {
+  const pedidos = filteredPedidosDelDia.value.filter(esTicketUber)
+  if (pedidos.length === 0) return null
+  return {
+    count: pedidos.length,
+    total: pedidos.reduce((sum, p) => sum + Number(p.total), 0)
+  }
+})
+
 const filteredSummary = computed(() => {
-  const pedidos = filteredPedidosDelDia.value
+  const pedidos = filteredPedidosDelDia.value.filter(p => !esTicketUber(p))
   const count = pedidos.length
   if (count === 0) return null
 
@@ -693,6 +708,7 @@ const turnoMetrics = computed(() => {
   
   // Filtrar tickets pagados DESPUÉS del inicio del turno
   const ticketsDelTurno = ticketsDelDia.value.filter(t => {
+    if (esTicketUber(t)) return false
     if (!t.fecha_pago) return false
     const fechaPago = new Date(t.fecha_pago).getTime()
     return fechaPago >= inicioTurno
@@ -713,6 +729,12 @@ const turnoMetrics = computed(() => {
   const propinasTarjeta = ticketsDelTurno
     .reduce((sum, t) => sum + Number(t.propina_tarjeta || 0), 0)
 
+  // Uber Eats entregado al repartidor en el turno: segmento aparte, fuera del arqueo
+  const ticketsUber = ticketsDelDia.value.filter(t =>
+    esTicketUber(t) && t.fecha_pago && new Date(t.fecha_pago).getTime() >= inicioTurno
+  )
+  const ventasUber = ticketsUber.reduce((sum, t) => sum + Number(t.total), 0)
+
   // Gastos del turno (desde el resumen del backend)
   const gastosTurno = shiftSummary.value?.gastos_turno || 0
 
@@ -721,6 +743,8 @@ const turnoMetrics = computed(() => {
 
   return {
     ticketsCount: ticketsDelTurno.length,
+    ventasUber,
+    pedidosUber: ticketsUber.length,
     ventasEfectivo,
     ventasTarjeta,
     propinasEfectivo,
@@ -2499,6 +2523,18 @@ const handleGastoSaved = async () => {
               </div>
             </div>
 
+            <!-- Uber Eats: segmento propio, fuera de ventas del turno y mix de cobro -->
+            <div class="bg-emerald-900 border border-emerald-800 rounded-[2.5rem] p-7 flex items-center justify-between gap-4 shadow-xl shadow-emerald-900/10">
+              <div>
+                <div class="flex items-center gap-2 text-emerald-300 mb-2">
+                  <span class="text-base">🚗</span>
+                  <span class="text-[11px] font-black uppercase tracking-widest">Uber Eats · {{ analyticsDia.uber_eats?.pedidos ?? 0 }} pedido{{ (analyticsDia.uber_eats?.pedidos ?? 0) === 1 ? '' : 's' }}</span>
+                </div>
+                <div class="text-4xl font-black text-white tracking-tighter">${{ Number(analyticsDia.uber_eats?.total ?? 0).toFixed(2) }}</div>
+              </div>
+              <span class="text-[10px] font-black text-emerald-300/80 uppercase tracking-widest text-right">Depósito a tarjeta<br>No suma a ventas del turno</span>
+            </div>
+
             <!-- Gráficos y Listas -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
@@ -2706,6 +2742,18 @@ const handleGastoSaved = async () => {
 
                 <!-- Tarjetas Secundarias: Desglose -->
                 <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-2 gap-4">
+                  <!-- Uber Eats: segmento propio, fuera del efectivo esperado -->
+                  <div class="col-span-2 bg-emerald-900 border border-emerald-800 rounded-[2rem] p-6 flex items-center justify-between gap-4">
+                    <div>
+                      <div class="flex items-center gap-2 text-emerald-300 mb-2">
+                        <span class="text-base">🚗</span>
+                        <span class="text-[10px] font-black uppercase tracking-widest">Uber Eats · {{ turnoMetrics.pedidosUber }} pedido{{ turnoMetrics.pedidosUber === 1 ? '' : 's' }}</span>
+                      </div>
+                      <div class="text-3xl font-black text-white tracking-tighter">${{ turnoMetrics.ventasUber.toFixed(2) }}</div>
+                    </div>
+                    <span class="text-[10px] font-black text-emerald-300/80 uppercase tracking-widest text-right">Depósito a tarjeta<br>No entra a caja ni a terminal</span>
+                  </div>
+
                   <!-- Venta Efectivo -->
                   <div class="bg-emerald-50 border border-emerald-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-emerald-100 transition-colors">
                     <div class="flex items-center gap-2 text-emerald-400 mb-2">
@@ -2752,7 +2800,7 @@ const handleGastoSaved = async () => {
               <h3 class="text-xl font-black text-slate-800 flex items-center gap-3">
                 <ScrollText class="w-6 h-6 text-[#00126D]" />
                 Auditoría de Comandas
-                <span class="text-[10px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-widest ml-2">{{ filteredSummary?.count || 0 }} tickets</span>
+                <span class="text-[10px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-widest ml-2">{{ filteredPedidosDelDia.length }} tickets</span>
               </h3>
               
               <!-- Filtros de la tabla -->
@@ -2765,6 +2813,7 @@ const handleGastoSaved = async () => {
                   <option value="efectivo">Efectivo</option>
                   <option value="tarjeta">Tarjeta</option>
                   <option value="transferencia">Transferencia</option>
+                  <option value="uber_eats">Uber Eats</option>
                 </select>
                 <button 
                   @click="sortDescending = !sortDescending"
@@ -2816,7 +2865,10 @@ const handleGastoSaved = async () => {
                       <div class="text-xs font-bold text-slate-400 uppercase">{{ formatTime(pedido.fecha_pago || pedido.fecha_creacion) }}</div>
                     </td>
                     <td class="px-8 py-5 text-center">
-                      <span :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
+                      <span v-if="esTicketUber(pedido)" class="inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border bg-emerald-50 text-emerald-700 border-emerald-200">
+                        🚗 <span class="ml-1.5">Uber Eats</span>
+                      </span>
+                      <span v-else :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
                         {{ getPaymentMethodIcon(pedido.metodo_pago) }}
                         <span class="ml-1.5">{{ pedido.metodo_pago || '---' }}</span>
                       </span>
@@ -2840,6 +2892,7 @@ const handleGastoSaved = async () => {
                           <Printer class="w-4 h-4" />
                         </button>
                         <button 
+                          v-if="!esTicketUber(pedido)"
                           @click="abrirEditarPropina(pedido)"
                           class="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-xl transition-all"
                           title="Editar Propina"
@@ -2850,8 +2903,13 @@ const handleGastoSaved = async () => {
                     </td>
                   </tr>
                 </tbody>
-                <tfoot v-if="filteredSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
-                  <tr class="text-xs uppercase tracking-widest">
+                <tfoot v-if="filteredSummary || uberSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
+                  <tr v-if="uberSummary" class="text-xs uppercase tracking-widest text-emerald-700">
+                    <td colspan="4" class="px-8 py-4 text-right">🚗 Uber Eats ({{ uberSummary.count }}) · aparte</td>
+                    <td class="px-8 py-4 text-right text-lg tracking-tighter">${{ uberSummary.total.toFixed(2) }}</td>
+                    <td colspan="2"></td>
+                  </tr>
+                  <tr v-if="filteredSummary" class="text-xs uppercase tracking-widest">
                     <td colspan="4" class="px-8 py-6 text-right text-slate-400">Total Filtro</td>
                     <td class="px-8 py-6 text-right text-lg tracking-tighter">${{ filteredSummary.total.toFixed(2) }}</td>
                     <td class="px-8 py-6 text-right text-emerald-600 text-lg tracking-tighter">+${{ filteredSummary.propina_total.toFixed(2) }}</td>
