@@ -2523,16 +2523,16 @@ const handleGastoSaved = async () => {
               </div>
             </div>
 
-            <!-- Uber Eats: segmento propio, fuera de ventas del turno y mix de cobro -->
-            <div class="bg-emerald-900 border border-emerald-800 rounded-[2.5rem] p-7 flex items-center justify-between gap-4 shadow-xl shadow-emerald-900/10">
-              <div>
-                <div class="flex items-center gap-2 text-emerald-300 mb-2">
-                  <span class="text-base">🚗</span>
-                  <span class="text-[11px] font-black uppercase tracking-widest">Uber Eats · {{ analyticsDia.uber_eats?.pedidos ?? 0 }} pedido{{ (analyticsDia.uber_eats?.pedidos ?? 0) === 1 ? '' : 's' }}</span>
+            <!-- Uber Eats: segmento aparte y discreto, fuera de ventas del turno y mix de cobro -->
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-base">🚗</span>
+                <div class="min-w-0">
+                  <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uber Eats · {{ analyticsDia.uber_eats?.pedidos ?? 0 }} pedido{{ (analyticsDia.uber_eats?.pedidos ?? 0) === 1 ? '' : 's' }}</div>
+                  <div class="text-[10px] font-bold text-slate-400/80 uppercase tracking-wider">Depósito a tarjeta · no suma a ventas del turno</div>
                 </div>
-                <div class="text-4xl font-black text-white tracking-tighter">${{ Number(analyticsDia.uber_eats?.total ?? 0).toFixed(2) }}</div>
               </div>
-              <span class="text-[10px] font-black text-emerald-300/80 uppercase tracking-widest text-right">Depósito a tarjeta<br>No suma a ventas del turno</span>
+              <div class="text-xl font-black text-slate-500 tracking-tight">${{ Number(analyticsDia.uber_eats?.total ?? 0).toFixed(2) }}</div>
             </div>
 
             <!-- Gráficos y Listas -->
@@ -2742,18 +2742,6 @@ const handleGastoSaved = async () => {
 
                 <!-- Tarjetas Secundarias: Desglose -->
                 <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-2 gap-4">
-                  <!-- Uber Eats: segmento propio, fuera del efectivo esperado -->
-                  <div class="col-span-2 bg-emerald-900 border border-emerald-800 rounded-[2rem] p-6 flex items-center justify-between gap-4">
-                    <div>
-                      <div class="flex items-center gap-2 text-emerald-300 mb-2">
-                        <span class="text-base">🚗</span>
-                        <span class="text-[10px] font-black uppercase tracking-widest">Uber Eats · {{ turnoMetrics.pedidosUber }} pedido{{ turnoMetrics.pedidosUber === 1 ? '' : 's' }}</span>
-                      </div>
-                      <div class="text-3xl font-black text-white tracking-tighter">${{ turnoMetrics.ventasUber.toFixed(2) }}</div>
-                    </div>
-                    <span class="text-[10px] font-black text-emerald-300/80 uppercase tracking-widest text-right">Depósito a tarjeta<br>No entra a caja ni a terminal</span>
-                  </div>
-
                   <!-- Venta Efectivo -->
                   <div class="bg-emerald-50 border border-emerald-100 rounded-[2rem] p-6 flex flex-col justify-between group hover:bg-emerald-100 transition-colors">
                     <div class="flex items-center gap-2 text-emerald-400 mb-2">
@@ -2788,6 +2776,18 @@ const handleGastoSaved = async () => {
                       <span class="text-[10px] font-black uppercase tracking-widest">Propina Tarjeta</span>
                     </div>
                     <div class="text-3xl font-black text-indigo-800 tracking-tighter">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
+                  </div>
+
+                  <!-- Uber Eats: segmento aparte y discreto, fuera del efectivo esperado -->
+                  <div class="col-span-2 bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <span class="text-base">🚗</span>
+                      <div class="min-w-0">
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uber Eats · {{ turnoMetrics.pedidosUber }} pedido{{ turnoMetrics.pedidosUber === 1 ? '' : 's' }}</div>
+                        <div class="text-[10px] font-bold text-slate-400/80 uppercase tracking-wider">Depósito a tarjeta · no entra a caja</div>
+                      </div>
+                    </div>
+                    <div class="text-lg font-black text-slate-500 tracking-tight">${{ turnoMetrics.ventasUber.toFixed(2) }}</div>
                   </div>
                 </div>
               </div>
@@ -2904,7 +2904,7 @@ const handleGastoSaved = async () => {
                   </tr>
                 </tbody>
                 <tfoot v-if="filteredSummary || uberSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
-                  <tr v-if="uberSummary" class="text-xs uppercase tracking-widest text-emerald-700">
+                  <tr v-if="uberSummary" class="text-xs uppercase tracking-widest text-slate-500">
                     <td colspan="4" class="px-8 py-4 text-right">🚗 Uber Eats ({{ uberSummary.count }}) · aparte</td>
                     <td class="px-8 py-4 text-right text-lg tracking-tighter">${{ uberSummary.total.toFixed(2) }}</td>
                     <td colspan="2"></td>
