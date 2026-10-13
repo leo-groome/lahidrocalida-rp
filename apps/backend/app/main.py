@@ -15,6 +15,7 @@ from app.routers import (
     admin,
     asistencia,
     auth,
+    gasto_adjuntos,
     gastos,
     pedidos,
     products,
@@ -71,6 +72,7 @@ app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(pedidos.router)
 app.include_router(gastos.router)
+app.include_router(gasto_adjuntos.router)
 app.include_router(admin.router)
 app.include_router(propinas.router)
 app.include_router(reportes.router)

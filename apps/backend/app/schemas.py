@@ -330,8 +330,19 @@ class GastoCreate(GastoBase):
     fecha_gasto: Optional[datetime] = None
 
 
+class AdjuntoResponse(BaseModel):
+    id: int
+    content_type: str
+    size: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class GastoResponse(GastoBase):
     id: int
+    num_adjuntos: int = 0
     subtotal: Decimal
     total: Decimal
     fecha_gasto: datetime

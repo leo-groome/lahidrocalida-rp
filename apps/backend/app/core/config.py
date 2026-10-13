@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # limiter (S2). None = degradar a fan-out local / rate limit en memoria.
     REDIS_URL: str | None = None
 
+    # Adjuntos (fotos de tickets de gastos). "local" = disco (dev/tests);
+    # "r2" = Cloudflare R2 (S3-compatible) — obligatorio en producción porque
+    # el disco de Railway es efímero.
+    STORAGE_BACKEND: str = "local"
+    STORAGE_LOCAL_DIR: str = "uploads"
+    R2_ENDPOINT: str | None = None
+    R2_BUCKET: str | None = None
+    R2_ACCESS_KEY_ID: str | None = None
+    R2_SECRET_ACCESS_KEY: str | None = None
+
     class Config:
         env_file = ".env"
         case_sensitive = True

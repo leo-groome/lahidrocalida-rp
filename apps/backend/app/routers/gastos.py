@@ -75,10 +75,12 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
     else:
         if data.nomina_detalles:
             raise HTTPException(status_code=400, detail="Solo la nómina lleva empleados")
-        if data.proveedor_id is None:
-            raise HTTPException(status_code=400, detail="Proveedor requerido")
-        if not data.detalles:
-            raise HTTPException(status_code=400, detail="Se requiere al menos un artículo")
+        # Registro rápido: el proveedor es opcional (compra suelta) y, si hay un
+        # total capturado a mano, tampoco se exigen líneas de artículos.
+        if not data.detalles and data.total_manual is None:
+            raise HTTPException(status_code=400, detail="Captura un total o al menos un artículo")
+        if data.total_manual is not None and data.total_manual <= 0 and not data.detalles:
+            raise HTTPException(status_code=400, detail="El total debe ser mayor a 0")
 
 
 def _build_nomina_detalles(
@@ -369,12 +371,13 @@ def create_gasto(
         )
         total = subtotal
     else:
-        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-        if not proveedor:
-            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-        if proveedor.sucursal_id != current_user.sucursal_id:
-            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
-        proveedor_id = proveedor.id
+        if data.proveedor_id is not None:
+            proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+            if not proveedor:
+                raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+            if proveedor.sucursal_id != current_user.sucursal_id:
+                raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+            proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -464,6 +467,7 @@ def list_gastos(
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
             selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
+            selectinload(Gasto.adjuntos),
         )
         .order_by(Gasto.fecha_gasto.desc())
         .offset((page - 1) * page_size)
@@ -655,6 +659,7 @@ def get_gasto(
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
             selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
+            selectinload(Gasto.adjuntos),
         )
         .filter(Gasto.id == gasto_id)
         .first()
@@ -693,12 +698,13 @@ def update_gasto(
         )
         total = subtotal
     else:
-        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-        if not proveedor:
-            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-        if proveedor.sucursal_id != current_user.sucursal_id:
-            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
-        proveedor_id = proveedor.id
+        if data.proveedor_id is not None:
+            proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+            if not proveedor:
+                raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+            if proveedor.sucursal_id != current_user.sucursal_id:
+                raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+            proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 

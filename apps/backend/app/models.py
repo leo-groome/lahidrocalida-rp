@@ -224,6 +224,16 @@ class Gasto(Base):
     nomina_detalles = relationship(
         "NominaDetalle", back_populates="gasto", cascade="all, delete-orphan"
     )
+    adjuntos = relationship(
+        "GastoAdjunto",
+        back_populates="gasto",
+        cascade="all, delete-orphan",
+        order_by="GastoAdjunto.id",
+    )
+
+    @property
+    def num_adjuntos(self) -> int:
+        return len(self.adjuntos)
 
 
 class GastoDetalle(Base):
@@ -239,6 +249,25 @@ class GastoDetalle(Base):
     # Relaciones
     gasto = relationship("Gasto", back_populates="detalles")
     articulo = relationship("Articulo", back_populates="detalles_gasto")
+
+
+class GastoAdjunto(Base):
+    """Foto del ticket/factura de un gasto. El archivo vive en el storage
+    (R2/disco) bajo `storage_key`; aquí solo la referencia y metadatos."""
+
+    __tablename__ = "gasto_adjuntos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="CASCADE"), nullable=False)
+    # Denormalizado para aislar por sucursal sin join en cada acceso al archivo.
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    storage_key = Column(String(255), nullable=False, unique=True)
+    content_type = Column(String(50), nullable=False)
+    size = Column(Integer, nullable=False)
+    subido_por_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=get_local_datetime, nullable=False)
+
+    gasto = relationship("Gasto", back_populates="adjuntos")
 
 
 class NominaDetalle(Base):
