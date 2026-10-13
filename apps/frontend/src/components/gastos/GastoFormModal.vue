@@ -1,12 +1,12 @@
 <template>
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[150] p-4 md:p-8 animate-in fade-in duration-300">
-    <div class="bg-white rounded-[3rem] shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
+  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[150] sm:p-4 md:p-8 animate-in fade-in duration-300">
+    <div class="bg-white rounded-none sm:rounded-[3rem] shadow-2xl w-full max-w-5xl h-dvh sm:h-auto max-h-dvh sm:max-h-[92dvh] flex flex-col overflow-hidden border border-white/20 animate-in zoom-in-95 duration-500">
       
       <!-- Header -->
-      <div class="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+      <div class="px-4 py-4 sm:px-10 sm:py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
         <div class="space-y-1">
           <p class="text-[10px] font-black tracking-[0.3em] text-indigo-400 uppercase">Registro Contable</p>
-          <h2 class="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
+          <h2 class="text-xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
             {{ isEditing ? 'EDITAR' : 'NUEVO' }} <span class="text-indigo-600">GASTO</span>
           </h2>
         </div>

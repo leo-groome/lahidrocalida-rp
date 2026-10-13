@@ -1,35 +1,35 @@
 <template>
-  <div class="space-y-10 animate-in fade-in duration-700">
+  <div class="space-y-6 sm:space-y-10 animate-in fade-in duration-700">
     <!-- Premium Header Section -->
-    <div class="flex flex-col md:flex-row md:items-end justify-between gap-8 pb-2 border-b border-slate-100/80">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 pb-2 border-b border-slate-100/80">
       <div class="space-y-2">
         <div class="flex items-center gap-3 mb-1">
           <div class="h-10 w-1 bg-blue-600 rounded-full"></div>
-          <h2 class="text-3xl font-black text-slate-900 tracking-tight">Gestión de Gastos</h2>
+          <h2 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">Gestión de Gastos</h2>
         </div>
-        <p class="text-slate-500 font-medium text-lg max-w-2xl">
+        <p class="text-slate-500 font-medium text-sm sm:text-lg max-w-2xl">
           Control centralizado de compras, proveedores y catálogo de insumos operativos.
         </p>
       </div>
       
-      <div class="flex items-center gap-3 self-start md:self-end">
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3 self-start md:self-end">
         <button 
           @click="openNewProveedor" 
-          class="inline-flex items-center px-5 py-3 bg-white text-slate-700 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
+          class="inline-flex items-center px-4 sm:px-5 py-3 min-h-11 bg-white text-slate-700 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
         >
           <Truck class="h-4 w-4 mr-2.5 text-blue-500" />
           Proveedor
         </button>
         <button 
           @click="openNewArticulo" 
-          class="inline-flex items-center px-5 py-3 bg-white text-slate-700 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
+          class="inline-flex items-center px-4 sm:px-5 py-3 min-h-11 bg-white text-slate-700 border border-slate-200 rounded-2xl text-sm font-bold shadow-sm hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-95"
         >
           <Package class="h-4 w-4 mr-2.5 text-indigo-500" />
           Artículo
         </button>
         <button 
           @click="$emit('new-gasto')" 
-          class="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-xl shadow-slate-200 hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0 transition-all"
+          class="inline-flex items-center px-5 sm:px-6 py-3 min-h-11 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-xl shadow-slate-200 hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0 transition-all"
         >
           <Plus class="h-5 w-5 mr-2" />
           Nuevo Gasto
@@ -44,7 +44,7 @@
           <button v-for="sub in gastosTabs" :key="sub.id"
             @click="gastosSubTab = sub.id"
             :class="[
-              'px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 relative whitespace-nowrap', 
+              'px-4 sm:px-6 py-3 sm:py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 relative whitespace-nowrap', 
               gastosSubTab === sub.id 
                 ? 'bg-white text-blue-600 shadow-md ring-1 ring-slate-200/20' 
                 : 'text-slate-500 hover:text-slate-800 hover:bg-white/50'

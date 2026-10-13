@@ -1,6 +1,6 @@
 <template>
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] animate-in fade-in duration-200">
-    <div class="bg-white p-8 rounded-[3rem] shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200 overflow-hidden">
+  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-stretch sm:items-center justify-center sm:p-4 z-[60] animate-in fade-in duration-200">
+    <div class="bg-white p-5 sm:p-8 rounded-none sm:rounded-[3rem] shadow-2xl w-full max-w-lg max-h-dvh sm:max-h-[92dvh] overflow-y-auto animate-in zoom-in-95 duration-200">
       <div class="mb-8">
         <h3 class="text-2xl font-black text-slate-800 tracking-tight">
           {{ initialData ? 'Editar Artículo' : 'Nuevo Artículo' }}

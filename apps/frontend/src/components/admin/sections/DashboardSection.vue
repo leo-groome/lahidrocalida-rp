@@ -165,7 +165,7 @@
             </div>
           </div>
           
-          <div class="overflow-hidden">
+          <div class="overflow-x-auto">
             <table class="min-w-full">
               <thead>
                 <tr class="border-b border-slate-100">

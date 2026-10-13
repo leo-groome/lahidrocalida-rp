@@ -1,29 +1,40 @@
 <template>
-  <div class="flex h-screen bg-slate-50 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-hidden">
+  <div class="flex h-dvh bg-slate-50 font-sans selection:bg-blue-100 selection:text-blue-900 overflow-hidden">
     <!-- Sidebar Navegación -->
     <AdminSidebar 
       :active-tab="activeTab" 
+      :is-open="menuOpen"
+      @close="menuOpen = false"
       :user-name="auth.user?.nombre || 'Administrador'"
       @select-tab="selectTab" 
       @logout="() => { auth.logout(); router.push('/login') }"
     />
 
+    <!-- Backdrop del drawer (solo móvil) -->
+    <div
+      v-if="menuOpen"
+      class="fixed inset-0 z-30 bg-slate-900/60 lg:hidden"
+      @click="menuOpen = false"
+    ></div>
+
     <!-- Contenido Principal -->
-    <div class="flex-1 flex flex-col min-w-0 relative h-screen overflow-hidden">
+    <div class="flex-1 flex flex-col min-w-0 relative h-dvh overflow-hidden">
       <!-- Topbar -->
       <AdminTopbar 
         :title="currentTabName" 
         :subtitle="currentTabSubtitle"
         :user-name="auth.user?.nombre || 'Administrador'"
+        @toggle-menu="menuOpen = !menuOpen"
       />
 
       <!-- Scrollable Content Area -->
-      <main class="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth custom-scrollbar">
+      <main class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 scroll-smooth custom-scrollbar">
         <div class="max-w-[1400px] mx-auto">
           
           <keep-alive>
             <component 
               :is="currentSectionComponent"
+              :key="`${activeTab}-${refreshKey}`"
               @new-gasto="handleNewGasto"
               @edit-gasto="handleEditGasto"
               @new-platillo="openNewPlatilloModal"
@@ -104,7 +115,12 @@ watch(() => route.query.tab, (newTab) => {
 }, { immediate: true })
 
 // Función para cambiar de pestaña actualizando la URL
+const menuOpen = ref(false)
+// Remonta la sección activa tras guardar (reemplaza window.location.reload)
+const refreshKey = ref(0)
+
 const selectTab = (id: string) => {
+  menuOpen.value = false
   // 'compras' es una vista dedicada standalone, no una sección interna.
   if (id === 'compras') {
     router.push('/compras')
@@ -185,7 +201,7 @@ const savePlatillo = async (data: any) => {
       await api.post('/platillos/', data)
     }
     closePlatilloModal()
-    window.location.reload()
+    refreshKey.value++
   } catch (error) {
     alert('Error al guardar platillo')
   }
@@ -234,7 +250,7 @@ const saveUsuario = async (data: any) => {
       await api.post('/usuarios/', data)
     }
     closeUsuarioModal()
-    window.location.reload()
+    refreshKey.value++
   } catch (error) {
     alert('Error al guardar usuario')
   }

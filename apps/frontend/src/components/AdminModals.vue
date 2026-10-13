@@ -1,7 +1,7 @@
 <template>
   <!-- Modal para Platillos -->
   <div v-if="showPlatilloModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[150]">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+    <div class="relative sm:top-20 mx-auto p-5 border w-full sm:w-96 min-h-full sm:min-h-0 shadow-lg sm:rounded-md bg-white">
       <h3 class="text-lg font-bold text-gray-900 mb-4">
         {{ editingPlatillo ? 'Editar Platillo' : 'Nuevo Platillo' }}
       </h3>
@@ -102,7 +102,7 @@
 
   <!-- Modal para Usuarios -->
   <div v-if="showUsuarioModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[150]">
-    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+    <div class="relative sm:top-20 mx-auto p-5 border w-full sm:w-96 min-h-full sm:min-h-0 shadow-lg sm:rounded-md bg-white">
       <h3 class="text-lg font-bold text-gray-900 mb-4">
         {{ editingUsuario ? 'Editar Usuario' : 'Nuevo Usuario' }}
       </h3>
