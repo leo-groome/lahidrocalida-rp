@@ -1335,6 +1335,23 @@ const showErrorNotification = (message: string) => {
   }, 3000) // 3 segundos para errores - tiempo suficiente para leer
 }
 
+// Uber Eats: no se cobra en Caja; solo se marca que el repartidor lo recogió
+const uberEntregando = ref<number | null>(null)
+const marcarUberEntregado = async (pedido: PedidoResponse) => {
+  if (uberEntregando.value !== null) return
+  uberEntregando.value = pedido.id
+  try {
+    const ok = await pedidosStore.updatePedidoEstado(pedido.id, 'entregado_repartidor')
+    if (ok) {
+      showSuccessNotification(`Uber Eats #${pedido.numero_display} entregado al repartidor`)
+    } else {
+      showErrorNotification(pedidosStore.error || 'No se pudo marcar la entrega')
+    }
+  } finally {
+    uberEntregando.value = null
+  }
+}
+
 const showSuccessNotification = (message: string) => {
   successMessage.value = message
   error.value = null
@@ -2113,6 +2130,29 @@ const handleGastoSaved = async () => {
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-8 mt-6">
+        <!-- Uber Eats: sin cobro en Caja, solo entrega al repartidor -->
+        <section v-if="pedidosStore.pedidosUber.length" class="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-black text-emerald-900 uppercase tracking-widest">🚗 Uber Eats ({{ pedidosStore.pedidosUber.length }})</h4>
+            <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Depósito a tarjeta · fuera del corte de caja</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div v-for="p in pedidosStore.pedidosUber" :key="p.id" class="bg-white rounded-2xl border border-emerald-100 p-4 flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <div class="font-black text-slate-800 truncate">#{{ p.numero_display }} · {{ p.nombre_cliente || 'Uber' }}</div>
+                <div class="text-xs font-bold text-slate-400 uppercase">{{ p.estado }} · ${{ Number(p.total).toFixed(2) }}</div>
+              </div>
+              <button
+                @click="marcarUberEntregado(p)"
+                :disabled="uberEntregando === p.id"
+                class="shrink-0 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl"
+              >
+                {{ uberEntregando === p.id ? '...' : 'Entregado a repartidor' }}
+              </button>
+            </div>
+          </div>
+        </section>
+
         <!-- Header Unificado -->
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-4">

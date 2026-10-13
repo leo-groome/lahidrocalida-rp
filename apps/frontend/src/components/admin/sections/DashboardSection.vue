@@ -574,7 +574,7 @@ const hourChartData = computed(() => {
 const orderTypeChartData = computed(() => {
   if (!advancedAnalyticsData.value?.tipos_orden?.length) return null
   const data = advancedAnalyticsData.value.tipos_orden
-  const labelsMap: any = { 'local': 'Aquí', 'llevar': 'Llevar', 'uber': 'Uber Eats', 'rappi': 'Rappi' }
+  const labelsMap: any = { 'aqui': 'Aquí', 'llevar': 'Llevar', 'uber_eats': 'Uber Eats' }
   return {
     labels: data.map((d: any) => labelsMap[d.tipo] || d.tipo),
     datasets: [{

@@ -4,7 +4,7 @@ import { api } from '@/api/client'
 import { websocketService } from '@/services/websocket'
 import { enviarOEncolar } from '@/services/offlineQueue'
 import type { PedidoResponse } from '@/types'
-import { EstadoPedido, EstadoArticuloPedido, ESTADOS_PEDIDO_FINALES } from '@/constants/estados'
+import { EstadoPedido, EstadoArticuloPedido, ESTADOS_PEDIDO_FINALES, TIPO_ORDEN_UBER } from '@/constants/estados'
 
 type WsClientType = 'kds' | 'caja' | 'mesero'
 
@@ -50,7 +50,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
   const pedidosKDS = computed(() => {
     // Para KDS: mostrar solo pedidos activos (no entregados ni pagados)
     return pedidos.value.filter(p =>
-      !([EstadoPedido.ENTREGADO, EstadoPedido.CUENTA_SOLICITADA, EstadoPedido.PAGADO, EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO] as string[]).includes(p.estado)
+      !([EstadoPedido.ENTREGADO, EstadoPedido.CUENTA_SOLICITADA, EstadoPedido.PAGADO, EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO, EstadoPedido.ENTREGADO_REPARTIDOR] as string[]).includes(p.estado)
     ).slice(0, 60) // Limitar a 60 para performance
   })
 
@@ -62,7 +62,8 @@ export const usePedidosStore = defineStore('pedidos', () => {
       // Solo filtrar por estado, la fecha ya viene filtrada desde el backend
       const noEstaPagadoNiCancelado = !(ESTADOS_PEDIDO_FINALES as string[]).includes(p.estado)
 
-      return noEstaPagadoNiCancelado
+      // Uber Eats no se cobra en Caja: va en su propia sección (pedidosUber)
+      return noEstaPagadoNiCancelado && p.tipo_orden !== TIPO_ORDEN_UBER
     }).sort((a, b) => {
       // Ordenar: pendientes de pago primero, luego por número de orden
       if (a.estado === EstadoPedido.CUENTA_SOLICITADA && b.estado !== EstadoPedido.CUENTA_SOLICITADA) return -1
@@ -71,8 +72,18 @@ export const usePedidosStore = defineStore('pedidos', () => {
     })
   })
 
+  // Uber Eats activos (esperando al repartidor) — sección aparte en Caja
+  const pedidosUber = computed(() =>
+    pedidos.value
+      .filter(p =>
+        p.tipo_orden === TIPO_ORDEN_UBER &&
+        !([EstadoPedido.CANCELADO, EstadoPedido.ENTREGADO_REPARTIDOR] as string[]).includes(p.estado)
+      )
+      .sort((a, b) => (a.numero_display || '').localeCompare(b.numero_display || ''))
+  )
+
   const pedidosPendientesPago = computed(() => {
-    return pedidos.value.filter(p => p.estado === EstadoPedido.CUENTA_SOLICITADA)
+    return pedidos.value.filter(p => p.estado === EstadoPedido.CUENTA_SOLICITADA && p.tipo_orden !== TIPO_ORDEN_UBER)
   })
 
   const estadisticasPedidos = computed(() => {
@@ -494,6 +505,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     pedidosKDS,
     pedidosCaja,
     pedidosPendientesPago,
+    pedidosUber,
     estadisticasPedidos,
     
     // Acciones
