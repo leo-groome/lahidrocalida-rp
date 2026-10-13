@@ -156,3 +156,23 @@ def test_gasto_total_manual_cero_sin_articulos_es_invalido(como_rol, seed):
         json={"tipo_gasto": "directo", "metodo_pago": "efectivo", "total_manual": 0},
     )
     assert r.status_code == 400
+
+
+def test_storage_local_prohibido_en_produccion(monkeypatch):
+    from app.services import storage as storage_mod
+
+    monkeypatch.setattr(storage_mod, "_storage", None)
+    monkeypatch.setattr(storage_mod.settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(storage_mod.settings, "STORAGE_BACKEND", "local")
+    with pytest.raises(RuntimeError, match="producción"):
+        storage_mod.get_storage()
+
+
+def test_storage_r2_exige_credenciales(monkeypatch):
+    from app.services import storage as storage_mod
+
+    monkeypatch.setattr(storage_mod, "_storage", None)
+    monkeypatch.setattr(storage_mod.settings, "STORAGE_BACKEND", "r2")
+    monkeypatch.setattr(storage_mod.settings, "R2_BUCKET", None)
+    with pytest.raises(RuntimeError, match="R2_BUCKET"):
+        storage_mod.get_storage()

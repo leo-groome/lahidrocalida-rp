@@ -142,5 +142,12 @@ def get_storage() -> Storage:
                 settings.R2_SECRET_ACCESS_KEY,  # type: ignore[arg-type]
             )
         else:
+            if settings.ENVIRONMENT == "production":
+                # El disco de Railway es efímero: guardar tickets ahí los
+                # perdería en silencio en el siguiente deploy. Mejor fallar fuerte.
+                raise RuntimeError(
+                    "STORAGE_BACKEND=local no está permitido en producción; "
+                    "configura STORAGE_BACKEND=r2 y las variables R2_*"
+                )
             _storage = LocalStorage(settings.STORAGE_LOCAL_DIR)
     return _storage
