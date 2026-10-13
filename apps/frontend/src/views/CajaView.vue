@@ -2137,15 +2137,15 @@ const handleGastoSaved = async () => {
             <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Depósito a tarjeta · fuera del corte de caja</span>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            <div v-for="p in pedidosStore.pedidosUber" :key="p.id" class="bg-white rounded-2xl border border-emerald-100 p-4 flex items-center justify-between gap-3">
+            <div v-for="p in pedidosStore.pedidosUber" :key="p.id" class="bg-white rounded-2xl border border-emerald-100 p-4 flex flex-col gap-3">
               <div class="min-w-0">
-                <div class="font-black text-slate-800 truncate">#{{ p.numero_display }} · {{ p.nombre_cliente || 'Uber' }}</div>
+                <div class="font-black text-slate-800 break-words">#{{ p.numero_display }} · {{ p.nombre_cliente || 'Uber' }}</div>
                 <div class="text-xs font-bold text-slate-400 uppercase">{{ p.estado }} · ${{ Number(p.total).toFixed(2) }}</div>
               </div>
               <button
                 @click="marcarUberEntregado(p)"
                 :disabled="uberEntregando === p.id"
-                class="shrink-0 px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl"
+                class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl"
               >
                 {{ uberEntregando === p.id ? '...' : 'Entregado a repartidor' }}
               </button>
