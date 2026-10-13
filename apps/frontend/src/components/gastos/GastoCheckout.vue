@@ -178,6 +178,8 @@
           </div>
         </div>
 
+        <FotoTicketInput v-model="fotos" />
+
         <div class="space-y-2">
           <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase">Notas</label>
           <textarea v-model="notas" rows="2" placeholder="Opcional" class="w-full bg-slate-50 border-0 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-[#00126D] resize-none"></textarea>
@@ -346,6 +348,8 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
 import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
+import FotoTicketInput from './FotoTicketInput.vue'
+import { subirAdjuntos } from '@/composables/useAdjuntosGasto'
 import { Plus, Trash2, Pencil, X, Sparkles } from 'lucide-vue-next'
 
 const emit = defineEmits<{ saved: [] }>()
@@ -380,6 +384,7 @@ const totalManual = ref<number | null>(null)
 const ajustarTotal = ref(false)
 
 const submitting = ref(false)
+const fotos = ref<File[]>([])
 const submitError = ref<string | null>(null)
 
 // ── sub-modal artículo ──
@@ -547,7 +552,11 @@ async function submit() {
         notas: l.notas || null,
       })) : [],
     }
-    await api.post('/gastos/', payload)
+    const { data: creado } = await api.post('/gastos/', payload)
+    if (fotos.value.length) {
+      const fallidas = await subirAdjuntos(creado.id, fotos.value)
+      if (fallidas) window.alert(`El gasto se guardó, pero ${fallidas} foto(s) no se subieron. Agrégalas desde el historial.`)
+    }
     emit('saved')
   } catch (e: any) {
     submitError.value = e?.response?.data?.detail || 'Error al guardar'

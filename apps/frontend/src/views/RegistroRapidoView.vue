@@ -19,10 +19,30 @@
 
     <!-- Contenido -->
     <main class="flex-1 max-w-xl w-full mx-auto px-4 py-5 space-y-4">
+      <!-- Captura rápida: monto + foto del ticket -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+        <label class="text-xs font-black text-slate-400 uppercase tracking-widest">
+          Monto total <span class="normal-case font-bold tracking-normal">(si no vas a listar artículos)</span>
+        </label>
+        <div class="relative">
+          <span class="absolute inset-y-0 left-4 flex items-center text-slate-400 font-black text-xl">$</span>
+          <input
+            v-model="montoTotal"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            class="w-full pl-9 pr-4 py-3 text-2xl font-black text-slate-900 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#00126D]/20 focus:border-[#00126D]"
+          >
+        </div>
+        <FotoTicketInput v-model="fotos" />
+      </div>
+
       <!-- Dictado / pegado -->
       <div class="space-y-2">
         <label class="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
-          Escribe o dicta tus compras, una por línea
+          O escribe / dicta tus compras, una por línea
         </label>
         <textarea
           ref="textareaRef"
@@ -70,7 +90,7 @@
         <div v-show="ajustesAbiertos" class="px-4 pb-4 space-y-4 border-t border-slate-100 pt-4">
           <div class="space-y-1">
             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-              Proveedor <span class="text-rose-400">*</span>
+              Proveedor <span class="normal-case font-bold tracking-normal">(opcional)</span>
             </label>
             <SearchableSelect
               v-model="proveedorId"
@@ -106,9 +126,6 @@
         </div>
       </div>
 
-      <p v-if="filas.length && !proveedorId" class="text-[11px] font-bold text-amber-600 text-center">
-        Falta elegir proveedor (en Ajustes).
-      </p>
     </main>
 
     <!-- Footer fijo -->
@@ -151,10 +168,11 @@ import {
 import { useCrearGasto } from '@/composables/useCrearGasto'
 import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
+import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
 import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-vue-next'
 
 const router = useRouter()
-const { crearGasto, submitting, error } = useCrearGasto()
+const { crearGasto, submitting, error, fotosFallidas } = useCrearGasto()
 
 const PROVEEDOR_LS_KEY = 'rapido:ultimoProveedorId'
 const metodos = [
@@ -175,6 +193,8 @@ const proveedorId = ref<number | null>(Number.isFinite(ultimoProveedor) && ultim
 const metodoPago = ref<'efectivo' | 'tarjeta'>('efectivo')
 const fecha = ref(localNow())
 const ajustesAbiertos = ref(false)
+const montoTotal = ref<string>('')
+const fotos = ref<File[]>([])
 
 const toast = ref<{ msg: string; tipo: 'ok' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -191,9 +211,16 @@ const lineasContadas = computed(
 const proveedorNombre = computed(
   () => proveedores.value.find((p) => p.id === proveedorId.value)?.nombre ?? '',
 )
-const puedeRegistrar = computed(() => filasListas(filas.value) && !!proveedorId.value)
+const montoNum = computed(() => Number(montoTotal.value) || 0)
+// Con artículos: todas las filas resueltas. Sin artículos: basta un monto > 0.
+const modoLista = computed(() => filas.value.length > 0)
+const puedeRegistrar = computed(() =>
+  modoLista.value ? filasListas(filas.value) : montoNum.value > 0,
+)
 const totalGasto = computed(() =>
-  filas.value.reduce((s, f) => s + (Number(f.cantidad) || 0) * precioUnitarioFila(f), 0),
+  modoLista.value
+    ? filas.value.reduce((s, f) => s + (Number(f.cantidad) || 0) * precioUnitarioFila(f), 0)
+    : montoNum.value,
 )
 const totalTexto = computed(() =>
   puedeRegistrar.value ? ` · $${totalGasto.value.toFixed(2)}` : '',
@@ -207,7 +234,6 @@ function mostrarToast(msg: string, tipo: 'ok' | 'error' = 'ok') {
 
 function analizar() {
   filas.value = construirFilas(texto.value, articulos.value)
-  if (filas.value.length && !proveedorId.value) ajustesAbiertos.value = true
 }
 
 function quitarFila(id: number) {
@@ -225,13 +251,24 @@ async function registrar() {
       proveedorId: proveedorId.value,
       tipoGasto: 'directo',
       metodoPago: metodoPago.value,
-      detalles: filasToDetalles(filas.value),
+      detalles: modoLista.value ? filasToDetalles(filas.value) : [],
+      totalManual: modoLista.value ? null : montoNum.value,
       fechaGasto: fecha.value,
+      fotos: fotos.value,
     })
-    localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
-    mostrarToast(`Gasto registrado · ${filas.value.length} artículo(s)`)
+    if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
+    mostrarToast(
+      fotosFallidas.value
+        ? `Gasto guardado, pero ${fotosFallidas.value} foto(s) no se subieron`
+        : modoLista.value
+          ? `Gasto registrado · ${filas.value.length} artículo(s)`
+          : `Gasto registrado · $${montoNum.value.toFixed(2)}`,
+      fotosFallidas.value ? 'error' : 'ok',
+    )
     texto.value = ''
     filas.value = []
+    montoTotal.value = ''
+    fotos.value = []
     fecha.value = localNow()
     await nextTick()
     textareaRef.value?.focus()

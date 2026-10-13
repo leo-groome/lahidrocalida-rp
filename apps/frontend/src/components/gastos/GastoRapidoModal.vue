@@ -240,6 +240,9 @@
             <p v-if="turnoId" class="text-xs text-slate-400 font-semibold">Forzado a efectivo (pago desde caja)</p>
           </div>
 
+          <!-- Foto del ticket -->
+          <FotoTicketInput v-model="fotos" />
+
           <!-- Notas -->
           <div class="space-y-2">
             <label class="text-xs font-black text-slate-500 uppercase tracking-widest">Notas <span class="text-slate-300">(opcional)</span></label>
@@ -284,6 +287,8 @@ import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
 import GastoDetallesEditor from './GastoDetallesEditor.vue'
 import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
+import FotoTicketInput from './FotoTicketInput.vue'
+import { subirAdjuntos } from '@/composables/useAdjuntosGasto'
 
 const props = defineProps<{
   turnoId?: number | null
@@ -424,6 +429,7 @@ const proveedorId = ref<number | null>(null)
 const metodoPago = ref<string>('efectivo')
 const notas = ref('')
 const submitting = ref(false)
+const fotos = ref<File[]>([])
 const submitError = ref<string | null>(null)
 
 const metodosPago = [
@@ -474,7 +480,11 @@ async function submit() {
       fecha_gasto: new Date().toISOString(),
       turno_id: props.turnoId ?? null,
     }
-    await api.post('/gastos/', payload)
+    const { data: creado } = await api.post('/gastos/', payload)
+    if (fotos.value.length) {
+      const fallidas = await subirAdjuntos(creado.id, fotos.value)
+      if (fallidas) window.alert(`El gasto se guardó, pero ${fallidas} foto(s) no se subieron. Agrégalas desde el historial.`)
+    }
     emit('save')
   } catch (e: any) {
     submitError.value = e?.response?.data?.detail || 'Error al guardar el gasto'

@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { api } from '@/api/client'
+import { subirAdjuntos } from '@/composables/useAdjuntosGasto'
 
 // Contrato de POST /gastos/ para gastos NO nómina (insumos / servicios).
 // Extraído de GastoCheckout.vue submit() para no duplicar la forma del payload.
@@ -19,15 +20,20 @@ export interface CrearGastoArgs {
   fechaGasto?: string | null
   totalManual?: number | null
   turnoId?: number | null
+  /** Fotos del ticket: se suben DESPUÉS de crear el gasto (nunca lo bloquean). */
+  fotos?: File[]
 }
 
 export function useCrearGasto() {
   const submitting = ref(false)
   const error = ref<string | null>(null)
+  /** Fotos que no se pudieron subir en el último gasto (el gasto sí quedó guardado). */
+  const fotosFallidas = ref(0)
 
   async function crearGasto(args: CrearGastoArgs) {
     submitting.value = true
     error.value = null
+    fotosFallidas.value = 0
     try {
       const payload = {
         proveedor_id: args.proveedorId,
@@ -50,6 +56,9 @@ export function useCrearGasto() {
         nomina_detalles: [],
       }
       const { data } = await api.post('/gastos/', payload)
+      if (args.fotos?.length) {
+        fotosFallidas.value = await subirAdjuntos(data.id, args.fotos)
+      }
       return data
     } catch (e: any) {
       error.value = e?.response?.data?.detail || 'Error al guardar el gasto'
@@ -59,5 +68,5 @@ export function useCrearGasto() {
     }
   }
 
-  return { crearGasto, submitting, error }
+  return { crearGasto, submitting, error, fotosFallidas }
 }
