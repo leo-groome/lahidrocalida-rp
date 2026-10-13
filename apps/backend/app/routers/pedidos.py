@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.auth import get_current_active_user, get_optional_current_user, verificar_pin_admin
 from app.db.session import get_db
 from app.deps import require_roles
-from app.domain.estados import EstadoPedido, transicion_permitida
+from app.domain.estados import TIPO_ORDEN_UBER, EstadoPedido, transicion_permitida
 from app.events import WsEvent, enqueue_event
 from app.models import ArticuloPedido, AutorizacionPin, Pedido, Platillo, Turno, Usuario
 from app.schemas import (
@@ -377,6 +377,7 @@ def list_pedidos(
         "pagado",
         "cancelado",
         "dividido",
+        "entregado_repartidor",
     ]
 
     if estado and estado not in ESTADOS_VALIDOS:
@@ -506,6 +507,9 @@ async def dividir_cuenta(
             status_code=400,
             detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas.",
         )
+
+    if pedido.tipo_orden == TIPO_ORDEN_UBER:
+        raise HTTPException(status_code=400, detail="Un pedido Uber Eats no se puede dividir")
 
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
         raise HTTPException(
@@ -753,6 +757,9 @@ async def dividir_por_montos(
             detail="El pedido ya está marcado como dividido pero no se encontraron sub-cuentas vinculadas.",
         )
 
+    if pedido.tipo_orden == TIPO_ORDEN_UBER:
+        raise HTTPException(status_code=400, detail="Un pedido Uber Eats no se puede dividir")
+
     if pedido.estado not in ["entregado", "cuenta_solicitada"]:
         raise HTTPException(
             status_code=400,
@@ -925,7 +932,9 @@ async def update_pedido(
         # (data.estado) según el rol, no solo el destino como antes de S2. Un
         # pedido en estado terminal (pagado/cancelado/dividido) no admite
         # ninguna transición, sin importar el rol.
-        if not transicion_permitida(pedido.estado, data.estado, current_user.rol):
+        if not transicion_permitida(
+            pedido.estado, data.estado, current_user.rol, tipo_orden=pedido.tipo_orden
+        ):
             raise HTTPException(
                 status_code=403,
                 detail=(
@@ -947,7 +956,11 @@ async def update_pedido(
                 db, data.pin_autorizacion, request, current_user
             )
             accion_autorizada = "editar_propina"
-        elif pedido.estado in {EstadoPedido.CANCELADO, EstadoPedido.DIVIDIDO}:
+        elif pedido.estado in {
+            EstadoPedido.CANCELADO,
+            EstadoPedido.DIVIDIDO,
+            EstadoPedido.ENTREGADO_REPARTIDOR,
+        }:
             raise HTTPException(
                 status_code=403,
                 detail=f"No se pueden modificar pedidos en estado '{pedido.estado}'",
@@ -970,6 +983,20 @@ async def update_pedido(
         if turno_activo:
             pedido.turno_id = turno_activo.id
 
+    # Uber Eats entregado al repartidor: no hay cobro en Caja. fecha_pago guarda
+    # la hora de entrega y turno_id ubica el pedido en el corte del turno
+    # (bloque "Uber Eats" aparte, fuera del efectivo esperado).
+    if data.estado == EstadoPedido.ENTREGADO_REPARTIDOR:
+        if pedido.fecha_pago is None:
+            pedido.fecha_pago = get_mexico_now()
+        if pedido.turno_id is None:
+            turno_activo = _get_turno_activo(db, pedido.sucursal_id)
+            if turno_activo:
+                pedido.turno_id = turno_activo.id
+        for articulo in pedido.articulos_pedido:
+            if articulo.estado_item != "entregado":
+                articulo.estado_item = "entregado"
+
     # Si el pedido se marca como "listo", marcar todos los artículos como "listo"
     # EXCEPTO aquellos que ya están "entregado" (bebidas)
     if data.estado == "listo":
@@ -983,14 +1010,18 @@ async def update_pedido(
             if articulo.estado_item != "entregado":
                 articulo.estado_item = "entregado"
 
+    # Uber Eats no se cobra por Caja: se ignoran método de pago y propinas para
+    # que no contaminen los totales de efectivo/tarjeta.
+    es_uber = pedido.tipo_orden == TIPO_ORDEN_UBER
+
     # Actualizar método de pago si se proporciona
-    if data.metodo_pago is not None:
+    if data.metodo_pago is not None and not es_uber:
         pedido.metodo_pago = data.metodo_pago
 
     # Actualizar propinas si se proporcionan
-    if data.propina_efectivo is not None:
+    if data.propina_efectivo is not None and not es_uber:
         pedido.propina_efectivo = data.propina_efectivo
-    if data.propina_tarjeta is not None:
+    if data.propina_tarjeta is not None and not es_uber:
         pedido.propina_tarjeta = data.propina_tarjeta
 
     if admin_autorizador is not None:
@@ -1011,7 +1042,7 @@ async def update_pedido(
         (data.propina_efectivo is not None and data.propina_efectivo != old_propina_efectivo)
         or (data.propina_tarjeta is not None and data.propina_tarjeta != old_propina_tarjeta)
         or (data.metodo_pago is not None and data.metodo_pago != old_metodo_pago)
-    )
+    ) and not es_uber
     if old_estado != data.estado or hubo_cambio_propina_o_pago:
         try:
             pedido_data = {

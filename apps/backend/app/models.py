@@ -271,6 +271,11 @@ class Turno(Base):
     ventas_efectivo = Column(DECIMAL(10, 2))
     propinas_efectivo = Column(DECIMAL(10, 2))
     diferencia = Column(DECIMAL(10, 2), nullable=True)
+    # Corte Uber Eats: pedidos entregados al repartidor durante el turno. Van
+    # aparte del efectivo/tarjeta de terminal (el dinero llega por depósito a
+    # tarjeta) y NUNCA entran en `diferencia` ni en el efectivo esperado.
+    pedidos_uber = Column(Integer, nullable=False, default=0, server_default="0")
+    ventas_uber = Column(DECIMAL(10, 2), nullable=False, default=0, server_default="0")
     observaciones = Column(Text)
     # True cuando reconciliar_jornada cerró este turno por quedar abierto de
     # una jornada anterior — en ese caso total_final/diferencia quedan NULL,

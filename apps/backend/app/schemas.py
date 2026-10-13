@@ -408,6 +408,8 @@ class TurnoResponse(BaseModel):
     propinas_efectivo: Optional[float] = None
     diferencia: Optional[float] = None
     fondo_anterior: Optional[float] = None
+    pedidos_uber: int = 0
+    ventas_uber: float = 0.0
     observaciones: Optional[str] = None
     denominaciones_iniciales: List[DenominacionBase]
     denominaciones_finales: Optional[List[DenominacionBase]] = None

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.domain.estados import TIPO_ORDEN_UBER, EstadoPedido
 from app.models import Gasto, Pedido, Turno, TurnoDenominacion, Usuario
 from app.schemas import (
     DenominacionBase,
@@ -150,6 +151,24 @@ def _calcular_movimientos_efectivo(
     }
 
 
+def _calcular_uber(db: Session, sucursal_id: int, turno_id: int) -> tuple[int, Decimal]:
+    """Pedidos Uber Eats entregados al repartidor en el turno: (cantidad, total).
+
+    Bloque aparte del efectivo: no entra en `total_esperado` ni en `diferencia`.
+    """
+    row = (
+        db.query(func.count(Pedido.id), func.coalesce(func.sum(Pedido.total), 0))
+        .filter(
+            Pedido.sucursal_id == sucursal_id,
+            Pedido.turno_id == turno_id,
+            Pedido.tipo_orden == TIPO_ORDEN_UBER,
+            Pedido.estado == EstadoPedido.ENTREGADO_REPARTIDOR,
+        )
+        .one()
+    )
+    return int(row[0]), Decimal(str(row[1]))
+
+
 # ===== ENDPOINTS =====
 
 
@@ -253,6 +272,8 @@ def iniciar_turno(
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
         cerrado_automatico=turno.cerrado_automatico,
+        pedidos_uber=turno.pedidos_uber or 0,
+        ventas_uber=float(turno.ventas_uber or 0),
     )
 
 
@@ -329,6 +350,8 @@ def obtener_turno_activo(
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
         cerrado_automatico=turno.cerrado_automatico,
+        pedidos_uber=turno.pedidos_uber or 0,
+        ventas_uber=float(turno.ventas_uber or 0),
     )
 
 
@@ -395,6 +418,7 @@ def cerrar_turno(
     turno.ventas_efectivo = movs_info["ventas_efectivo"]
     turno.propinas_efectivo = movs_info["propinas_efectivo"]
     turno.diferencia = diferencia
+    turno.pedidos_uber, turno.ventas_uber = _calcular_uber(db, turno.sucursal_id, turno.id)
 
     if cierre_data.observaciones:
         turno.observaciones = (
@@ -463,6 +487,8 @@ def cerrar_turno(
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
         cerrado_automatico=turno.cerrado_automatico,
+        pedidos_uber=turno.pedidos_uber or 0,
+        ventas_uber=float(turno.ventas_uber or 0),
     )
 
 
@@ -581,6 +607,8 @@ def listar_turnos(
                 usuario_nombre=turno.usuario.nombre if turno.usuario else None,
                 sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
                 cerrado_automatico=turno.cerrado_automatico,
+                pedidos_uber=turno.pedidos_uber or 0,
+                ventas_uber=float(turno.ventas_uber or 0),
             )
         )
 
@@ -648,6 +676,8 @@ def obtener_turno(
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
         cerrado_automatico=turno.cerrado_automatico,
+        pedidos_uber=turno.pedidos_uber or 0,
+        ventas_uber=float(turno.ventas_uber or 0),
     )
 
 
@@ -796,6 +826,8 @@ def editar_turno(
         usuario_nombre=turno.usuario.nombre if turno.usuario else None,
         sucursal_nombre=turno.sucursal.nombre if turno.sucursal else None,
         cerrado_automatico=turno.cerrado_automatico,
+        pedidos_uber=turno.pedidos_uber or 0,
+        ventas_uber=float(turno.ventas_uber or 0),
     )
 
 
@@ -916,6 +948,9 @@ def obtener_resumen_turno(
     ]
 
     resumen["gastos_turno"] = float(movs_info["gastos"])
+
+    pedidos_uber, ventas_uber = _calcular_uber(db, turno.sucursal_id, turno.id)
+    resumen["uber_eats"] = {"pedidos": pedidos_uber, "total": float(ventas_uber)}
 
     total_esperado = (
         Decimal(str(turno.total_inicial))

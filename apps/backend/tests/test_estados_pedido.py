@@ -35,3 +35,38 @@ def test_administrador_puede_mover_a_dividido_manualmente():
     de Caja): solo administrador."""
     assert transicion_permitida("cuenta_solicitada", "dividido", "administrador") is True
     assert transicion_permitida("cuenta_solicitada", "dividido", "cajero") is False
+
+
+def test_entregado_repartidor_es_terminal():
+    assert EstadoPedido.ENTREGADO_REPARTIDOR in EstadoPedido.terminales()
+
+
+def test_uber_puede_ir_a_entregado_repartidor():
+    for rol in ("mesero", "cajero", "administrador"):
+        assert (
+            transicion_permitida("listo", "entregado_repartidor", rol, tipo_orden="uber_eats")
+            is True
+        )
+
+
+def test_no_uber_no_puede_ir_a_entregado_repartidor():
+    for tipo in ("aqui", "llevar", None):
+        assert (
+            transicion_permitida("listo", "entregado_repartidor", "administrador", tipo_orden=tipo)
+            is False
+        )
+
+
+def test_cocina_no_marca_entregado_repartidor():
+    assert (
+        transicion_permitida("listo", "entregado_repartidor", "cocina", tipo_orden="uber_eats")
+        is False
+    )
+
+
+def test_uber_no_se_cobra_ni_se_divide():
+    for destino in ("cuenta_solicitada", "pagado", "dividido"):
+        assert (
+            transicion_permitida("entregado", destino, "administrador", tipo_orden="uber_eats")
+            is False
+        )
