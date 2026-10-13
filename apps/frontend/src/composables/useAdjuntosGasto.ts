@@ -4,13 +4,17 @@ export const MAX_FOTOS = 5
 const MAX_LADO = 1600
 const CALIDAD = 0.8
 const TIMEOUT_SUBIDA_MS = 60_000
+const EXT: Record<string, string> = { 'image/webp': 'webp', 'image/png': 'png', 'image/heic': 'heic' }
 
 /**
- * Reduce la foto (lado mayor 1600px, JPEG 0.8) para que suba rápido por red
- * móvil. Si el navegador no puede decodificarla (p. ej. HEIC en Chrome) se
- * envía el original: el backend valida el formato por contenido.
+ * Convierte la foto a WebP (lado mayor 1600px, calidad 0.8): es más liviana y
+ * más barata de renderizar. Si el navegador no puede codificar WebP (Safari
+ * viejo) cae a JPEG; si no puede ni decodificar la imagen (p. ej. HEIC en
+ * Chrome) se envía el original: el backend valida el formato por contenido.
  */
 export async function comprimirImagen(file: File): Promise<Blob> {
+  // Ya convertida al elegirla: no recomprimir (evita doble pérdida).
+  if (file.type === 'image/webp' && file.size < 1_500_000) return file
   try {
     const bitmap = await createImageBitmap(file)
     const escala = Math.min(1, MAX_LADO / Math.max(bitmap.width, bitmap.height))
@@ -19,11 +23,22 @@ export async function comprimirImagen(file: File): Promise<Blob> {
     canvas.height = Math.round(bitmap.height * escala)
     canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
     bitmap.close()
-    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', CALIDAD))
+    let blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/webp', CALIDAD))
+    if (!blob || blob.type !== 'image/webp') {
+      blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', CALIDAD))
+    }
     return blob && blob.size < file.size ? blob : file
   } catch {
     return file
   }
+}
+
+/** Convierte a WebP al elegir la foto, para que subir después sea instantáneo. */
+export async function prepararFoto(file: File): Promise<File> {
+  const blob = await comprimirImagen(file)
+  if (blob === file) return file
+  const ext = EXT[blob.type] ?? 'jpg'
+  return new File([blob], `ticket.${ext}`, { type: blob.type })
 }
 
 /** Sube las fotos de un gasto ya creado. Devuelve cuántas fallaron. */
@@ -33,7 +48,7 @@ export async function subirAdjuntos(gastoId: number, fotos: File[]): Promise<num
     try {
       const blob = await comprimirImagen(foto)
       const form = new FormData()
-      form.append('archivo', blob, 'ticket.jpg')
+      form.append('archivo', blob, `ticket.${EXT[blob.type] ?? 'jpg'}`)
       await api.post(`/gastos/${gastoId}/adjuntos`, form, { timeout: TIMEOUT_SUBIDA_MS })
     } catch {
       fallidas++

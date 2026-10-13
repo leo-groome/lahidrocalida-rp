@@ -19,6 +19,35 @@
 
     <!-- Contenido -->
     <main class="flex-1 max-w-xl w-full mx-auto px-4 py-5 space-y-4">
+      <!-- Envíos en curso (UI optimista): el formulario ya quedó libre para el siguiente gasto -->
+      <ul v-if="pendientes.length" class="space-y-2" aria-live="polite">
+        <li
+          v-for="p in pendientes"
+          :key="p.id"
+          class="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-bold transition-colors"
+          :class="{
+            'bg-white border-slate-200 text-slate-600': p.estado === 'enviando',
+            'bg-emerald-50 border-emerald-200 text-emerald-700': p.estado === 'ok',
+            'bg-amber-50 border-amber-200 text-amber-700': p.estado === 'parcial',
+            'bg-rose-50 border-rose-200 text-rose-700': p.estado === 'error',
+          }"
+        >
+          <Loader2 v-if="p.estado === 'enviando'" class="w-4 h-4 animate-spin flex-shrink-0" />
+          <Check v-else-if="p.estado === 'ok'" class="w-4 h-4 flex-shrink-0" />
+          <AlertTriangle v-else class="w-4 h-4 flex-shrink-0" />
+          <span class="flex-1 min-w-0 truncate">
+            ${{ p.total.toFixed(2) }} · {{ p.resumen }}
+            <span v-if="p.estado === 'enviando'" class="font-medium">· guardando…</span>
+            <span v-else-if="p.estado === 'parcial'" class="font-medium">· {{ p.fotosFallidas }} foto(s) sin subir</span>
+            <span v-else-if="p.estado === 'error'" class="font-medium">· {{ p.error }}</span>
+          </span>
+          <template v-if="p.estado === 'error'">
+            <button type="button" class="font-black underline" @click="reintentar(p)">Reintentar</button>
+            <button type="button" class="p-1" title="Descartar" @click="descartar(p.id)"><X class="w-4 h-4" /></button>
+          </template>
+        </li>
+      </ul>
+
       <!-- Captura rápida: monto + foto del ticket -->
       <div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
         <label class="text-xs font-black text-slate-400 uppercase tracking-widest">
@@ -134,11 +163,10 @@
         <button
           type="button"
           @click="registrar"
-          :disabled="!puedeRegistrar || submitting"
+          :disabled="!puedeRegistrar"
           class="w-full py-4 bg-[#00126D] text-white font-black rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
         >
-          <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
-          {{ submitting ? 'Registrando...' : `Registrar gasto${totalTexto}` }}
+          {{ `Registrar gasto${totalTexto}` }}
         </button>
       </div>
     </footer>
@@ -155,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import {
@@ -165,14 +193,13 @@ import {
   precioUnitarioFila,
   type FilaCompra,
 } from '@/utils/parseCompraTexto'
-import { useCrearGasto } from '@/composables/useCrearGasto'
+import { enviarGasto, type CrearGastoArgs } from '@/composables/useCrearGasto'
 import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
 import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
-import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, Loader2, X } from 'lucide-vue-next'
 
 const router = useRouter()
-const { crearGasto, submitting, error, fotosFallidas } = useCrearGasto()
 
 const PROVEEDOR_LS_KEY = 'rapido:ultimoProveedorId'
 const metodos = [
@@ -244,37 +271,84 @@ function onArticulosActualizados(arts: any[]) {
   articulos.value = arts
 }
 
-async function registrar() {
-  if (!puedeRegistrar.value || submitting.value) return
+// --- UI optimista -----------------------------------------------------------
+// Al registrar, el formulario se limpia al instante y el envío corre en segundo
+// plano; cada gasto aparece en `pendientes` y solo el que falla pide acción.
+interface Pendiente {
+  id: number
+  total: number
+  resumen: string
+  estado: 'enviando' | 'ok' | 'parcial' | 'error'
+  fotosFallidas: number
+  error: string
+  args: CrearGastoArgs
+}
+const pendientes = ref<Pendiente[]>([])
+let siguienteId = 1
+
+const hayEnVuelo = computed(() => pendientes.value.some((p) => p.estado === 'enviando'))
+function avisarSalida(e: BeforeUnloadEvent) {
+  if (hayEnVuelo.value) e.preventDefault()
+}
+window.addEventListener('beforeunload', avisarSalida)
+onBeforeUnmount(() => window.removeEventListener('beforeunload', avisarSalida))
+
+function descartar(id: number) {
+  pendientes.value = pendientes.value.filter((p) => p.id !== id)
+}
+
+async function enviar(p: Pendiente) {
+  p.estado = 'enviando'
+  p.error = ''
   try {
-    await crearGasto({
-      proveedorId: proveedorId.value,
-      tipoGasto: 'directo',
-      metodoPago: metodoPago.value,
-      detalles: modoLista.value ? filasToDetalles(filas.value) : [],
-      totalManual: modoLista.value ? null : montoNum.value,
-      fechaGasto: fecha.value,
-      fotos: fotos.value,
-    })
-    if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
-    mostrarToast(
-      fotosFallidas.value
-        ? `Gasto guardado, pero ${fotosFallidas.value} foto(s) no se subieron`
-        : modoLista.value
-          ? `Gasto registrado · ${filas.value.length} artículo(s)`
-          : `Gasto registrado · $${montoNum.value.toFixed(2)}`,
-      fotosFallidas.value ? 'error' : 'ok',
-    )
-    texto.value = ''
-    filas.value = []
-    montoTotal.value = ''
-    fotos.value = []
-    fecha.value = localNow()
-    await nextTick()
-    textareaRef.value?.focus()
-  } catch {
-    mostrarToast(error.value || 'Error al guardar', 'error')
+    const r = await enviarGasto(p.args)
+    p.fotosFallidas = r.fotosFallidas
+    p.estado = r.fotosFallidas ? 'parcial' : 'ok'
+    if (!r.fotosFallidas) setTimeout(() => descartar(p.id), 4000)
+  } catch (e: any) {
+    p.estado = 'error'
+    p.error = e?.response?.data?.detail || 'No se pudo guardar'
   }
+}
+
+function reintentar(p: Pendiente) {
+  // Riesgo conocido: si el POST llegó pero se perdió la respuesta, reintentar duplica el
+  // gasto (el backend aún no tiene idempotencia en /gastos). El usuario decide con el botón.
+  void enviar(p)
+}
+
+async function registrar() {
+  if (!puedeRegistrar.value) return
+  const args: CrearGastoArgs = {
+    proveedorId: proveedorId.value,
+    tipoGasto: 'directo',
+    metodoPago: metodoPago.value,
+    detalles: modoLista.value ? filasToDetalles(filas.value) : [],
+    totalManual: modoLista.value ? null : montoNum.value,
+    fechaGasto: fecha.value,
+    fotos: [...fotos.value],
+  }
+  const p: Pendiente = {
+    id: siguienteId++,
+    total: totalGasto.value,
+    resumen: modoLista.value ? `${filas.value.length} artículo(s)` : 'compra rápida',
+    estado: 'enviando',
+    fotosFallidas: 0,
+    error: '',
+    args,
+  }
+  if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
+
+  // Optimista: se limpia ya, no se espera al servidor.
+  pendientes.value = [p, ...pendientes.value]
+  texto.value = ''
+  filas.value = []
+  montoTotal.value = ''
+  fotos.value = []
+  fecha.value = localNow()
+  void enviar(pendientes.value[0])
+  await nextTick()
+  textareaRef.value?.focus()
 }
 
 function volver() {

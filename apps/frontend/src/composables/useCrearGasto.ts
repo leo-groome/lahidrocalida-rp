@@ -24,6 +24,36 @@ export interface CrearGastoArgs {
   fotos?: File[]
 }
 
+/**
+ * POST /gastos/ + subida de fotos, sin estado de UI. Lo usa la UI optimista
+ * (varios envíos en paralelo) y `useCrearGasto`.
+ */
+export async function enviarGasto(args: CrearGastoArgs) {
+  const payload = {
+    proveedor_id: args.proveedorId,
+    tipo_gasto: args.tipoGasto,
+    metodo_pago: args.metodoPago,
+    folio: args.folio || null,
+    notas: args.notas || null,
+    descripcion: args.notas || null,
+    fecha_gasto: args.fechaGasto
+      ? new Date(args.fechaGasto).toISOString()
+      : new Date().toISOString(),
+    turno_id: args.turnoId ?? null,
+    total_manual: args.totalManual ?? null,
+    detalles: args.detalles.map((d) => ({
+      articulo_id: d.articulo_id,
+      cantidad: d.cantidad,
+      precio_unitario: d.precio_unitario,
+      subtotal_linea: d.subtotal_linea,
+    })),
+    nomina_detalles: [],
+  }
+  const { data } = await api.post('/gastos/', payload)
+  const fotosFallidas = args.fotos?.length ? await subirAdjuntos(data.id, args.fotos) : 0
+  return { gasto: data, fotosFallidas }
+}
+
 export function useCrearGasto() {
   const submitting = ref(false)
   const error = ref<string | null>(null)
@@ -35,30 +65,9 @@ export function useCrearGasto() {
     error.value = null
     fotosFallidas.value = 0
     try {
-      const payload = {
-        proveedor_id: args.proveedorId,
-        tipo_gasto: args.tipoGasto,
-        metodo_pago: args.metodoPago,
-        folio: args.folio || null,
-        notas: args.notas || null,
-        descripcion: args.notas || null,
-        fecha_gasto: args.fechaGasto
-          ? new Date(args.fechaGasto).toISOString()
-          : new Date().toISOString(),
-        turno_id: args.turnoId ?? null,
-        total_manual: args.totalManual ?? null,
-        detalles: args.detalles.map((d) => ({
-          articulo_id: d.articulo_id,
-          cantidad: d.cantidad,
-          precio_unitario: d.precio_unitario,
-          subtotal_linea: d.subtotal_linea,
-        })),
-        nomina_detalles: [],
-      }
-      const { data } = await api.post('/gastos/', payload)
-      if (args.fotos?.length) {
-        fotosFallidas.value = await subirAdjuntos(data.id, args.fotos)
-      }
+      const r = await enviarGasto(args)
+      fotosFallidas.value = r.fotosFallidas
+      const data = r.gasto
       return data
     } catch (e: any) {
       error.value = e?.response?.data?.detail || 'Error al guardar el gasto'

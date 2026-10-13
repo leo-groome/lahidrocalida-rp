@@ -1,19 +1,24 @@
 <template>
   <div class="space-y-2">
-    <div class="flex items-center gap-2">
+    <div class="flex items-stretch gap-2">
+      <!-- Cámara directa en móvil (capture); en escritorio abre el selector de archivos -->
       <label
-        class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed border-slate-300 text-slate-500 font-black text-sm cursor-pointer active:scale-[0.98] transition-all hover:border-[#00126D] hover:text-[#00126D]"
-        :class="{ 'opacity-40 pointer-events-none': modelValue.length >= MAX_FOTOS }"
+        class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-[#00126D] text-white font-black text-sm cursor-pointer active:scale-[0.98] transition-all"
+        :class="{ 'opacity-40 pointer-events-none': lleno }"
       >
-        <Camera class="w-4 h-4" />
-        {{ modelValue.length ? 'Agregar otra foto' : 'Foto del ticket' }}
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          class="hidden"
-          @change="onElegir"
-        >
+        <Loader2 v-if="procesando" class="w-4 h-4 animate-spin" />
+        <Camera v-else class="w-4 h-4" />
+        {{ modelValue.length ? 'Otra foto' : 'Tomar foto del ticket' }}
+        <input type="file" accept="image/*" capture="environment" class="hidden" @change="onElegir">
+      </label>
+      <label
+        class="flex items-center justify-center gap-2 px-4 rounded-2xl border-2 border-slate-200 text-slate-500 font-black text-sm cursor-pointer active:scale-[0.98] transition-all"
+        :class="{ 'opacity-40 pointer-events-none': lleno }"
+        title="Elegir de la galería"
+      >
+        <ImageIcon class="w-4 h-4" />
+        <span class="sr-only sm:not-sr-only">Galería</span>
+        <input type="file" accept="image/*" class="hidden" @change="onElegir">
       </label>
     </div>
 
@@ -34,9 +39,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount } from 'vue'
-import { Camera, X } from 'lucide-vue-next'
-import { MAX_FOTOS } from '@/composables/useAdjuntosGasto'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { Camera, Image as ImageIcon, Loader2, X } from 'lucide-vue-next'
+import { MAX_FOTOS, prepararFoto } from '@/composables/useAdjuntosGasto'
 
 const modelValue = defineModel<File[]>({ default: () => [] })
 
@@ -49,13 +54,22 @@ const previews = computed(() => {
 })
 onBeforeUnmount(() => urls.forEach((u) => URL.revokeObjectURL(u)))
 
-function onElegir(e: Event) {
+const procesando = ref(false)
+const lleno = computed(() => modelValue.value.length >= MAX_FOTOS)
+
+// Convierte a WebP al elegir: la vista previa es inmediata y la subida posterior no espera.
+async function onElegir(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  if (file && modelValue.value.length < MAX_FOTOS) {
-    modelValue.value = [...modelValue.value, file]
-  }
   input.value = '' // permite volver a elegir el mismo archivo
+  if (!file || lleno.value) return
+  procesando.value = true
+  try {
+    const lista = await prepararFoto(file)
+    if (modelValue.value.length < MAX_FOTOS) modelValue.value = [...modelValue.value, lista]
+  } finally {
+    procesando.value = false
+  }
 }
 
 function quitar(i: number) {
