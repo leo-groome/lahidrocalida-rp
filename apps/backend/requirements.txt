@@ -18,7 +18,7 @@ typing_extensions==4.15.0
 uvicorn==0.37.0
 python-jose[cryptography]==3.3.0
 passlib[argon2,bcrypt]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.32
 alembic==1.13.2
 websockets==11.0.3
 pytz==2024.1

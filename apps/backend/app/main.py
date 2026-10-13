@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -64,6 +65,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Tope de body en subida de fotos: Starlette parsea el multipart ANTES de
+# resolver auth, así que se corta por Content-Length antes de leer nada.
+_MAX_BODY_ADJUNTO = 9 * 1024 * 1024
+
+
+@app.middleware("http")
+async def limitar_body_adjuntos(request, call_next):
+    if request.method == "POST" and request.url.path.endswith("/adjuntos"):
+        largo = request.headers.get("content-length")
+        if largo is None or not largo.isdigit() or int(largo) > _MAX_BODY_ADJUNTO:
+            return JSONResponse(status_code=413, content={"detail": "Archivo demasiado grande"})
+    return await call_next(request)
+
 
 # Incluir routers
 app.include_router(auth.router)

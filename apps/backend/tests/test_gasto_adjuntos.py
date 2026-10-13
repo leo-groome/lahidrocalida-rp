@@ -176,3 +176,31 @@ def test_storage_r2_exige_credenciales(monkeypatch):
     monkeypatch.setattr(storage_mod.settings, "R2_BUCKET", None)
     with pytest.raises(RuntimeError, match="R2_BUCKET"):
         storage_mod.get_storage()
+
+
+def test_cajero_de_otra_sucursal_no_toca_gasto_ajeno(como_rol, seed, db_session):
+    otra = Sucursal(nombre="Sur")
+    db_session.add(otra)
+    db_session.commit()
+    gasto = _gasto(db_session, seed["sucursal"].id)
+    intruso = como_rol("cajero", sucursal_id=otra.id)
+
+    assert intruso.get(f"/gastos/{gasto.id}").status_code == 404
+    assert intruso.delete(f"/gastos/{gasto.id}").status_code == 404
+    assert db_session.get(Gasto, gasto.id) is not None
+
+
+def test_borrar_gasto_elimina_sus_fotos_del_storage(como_rol, seed, db_session, storage_tmp):
+    gasto = _gasto(db_session, seed["sucursal"].id)
+    client = como_rol("compras")
+    _subir(client, gasto.id, JPEG)
+    assert len(list(storage_tmp.rglob("*.jpg"))) == 1
+
+    assert client.delete(f"/gastos/{gasto.id}").status_code == 204
+    assert list(storage_tmp.rglob("*.jpg")) == []
+
+
+def test_body_gigante_se_rechaza_antes_de_parsear(como_rol, seed, db_session):
+    gasto = _gasto(db_session, seed["sucursal"].id)
+    r = _subir(como_rol("compras"), gasto.id, JPEG + b"\x00" * (10 * 1024 * 1024))
+    assert r.status_code == 413

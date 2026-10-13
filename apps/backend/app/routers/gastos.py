@@ -1,3 +1,4 @@
+import logging
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
@@ -38,7 +39,10 @@ from app.schemas import (
     ProveedorResponse,
     UsuarioResponse,
 )
+from app.services.storage import Storage, get_storage
 from app.utils.timezone import MEXICO_TZ
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gastos", tags=["gastos"])
 
@@ -427,7 +431,7 @@ def list_gastos(
 
     query = db.query(Gasto)
 
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         query = query.filter(Gasto.sucursal_id == current_user.sucursal_id)
     elif sucursal_id is not None:
         query = query.filter(Gasto.sucursal_id == sucursal_id)
@@ -492,7 +496,7 @@ def get_gastos_analiticas(
 
     base_query = db.query(Gasto)
 
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         base_query = base_query.filter(Gasto.sucursal_id == current_user.sucursal_id)
     elif sucursal_id is not None:
         base_query = base_query.filter(Gasto.sucursal_id == sucursal_id)
@@ -540,7 +544,7 @@ def get_gastos_analiticas(
     )
 
     # Aplicar mismos filtros a esta subquery
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         gastos_con_detalle = gastos_con_detalle.filter(
             Gasto.sucursal_id == current_user.sucursal_id
         )
@@ -667,8 +671,8 @@ def get_gasto(
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para ver este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
     return gasto
 
 
@@ -685,8 +689,8 @@ def update_gasto(
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para editar este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
     detalles: list[GastoDetalle] = []
     nomina_detalles: list[NominaDetalle] = []
@@ -737,18 +741,27 @@ def update_gasto(
 
 
 @router.delete("/{gasto_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_gasto(
+async def delete_gasto(
     gasto_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
+    storage: Storage = Depends(get_storage),
 ):
     gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para eliminar este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
+    llaves = [a.storage_key for a in gasto.adjuntos]
     db.delete(gasto)
     db.commit()
+    # Tras el commit: si el storage falla, el gasto ya no existe; un archivo
+    # huérfano es preferible a una fila que apunta a una foto inexistente.
+    for llave in llaves:
+        try:
+            await storage.borrar(llave)
+        except Exception:
+            logger.warning("No se pudo borrar adjunto huérfano de gasto %s", gasto_id)
     return None
