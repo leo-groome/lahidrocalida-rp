@@ -81,7 +81,7 @@
           </select>
         </div>
         
-        <div class="flex justify-end space-x-3 pt-4">
+        <div class="safe-area-bottom flex justify-end space-x-3 pt-4">
           <button
             type="button"
             @click="closePlatilloModal"
@@ -167,7 +167,7 @@
           </label>
         </div>
         
-        <div class="flex justify-end space-x-3 pt-4">
+        <div class="safe-area-bottom flex justify-end space-x-3 pt-4">
           <button
             type="button"
             @click="closeUsuarioModal"

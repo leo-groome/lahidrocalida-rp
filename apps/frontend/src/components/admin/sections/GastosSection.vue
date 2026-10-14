@@ -1,5 +1,6 @@
 <template>
   <div class="space-y-6 sm:space-y-10 animate-in fade-in duration-700">
+    <p v-if="catalogos.error" role="alert" class="text-sm text-rose-600">{{ catalogos.error }}</p>
     <!-- Premium Header Section -->
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 md:gap-8 pb-2 border-b border-slate-100/80">
       <div class="space-y-2">
@@ -123,8 +124,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import api from '@/api/client'
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores: proveedoresList, categorias: categoriasArticuloList } = storeToRefs(catalogos)
+import { ref, computed, onMounted } from 'vue'
 import GastosDashboard from '@/components/gastos/GastosDashboard.vue'
 import GastosHistorial from '@/components/gastos/GastosHistorial.vue'
 import ProveedoresView from '@/components/gastos/ProveedoresView.vue'
@@ -148,10 +152,9 @@ const gastosSubTab = ref('dashboard')
 const gastosHistorialRef = ref(null)
 
 // Assets Lists
-const proveedoresList = ref<any[]>([])
-const categoriasArticuloList = ref<any[]>([])
-const articulosList = ref<any[]>([])
-const selectedArticuloCategoria = ref(null)
+const selectedArticuloCategoria = ref<number | null>(null)
+const articulosList = computed(() => catalogos.articulos.filter(a =>
+  !selectedArticuloCategoria.value || a.categoria_id === selectedArticuloCategoria.value))
 
 // Modals State
 const showProveedorModal = ref(false)
@@ -161,28 +164,13 @@ const editingArticuloData = ref(null)
 const showCategoriaModal = ref(false)
 const editingCategoriaData = ref(null)
 
-const loadProveedores = async () => {
-  try {
-    const res = await api.get('/gastos/proveedores')
-    proveedoresList.value = res.data
-  } catch (e) { console.error(e) }
+async function loadCatalogos() {
+  try { await catalogos.cargar() } catch { /* El error se muestra en la sección. */ }
 }
+const loadProveedores = loadCatalogos
+const loadCategoriasArticulo = loadCatalogos
+const loadArticulos = loadCatalogos
 
-const loadCategoriasArticulo = async () => {
-  try {
-    const res = await api.get('/gastos/categorias-articulo')
-    categoriasArticuloList.value = res.data
-  } catch (e) { console.error(e) }
-}
-
-const loadArticulos = async () => {
-  try {
-    const params: any = {}
-    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
-    const res = await api.get('/gastos/articulos', { params })
-    articulosList.value = res.data
-  } catch (e) { console.error(e) }
-}
 
 // Handlers
 const openNewProveedor = () => {

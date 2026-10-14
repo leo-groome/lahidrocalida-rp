@@ -1,5 +1,6 @@
 <template>
   <div class="gastos-view">
+    <p v-if="catalogos.error" role="alert" class="text-sm text-rose-600">{{ catalogos.error }}</p>
     <!-- Pestañas de navegación -->
     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm mb-6">
       <div class="border-b border-slate-100">
@@ -64,8 +65,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import api from '@/api/client'
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores: proveedoresList, categorias: categoriasArticuloList } = storeToRefs(catalogos)
+import { ref, computed, onMounted } from 'vue'
 import GastosHistorial from './GastosHistorial.vue'
 import ProveedoresView from './ProveedoresView.vue'
 import ArticulosView from './ArticulosView.vue'
@@ -90,33 +94,17 @@ const editingGasto = ref<any>(null)
 const historialKey = ref(0)
 
 // Catálogos para las pestañas de proveedores/artículos/categorías
-const proveedoresList = ref<any[]>([])
-const categoriasArticuloList = ref<any[]>([])
-const articulosList = ref<any[]>([])
-const selectedArticuloCategoria = ref(null)
+const selectedArticuloCategoria = ref<number | null>(null)
+const articulosList = computed(() => catalogos.articulos.filter(a =>
+  !selectedArticuloCategoria.value || a.categoria_id === selectedArticuloCategoria.value))
 
-async function loadProveedores() {
-  try {
-    const res = await api.get('/gastos/proveedores')
-    proveedoresList.value = res.data
-  } catch (e) { console.error(e) }
+async function loadCatalogos() {
+  try { await catalogos.cargar() } catch { /* El error se muestra en la sección. */ }
 }
+const loadProveedores = loadCatalogos
+const loadCategoriasArticulo = loadCatalogos
+const loadArticulos = loadCatalogos
 
-async function loadCategoriasArticulo() {
-  try {
-    const res = await api.get('/gastos/categorias-articulo')
-    categoriasArticuloList.value = res.data
-  } catch (e) { console.error(e) }
-}
-
-async function loadArticulos() {
-  try {
-    const params: any = {}
-    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
-    const res = await api.get('/gastos/articulos', { params })
-    articulosList.value = res.data
-  } catch (e) { console.error(e) }
-}
 
 function openEditModal(gasto: any) {
   editingGasto.value = gasto

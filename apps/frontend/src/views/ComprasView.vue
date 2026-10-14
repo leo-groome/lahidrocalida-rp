@@ -1,5 +1,6 @@
 <template>
   <div class="min-h-screen bg-slate-50 flex flex-col">
+    <p v-if="catalogos.error" role="alert" class="text-sm text-rose-600">{{ catalogos.error }}</p>
     <!-- ── Top bar ── -->
     <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
       <div class="max-w-[1400px] mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
@@ -99,10 +100,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores: proveedoresList, categorias: categoriasArticuloList } = storeToRefs(catalogos)
+import { ref, computed, nextTick, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import api from '@/api/client'
 import GastosHistorial from '@/components/gastos/GastosHistorial.vue'
 import ProveedoresView from '@/components/gastos/ProveedoresView.vue'
 import ArticulosView from '@/components/gastos/ArticulosView.vue'
@@ -130,33 +134,17 @@ const historialRef = ref<any>(null)
 const checkoutKey = ref(0)
 
 // Catálogos para las pestañas de proveedores/artículos/categorías
-const proveedoresList = ref<any[]>([])
-const categoriasArticuloList = ref<any[]>([])
-const articulosList = ref<any[]>([])
-const selectedArticuloCategoria = ref(null)
+const selectedArticuloCategoria = ref<number | null>(null)
+const articulosList = computed(() => catalogos.articulos.filter(a =>
+  !selectedArticuloCategoria.value || a.categoria_id === selectedArticuloCategoria.value))
 
-async function loadProveedores() {
-  try {
-    const res = await api.get('/gastos/proveedores')
-    proveedoresList.value = res.data
-  } catch (e) { console.error(e) }
+async function loadCatalogos() {
+  try { await catalogos.cargar() } catch { /* El error se muestra en la sección. */ }
 }
+const loadProveedores = loadCatalogos
+const loadCategoriasArticulo = loadCatalogos
+const loadArticulos = loadCatalogos
 
-async function loadCategoriasArticulo() {
-  try {
-    const res = await api.get('/gastos/categorias-articulo')
-    categoriasArticuloList.value = res.data
-  } catch (e) { console.error(e) }
-}
-
-async function loadArticulos() {
-  try {
-    const params: any = {}
-    if (selectedArticuloCategoria.value) params.categoria_id = selectedArticuloCategoria.value
-    const res = await api.get('/gastos/articulos', { params })
-    articulosList.value = res.data
-  } catch (e) { console.error(e) }
-}
 
 // El botón "nuevo" del historial lleva al wizard de registro.
 function goRegistrar() {

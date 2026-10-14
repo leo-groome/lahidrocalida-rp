@@ -48,6 +48,9 @@ jobs:
       - name: Type Check (vue-tsc)
         run: pnpm --filter frontend exec vue-tsc -b
 
+      - name: Unit Tests
+        run: pnpm --filter frontend test
+
       - name: Build Verification
         run: pnpm --filter frontend build
 

@@ -272,6 +272,10 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores } = storeToRefs(catalogos)
 import { ref, onMounted, watch, computed } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
@@ -297,7 +301,6 @@ const emit = defineEmits(['new-gasto', 'edit-gasto'])
 
 const gastos = ref<any[]>([])
 const gastoConFotos = ref<number | null>(null)
-const proveedores = ref<any[]>([])
 const loading = ref(false)
 
 // Paginación
@@ -346,8 +349,7 @@ const getMonth = (dateStr: string) => {
 
 const loadProveedores = async () => {
   try {
-    const res = await api.get('/gastos/proveedores')
-    proveedores.value = res.data
+    await catalogos.cargar()
   } catch (e) {
     console.error(e)
   }

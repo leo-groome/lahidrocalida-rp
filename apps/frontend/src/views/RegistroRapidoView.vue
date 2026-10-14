@@ -38,11 +38,11 @@
           <span class="flex-1 min-w-0 truncate">
             ${{ p.total.toFixed(2) }} · {{ p.resumen }}
             <span v-if="p.estado === 'enviando'" class="font-medium">· guardando…</span>
-            <span v-else-if="p.estado === 'parcial'" class="font-medium">· {{ p.fotosFallidas }} foto(s) sin subir</span>
+            <span v-else-if="p.estado === 'parcial'" class="font-medium">· {{ p.fotosFallidas }} foto(s) sin subir · {{ p.error }}</span>
             <span v-else-if="p.estado === 'error'" class="font-medium">· {{ p.error }}</span>
           </span>
-          <template v-if="p.estado === 'error'">
-            <button type="button" class="font-black underline" @click="reintentar(p)">Reintentar</button>
+          <template v-if="p.estado !== 'enviando'">
+            <button type="button" v-if="p.estado !== 'ok'" class="font-black underline" @click="reintentar(p)">{{ p.gastoId ? 'Reintentar fotos' : 'Reintentar' }}</button>
             <button type="button" class="p-1" title="Descartar" @click="descartar(p.id)"><X class="w-4 h-4" /></button>
           </template>
         </li>
@@ -65,7 +65,7 @@
             class="w-full pl-9 pr-4 py-3 text-2xl font-black text-slate-900 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#00126D]/20 focus:border-[#00126D]"
           >
         </div>
-        <FotoTicketInput v-model="fotos" />
+        <FotoTicketInput v-model="fotos" v-model:processing="preparandoFotos" />
       </div>
 
       <!-- Dictado / pegado -->
@@ -158,12 +158,12 @@
     </main>
 
     <!-- Footer fijo -->
-    <footer class="sticky bottom-0 bg-white/90 backdrop-blur border-t border-slate-100 px-4 py-3">
+    <footer class="safe-area-bottom sticky bottom-0 bg-white/90 backdrop-blur border-t border-slate-100 px-4 py-3">
       <div class="max-w-xl mx-auto">
         <button
           type="button"
           @click="registrar"
-          :disabled="!puedeRegistrar"
+          :disabled="!puedeRegistrar || cola.escribiendo || preparandoFotos"
           class="w-full py-4 bg-[#00126D] text-white font-black rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
         >
           {{ `Registrar gasto${totalTexto}` }}
@@ -183,9 +183,12 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import {
   construirFilas,
   filasListas,
@@ -193,13 +196,16 @@ import {
   precioUnitarioFila,
   type FilaCompra,
 } from '@/utils/parseCompraTexto'
-import { enviarGasto, type CrearGastoArgs } from '@/composables/useCrearGasto'
+import { useGastosPendientesStore } from '@/stores/gastos-pendientes'
+import type { GastoPendiente } from '@/utils/gasto-queue-db'
 import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
 import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, Loader2, X } from 'lucide-vue-next'
 
 const router = useRouter()
+const cola = useGastosPendientesStore()
+const pendientes = computed(() => cola.pendientes)
 
 const PROVEEDOR_LS_KEY = 'rapido:ultimoProveedorId'
 const metodos = [
@@ -211,9 +217,6 @@ const texto = ref('')
 const filas = ref<FilaCompra[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-const proveedores = ref<any[]>([])
-const articulos = ref<any[]>([])
-const categorias = ref<any[]>([])
 
 const ultimoProveedor = Number(localStorage.getItem(PROVEEDOR_LS_KEY))
 const proveedorId = ref<number | null>(Number.isFinite(ultimoProveedor) && ultimoProveedor > 0 ? ultimoProveedor : null)
@@ -222,6 +225,7 @@ const fecha = ref(localNow())
 const ajustesAbiertos = ref(false)
 const montoTotal = ref<string>('')
 const fotos = ref<File[]>([])
+const preparandoFotos = ref(false)
 
 const toast = ref<{ msg: string; tipo: 'ok' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -274,79 +278,44 @@ function onArticulosActualizados(arts: any[]) {
 // --- UI optimista -----------------------------------------------------------
 // Al registrar, el formulario se limpia al instante y el envío corre en segundo
 // plano; cada gasto aparece en `pendientes` y solo el que falla pide acción.
-interface Pendiente {
-  id: number
-  total: number
-  resumen: string
-  estado: 'enviando' | 'ok' | 'parcial' | 'error'
-  fotosFallidas: number
-  error: string
-  args: CrearGastoArgs
-}
-const pendientes = ref<Pendiente[]>([])
-let siguienteId = 1
-
-const hayEnVuelo = computed(() => pendientes.value.some((p) => p.estado === 'enviando'))
+const hayEnVuelo = computed(() => cola.escribiendo)
 function avisarSalida(e: BeforeUnloadEvent) {
   if (hayEnVuelo.value) e.preventDefault()
 }
 window.addEventListener('beforeunload', avisarSalida)
 onBeforeUnmount(() => window.removeEventListener('beforeunload', avisarSalida))
+onBeforeRouteLeave(() => !cola.escribiendo)
 
-function descartar(id: number) {
-  pendientes.value = pendientes.value.filter((p) => p.id !== id)
+async function descartar(id: string) {
+  if (!window.confirm('Descartar el pendiente local no borra un gasto ya guardado. ¿Continuar?')) return
+  try { await cola.descartar(id) } catch { mostrarToast('No se pudo descartar el pendiente', 'error') }
 }
-
-async function enviar(p: Pendiente) {
-  p.estado = 'enviando'
-  p.error = ''
-  try {
-    const r = await enviarGasto(p.args)
-    p.fotosFallidas = r.fotosFallidas
-    p.estado = r.fotosFallidas ? 'parcial' : 'ok'
-    if (!r.fotosFallidas) setTimeout(() => descartar(p.id), 4000)
-  } catch (e: any) {
-    p.estado = 'error'
-    p.error = e?.response?.data?.detail || 'No se pudo guardar'
-  }
-}
-
-function reintentar(p: Pendiente) {
-  // Riesgo conocido: si el POST llegó pero se perdió la respuesta, reintentar duplica el
-  // gasto (el backend aún no tiene idempotencia en /gastos). El usuario decide con el botón.
-  void enviar(p)
+function reintentar(p: GastoPendiente) {
+  void cola.enviar(p).catch(() => mostrarToast('Inicia sesión para reintentar', 'error'))
 }
 
 async function registrar() {
-  if (!puedeRegistrar.value) return
-  const args: CrearGastoArgs = {
-    proveedorId: proveedorId.value,
-    tipoGasto: 'directo',
-    metodoPago: metodoPago.value,
-    detalles: modoLista.value ? filasToDetalles(filas.value) : [],
-    totalManual: modoLista.value ? null : montoNum.value,
-    fechaGasto: fecha.value,
-    fotos: [...fotos.value],
-  }
-  const p: Pendiente = {
-    id: siguienteId++,
-    total: totalGasto.value,
-    resumen: modoLista.value ? `${filas.value.length} artículo(s)` : 'compra rápida',
-    estado: 'enviando',
-    fotosFallidas: 0,
-    error: '',
-    args,
+  if (!puedeRegistrar.value || cola.escribiendo || preparandoFotos.value) return
+  let p: GastoPendiente
+  try {
+    p = await cola.agregar({
+      proveedor_id: proveedorId.value, tipo_gasto: 'directo', metodo_pago: metodoPago.value,
+      detalles: modoLista.value ? filasToDetalles(filas.value) : [],
+      total_manual: modoLista.value ? null : montoNum.value,
+      fecha_gasto: new Date(fecha.value).toISOString(),
+    }, [...fotos.value], totalGasto.value,
+    modoLista.value ? `${filas.value.length} artículo(s)` : 'compra rápida')
+  } catch {
+    mostrarToast('No se pudo conservar el gasto. La captura sigue en el formulario.', 'error')
+    return
   }
   if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
-
-  // Optimista: se limpia ya, no se espera al servidor.
-  pendientes.value = [p, ...pendientes.value]
   texto.value = ''
   filas.value = []
   montoTotal.value = ''
   fotos.value = []
   fecha.value = localNow()
-  void enviar(pendientes.value[0])
+  void cola.enviar(p).catch(() => mostrarToast("Inicia sesión para enviar el pendiente", "error"))
   await nextTick()
   textareaRef.value?.focus()
 }
@@ -358,15 +327,9 @@ function volver() {
 
 onMounted(async () => {
   textareaRef.value?.focus()
+  try { await cola.cargar() } catch { mostrarToast("No se pudieron recuperar los pendientes", "error") }
   try {
-    const [provs, arts, cats] = await Promise.all([
-      api.get('/gastos/proveedores'),
-      api.get('/gastos/articulos'),
-      api.get('/gastos/categorias-articulo'),
-    ])
-    proveedores.value = provs.data
-    articulos.value = arts.data
-    categorias.value = cats.data
+    await catalogos.cargar()
   } catch {
     mostrarToast('No se pudieron cargar los catálogos', 'error')
   }

@@ -12,6 +12,7 @@
     </div>
 
     <div class="flex items-center space-x-6">
+      <GastosPendientesLink />
       <!-- Search/Filters Placeholder if needed -->
       <slot name="filters"></slot>
 
@@ -31,6 +32,7 @@
 </template>
 
 <script setup lang="ts">
+import GastosPendientesLink from "@/components/gastos/GastosPendientesLink.vue"
 import { Menu } from 'lucide-vue-next'
 
 defineEmits(['toggle-menu'])

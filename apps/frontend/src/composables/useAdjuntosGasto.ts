@@ -1,5 +1,11 @@
 import { api } from '@/api/client'
 
+const fotoIds = new WeakMap<File, string>()
+function fotoId(file: File): string {
+  const id = fotoIds.get(file) ?? crypto.randomUUID()
+  fotoIds.set(file, id)
+  return id
+}
 export const MAX_FOTOS = 5
 const MAX_LADO = 1600
 const CALIDAD = 0.8
@@ -27,7 +33,7 @@ export async function comprimirImagen(file: File): Promise<Blob> {
     if (!blob || blob.type !== 'image/webp') {
       blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', CALIDAD))
     }
-    return blob && blob.size < file.size ? blob : file
+    return blob ?? file
   } catch {
     return file
   }
@@ -46,10 +52,10 @@ export async function subirAdjuntos(gastoId: number, fotos: File[]): Promise<num
   let fallidas = 0
   for (const foto of fotos) {
     try {
-      const blob = await comprimirImagen(foto)
+      const blob = foto
       const form = new FormData()
       form.append('archivo', blob, `ticket.${EXT[blob.type] ?? 'jpg'}`)
-      await api.post(`/gastos/${gastoId}/adjuntos`, form, { timeout: TIMEOUT_SUBIDA_MS })
+      await api.post(`/gastos/${gastoId}/adjuntos`, form, { params: { client_request_id: fotoId(foto) }, timeout: TIMEOUT_SUBIDA_MS })
     } catch {
       fallidas++
     }

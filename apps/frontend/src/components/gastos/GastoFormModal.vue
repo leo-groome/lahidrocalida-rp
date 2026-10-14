@@ -136,7 +136,7 @@
       </div>
       
       <!-- Footer -->
-      <div class="px-10 py-8 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
+      <div class="safe-area-bottom px-4 sm:px-10 py-4 sm:py-8 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-6">
         <div class="flex items-center gap-4">
           <div class="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm">
             <Calculator class="w-6 h-6" />
@@ -171,6 +171,12 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
+import { useGastoSubmission } from "@/composables/useCrearGasto"
+const gastoSubmission = useGastoSubmission()
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import api from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
@@ -187,8 +193,6 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'save'])
 
-const proveedores = ref<any[]>([])
-const articulos = ref<any[]>([])
 
 const formatCurrency = (val: number) => val.toLocaleString('es-MX', { 
   minimumFractionDigits: 2, 
@@ -234,16 +238,14 @@ const sumaDetalles = computed(() => {
 
 const loadCatalogos = async () => {
   try {
-    const [provs, arts] = await Promise.all([
-      api.get('/gastos/proveedores'),
-      api.get('/gastos/articulos')
-    ])
-    proveedores.value = provs.data
-    articulos.value = arts.data
+    await catalogos.cargar()
   } catch (e) { console.error(e) }
 }
 
+const submitting = ref(false)
 const submitForm = async () => {
+  if (submitting.value) return
+  submitting.value = true
   try {
     if (!form.proveedor_id) return alert('Selecciona un proveedor')
 
@@ -265,13 +267,13 @@ const submitForm = async () => {
     if (isEditing.value) {
        await api.put(`/gastos/${form.id}`, payload)
     } else {
-       await api.post('/gastos/', payload)
+       await gastoSubmission.enviar(payload as any)
     }
     
     emit('save')
   } catch (e: any) {
     alert('Error al guardar: ' + (e.response?.data?.detail || e.message))
-  }
+  } finally { submitting.value = false }
 }
 
 onMounted(() => {

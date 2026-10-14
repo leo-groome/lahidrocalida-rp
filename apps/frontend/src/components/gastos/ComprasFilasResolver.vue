@@ -69,6 +69,8 @@
 </template>
 
 <script setup lang="ts">
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
 import { ref } from 'vue'
 import {
   filaLista,
@@ -76,7 +78,6 @@ import {
   type FilaCompra,
   type UnidadCanonica,
 } from '@/utils/parseCompraTexto'
-import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
 import ArticuloFormModal from './ArticuloFormModal.vue'
 
@@ -123,7 +124,8 @@ async function onArticuloCreado() {
   if (!creandoPara.value) return
   const { filaId, nombreSugerido } = creandoPara.value
   try {
-    const { data: articulosActualizados } = await api.get('/gastos/articulos')
+    await catalogos.cargar()
+    const articulosActualizados = catalogos.articulos
     emit('articulo-creado', articulosActualizados)
     const nuevo = articulosActualizados.find(
       (a: any) => normalizar(a.nombre) === normalizar(nombreSugerido),

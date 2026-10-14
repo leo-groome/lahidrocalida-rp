@@ -178,7 +178,7 @@
           </div>
         </div>
 
-        <FotoTicketInput v-model="fotos" />
+        <FotoTicketInput v-model="fotos" v-model:processing="preparandoFotos" />
 
         <div class="space-y-2">
           <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase">Notas</label>
@@ -236,7 +236,7 @@
         v-else
         type="button"
         @click="submit"
-        :disabled="submitting"
+        :disabled="submitting || preparandoFotos"
         class="flex-1 py-4 bg-[#00126D] text-white font-black rounded-2xl disabled:opacity-40 active:scale-[0.98] transition-all"
       >
         <span v-if="submitting">Guardando...</span>
@@ -256,18 +256,18 @@
         <div class="px-6 py-5 space-y-5 overflow-y-auto">
           <div class="space-y-2">
             <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase">Artículo</label>
-            <SearchableSelect v-model="draft.articulo_id" :options="articulos" placeholder="Buscar artículo..." />
+            <SearchableSelect v-model="draft.articulo_id" @update:model-value="sugerirPrecioDraft" :options="articulos" placeholder="Buscar artículo..." />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="space-y-2">
               <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase">Cantidad</label>
-              <input type="number" inputmode="decimal" step="0.01" min="0" v-model.number="draft.cantidad" @input="recalcDraft" class="w-full bg-slate-50 border-0 rounded-2xl px-4 py-3.5 text-lg font-black text-slate-800 text-center outline-none focus:ring-2 focus:ring-[#00126D]">
+              <input type="number" inputmode="decimal" step="0.01" min="0" v-model.number="draft.cantidad" @input="draft._precioEditado = true; recalcDraft()" class="w-full bg-slate-50 border-0 rounded-2xl px-4 py-3.5 text-lg font-black text-slate-800 text-center outline-none focus:ring-2 focus:ring-[#00126D]">
             </div>
             <div class="space-y-2">
               <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase">P. Unitario</label>
               <div class="relative">
                 <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-black text-slate-300">$</span>
-                <input type="number" inputmode="decimal" step="0.01" min="0" v-model.number="draft.precio_unitario" @input="recalcDraft" class="w-full bg-slate-50 border-0 rounded-2xl pl-7 pr-3 py-3.5 text-lg font-black text-slate-800 text-right outline-none focus:ring-2 focus:ring-[#00126D]">
+                <input type="number" inputmode="decimal" step="0.01" min="0" v-model.number="draft.precio_unitario" @input="draft._precioEditado = true; recalcDraft()" class="w-full bg-slate-50 border-0 rounded-2xl pl-7 pr-3 py-3.5 text-lg font-black text-slate-800 text-right outline-none focus:ring-2 focus:ring-[#00126D]">
               </div>
             </div>
           </div>
@@ -344,12 +344,17 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
+import { useGastoSubmission } from "@/composables/useCrearGasto"
+const gastoSubmission = useGastoSubmission()
 import { ref, reactive, computed, onMounted } from 'vue'
-import { api } from '@/api/client'
+import { precioSugerido } from '@/utils/precio-sugerido'
 import SearchableSelect from './SearchableSelect.vue'
 import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
 import FotoTicketInput from './FotoTicketInput.vue'
-import { subirAdjuntos } from '@/composables/useAdjuntosGasto'
 import { Plus, Trash2, Pencil, X, Sparkles } from 'lucide-vue-next'
 
 const emit = defineEmits<{ saved: [] }>()
@@ -367,10 +372,6 @@ const metodosPago = [
 const step = ref(1)
 const tipoGasto = ref<string | null>(null)
 const proveedorId = ref<number | null>(null)
-const proveedores = ref<any[]>([])
-const articulos = ref<any[]>([])
-const categorias = ref<any[]>([])
-const empleados = ref<any[]>([])
 const showTexto = ref(false)
 
 const detalles = ref<any[]>([])
@@ -385,6 +386,7 @@ const ajustarTotal = ref(false)
 
 const submitting = ref(false)
 const fotos = ref<File[]>([])
+const preparandoFotos = ref(false)
 const submitError = ref<string | null>(null)
 
 // ── sub-modal artículo ──
@@ -464,7 +466,7 @@ function next() {
 // ── carrito artículos ──
 function openAdd() {
   editIdx.value = null
-  Object.assign(draft, { articulo_id: null, cantidad: 1, precio_unitario: 0, subtotal_linea: 0, _editadoManual: false })
+  Object.assign(draft, { _precioEditado: false, articulo_id: null, cantidad: 1, precio_unitario: 0, subtotal_linea: 0, _editadoManual: false })
   showAdd.value = true
 }
 function editLinea(idx: number) {
@@ -473,6 +475,12 @@ function editLinea(idx: number) {
   showAdd.value = true
 }
 function closeAdd() { showAdd.value = false; editIdx.value = null }
+function sugerirPrecioDraft() {
+  if (editIdx.value !== null) return
+  const article = articulos.value.find(a => a.id === draft.articulo_id)
+  draft.precio_unitario = precioSugerido(Number(draft.precio_unitario) || 0, Number(article?.costo_estandar), !!draft._precioEditado || !!draft._editadoManual)
+  recalcDraft()
+}
 function recalcDraft() {
   if (draft._editadoManual) return
   draft.subtotal_linea = Number(((Number(draft.cantidad) || 0) * (Number(draft.precio_unitario) || 0)).toFixed(2))
@@ -522,6 +530,7 @@ function confirmAddEmp() {
 function removeEmp(idx: number) { nominaLineas.value.splice(idx, 1) }
 
 async function submit() {
+  if (submitting.value || preparandoFotos.value) return
   submitError.value = null
   const esNomina = tipoGasto.value === 'nomina'
   if (!esNomina && !proveedorId.value) { submitError.value = 'Selecciona un proveedor'; step.value = 1; return }
@@ -552,11 +561,8 @@ async function submit() {
         notas: l.notas || null,
       })) : [],
     }
-    const { data: creado } = await api.post('/gastos/', payload)
-    if (fotos.value.length) {
-      const fallidas = await subirAdjuntos(creado.id, fotos.value)
-      if (fallidas) window.alert(`El gasto se guardó, pero ${fallidas} foto(s) no se subieron. Agrégalas desde el historial.`)
-    }
+    const creado = await gastoSubmission.enviar(payload as any, fotos.value)
+    if (creado.fotosFallidas) window.alert(`El gasto se guardó. Recupera las ${creado.fotosFallidas} foto(s) pendientes desde Registro rápido.`)
     emit('saved')
   } catch (e: any) {
     submitError.value = e?.response?.data?.detail || 'Error al guardar'
@@ -567,17 +573,8 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    const [provs, arts, emps, cats] = await Promise.all([
-      api.get('/gastos/proveedores'),
-      api.get('/gastos/articulos'),
-      api.get('/gastos/empleados'),
-      api.get('/gastos/categorias-articulo'),
-    ])
-    proveedores.value = provs.data
-    articulos.value = arts.data
-    empleados.value = emps.data
-    categorias.value = cats.data
-  } catch { /* ignore */ }
+    await catalogos.cargar()
+  } catch { submitError.value = catalogos.error }
 })
 </script>
 

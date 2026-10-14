@@ -14,13 +14,15 @@
       <div class="flex-1 overflow-y-auto p-4 space-y-4">
         <p v-if="cargando" class="text-center text-sm font-bold text-slate-400 py-10">Cargando...</p>
         <p v-else-if="error" class="text-center text-sm font-bold text-rose-500 py-10">{{ error }}</p>
-        <img
-          v-for="f in fotos"
+        <template v-for="f in fotos" :key="f.id">
+        <p v-if="f.error" class="text-sm text-amber-700">Esta foto no se puede mostrar en este navegador.</p>
+        <img v-else @error="f.error = true"
           :key="f.id"
           :src="f.url"
           alt="Ticket"
           class="w-full rounded-2xl border border-slate-200"
         >
+        </template>
       </div>
     </div>
   </div>
@@ -35,7 +37,7 @@ import { urlAdjunto } from '@/composables/useAdjuntosGasto'
 const props = defineProps<{ gastoId: number }>()
 defineEmits(['close'])
 
-const fotos = ref<Array<{ id: number; url: string }>>([])
+const fotos = ref<Array<{ id: number; url: string; error?: boolean }>>([])
 const cargando = ref(true)
 const error = ref('')
 

@@ -28,7 +28,7 @@
       />
 
       <!-- Scrollable Content Area -->
-      <main class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 scroll-smooth custom-scrollbar">
+      <main class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-8 scroll-smooth custom-scrollbar safe-area-bottom">
         <div class="max-w-[1400px] mx-auto">
           
           <keep-alive>

@@ -241,7 +241,7 @@
           </div>
 
           <!-- Foto del ticket -->
-          <FotoTicketInput v-model="fotos" />
+          <FotoTicketInput v-model="fotos" v-model:processing="preparandoFotos" />
 
           <!-- Notas -->
           <div class="space-y-2">
@@ -282,13 +282,17 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
+import { useGastoSubmission } from "@/composables/useCrearGasto"
+const gastoSubmission = useGastoSubmission()
 import { ref, computed, onMounted, watch } from 'vue'
-import { api } from '@/api/client'
 import SearchableSelect from './SearchableSelect.vue'
 import GastoDetallesEditor from './GastoDetallesEditor.vue'
 import CompraTextoQuickAdd from './CompraTextoQuickAdd.vue'
 import FotoTicketInput from './FotoTicketInput.vue'
-import { subirAdjuntos } from '@/composables/useAdjuntosGasto'
 
 const props = defineProps<{
   turnoId?: number | null
@@ -321,8 +325,6 @@ function selectTipo(id: string) {
 const modoCaptura = ref<'rapido' | 'texto' | 'desglose'>('rapido')
 const detalles = ref<any[]>([])
 const totalManualDetalle = ref<number | null>(null)
-const articulos = ref<any[]>([])
-const categorias = ref<any[]>([])
 
 const sumaDetalles = computed(() =>
   detalles.value.reduce((sum, d) => {
@@ -424,12 +426,12 @@ function formatAmount(val: string): string {
 }
 
 // ── Step 3 ───────────────────────────────────────
-const proveedores = ref<any[]>([])
 const proveedorId = ref<number | null>(null)
 const metodoPago = ref<string>('efectivo')
 const notas = ref('')
 const submitting = ref(false)
 const fotos = ref<File[]>([])
+const preparandoFotos = ref(false)
 const submitError = ref<string | null>(null)
 
 const metodosPago = [
@@ -443,6 +445,7 @@ watch(() => props.turnoId, (id) => {
 }, { immediate: true })
 
 async function submit() {
+  if (submitting.value || preparandoFotos.value) return
   if (!proveedorId.value) {
     submitError.value = 'Selecciona un proveedor'
     return
@@ -480,11 +483,8 @@ async function submit() {
       fecha_gasto: new Date().toISOString(),
       turno_id: props.turnoId ?? null,
     }
-    const { data: creado } = await api.post('/gastos/', payload)
-    if (fotos.value.length) {
-      const fallidas = await subirAdjuntos(creado.id, fotos.value)
-      if (fallidas) window.alert(`El gasto se guardó, pero ${fallidas} foto(s) no se subieron. Agrégalas desde el historial.`)
-    }
+    const creado = await gastoSubmission.enviar(payload as any, fotos.value)
+    if (creado.fotosFallidas) window.alert(`El gasto se guardó. Recupera las ${creado.fotosFallidas} foto(s) pendientes desde Registro rápido.`)
     emit('save')
   } catch (e: any) {
     submitError.value = e?.response?.data?.detail || 'Error al guardar el gasto'
@@ -495,14 +495,7 @@ async function submit() {
 
 onMounted(async () => {
   try {
-    const [provs, arts, cats] = await Promise.all([
-      api.get('/gastos/proveedores'),
-      api.get('/gastos/articulos'),
-      api.get('/gastos/categorias-articulo'),
-    ])
-    proveedores.value = provs.data
-    articulos.value = arts.data
-    categorias.value = cats.data
-  } catch { /* silently ignore */ }
+    await catalogos.cargar()
+  } catch { submitError.value = catalogos.error }
 })
 </script>

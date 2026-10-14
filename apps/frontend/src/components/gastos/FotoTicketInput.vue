@@ -4,7 +4,7 @@
       <!-- Cámara directa en móvil (capture); en escritorio abre el selector de archivos -->
       <label
         class="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl bg-[#00126D] text-white font-black text-sm cursor-pointer active:scale-[0.98] transition-all"
-        :class="{ 'opacity-40 pointer-events-none': lleno }"
+        :class="{ 'opacity-40 pointer-events-none': lleno || procesando }"
       >
         <Loader2 v-if="procesando" class="w-4 h-4 animate-spin" />
         <Camera v-else class="w-4 h-4" />
@@ -13,7 +13,7 @@
       </label>
       <label
         class="flex items-center justify-center gap-2 px-4 rounded-2xl border-2 border-slate-200 text-slate-500 font-black text-sm cursor-pointer active:scale-[0.98] transition-all"
-        :class="{ 'opacity-40 pointer-events-none': lleno }"
+        :class="{ 'opacity-40 pointer-events-none': lleno || procesando }"
         title="Elegir de la galería"
       >
         <ImageIcon class="w-4 h-4" />
@@ -24,7 +24,8 @@
 
     <div v-if="previews.length" class="flex gap-2 overflow-x-auto pt-2 pr-2 pb-1">
       <div v-for="(p, i) in previews" :key="p.url" class="relative flex-shrink-0">
-        <img :src="p.url" alt="Ticket" class="w-16 h-16 object-cover rounded-xl border border-slate-200">
+        <span v-if="p.error" class="w-16 h-16 flex items-center text-center text-[10px] bg-slate-100 rounded-xl">Vista previa no disponible</span>
+        <img v-else @error="p.error = true" :src="p.url" alt="Ticket" class="w-16 h-16 object-cover rounded-xl border border-slate-200">
         <button
           type="button"
           @click="quitar(i)"
@@ -39,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive } from 'vue'
 import { Camera, Image as ImageIcon, Loader2, X } from 'lucide-vue-next'
 import { MAX_FOTOS, prepararFoto } from '@/composables/useAdjuntosGasto'
 
@@ -50,11 +51,11 @@ let urls: string[] = []
 const previews = computed(() => {
   urls.forEach((u) => URL.revokeObjectURL(u))
   urls = modelValue.value.map((f) => URL.createObjectURL(f))
-  return urls.map((url) => ({ url }))
+  return urls.map((url) => reactive({ url, error: false }))
 })
 onBeforeUnmount(() => urls.forEach((u) => URL.revokeObjectURL(u)))
 
-const procesando = ref(false)
+const procesando = defineModel<boolean>('processing', { default: false })
 const lleno = computed(() => modelValue.value.length >= MAX_FOTOS)
 
 // Convierte a WebP al elegir: la vista previa es inmediata y la subida posterior no espera.
@@ -62,7 +63,7 @@ async function onElegir(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = '' // permite volver a elegir el mismo archivo
-  if (!file || lleno.value) return
+  if (!file || lleno.value || procesando.value) return
   procesando.value = true
   try {
     const lista = await prepararFoto(file)
