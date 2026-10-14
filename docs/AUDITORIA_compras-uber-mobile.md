@@ -1,5 +1,11 @@
 # Walkthrough de auditoría — `feat/compras-uber-mobile`
 
+**Estado posterior a las correcciones de Codex (2026-10-13):**
+[traspaso a Claude](HANDOFF_CLAUDE_compras-uber-mobile.md). Este walkthrough y la
+segunda revisión conservan el diagnóstico previo; no tomar sus pendientes históricos
+como una descripción del código actual. El traspaso detalla implementación, pruebas,
+R2 real, pendientes restantes y el nuevo hallazgo CORS en respuestas 413.
+
 13 commits, 47 archivos, +2646/−183 sobre `main`. Suite backend: 157 passed, 4 skipped. Build frontend limpio.
 Orden de ejecución: **B (Uber Eats) → A (Gastos + foto) → C (Admin móvil)**, elegido por ROI: Uber toca dinero y corte de caja, así que va primero.
 
@@ -104,3 +110,87 @@ Revisión posterior con `security-review`: sin hallazgos ≥8 de confianza.
 3. Barrido visual del admin a 375 px en las secciones no vistas.
 4. Decidir idempotencia de `/gastos`.
 5. Deuda previa fuera de alcance: lockfile de pnpm sin vitest; warning de `CheckCircle` en `CajaView`; no hay servicio de frontend en el compose del repo.
+
+---
+
+## Segunda revisión independiente — Codex, 2026-10-13
+
+Plan de ejecución: [PLAN_CORRECCIONES_compras-uber-mobile.md](PLAN_CORRECCIONES_compras-uber-mobile.md).
+
+**Dictamen: no listo para merge.** Revisión del diff contra `main` hasta `f8c3de6`.
+Se verificó el código y se ejecutaron `uv run pytest -q` (157 passed, 4 skipped),
+`pnpm run build` y `pnpm exec vue-tsc --noEmit` (ambos pasan).
+El script `build` solo ejecuta Vite: no sustituye la comprobación explícita de TypeScript.
+No se ejecutó R2 real, celular físico ni barrido visual del admin; esas pruebas siguen abiertas.
+Esta revisión no implementa correcciones ni certifica migraciones contra PostgreSQL.
+
+### Hallazgos antes de continuar
+
+1. **P1 — Reintentar puede duplicar dinero registrado.**
+   `RegistroRapidoView.vue:314` vuelve a llamar a `enviarGasto`, que hace un POST nuevo
+   sin identificador estable. Si el servidor hizo commit pero se perdió la respuesta,
+   el segundo intento crea otro gasto. No basta deshabilitar el botón durante el envío.
+   Corregir con clave estable por operación, unicidad en BD y recuperación del resultado
+   anterior; probar respuesta perdida y solicitudes concurrentes. Esto debe resolverse
+   antes de publicar la UI optimista con reintentos.
+
+2. **P1 — La terminalidad de Uber no protege la edición de estado de sus artículos.**
+   `pedidos.py:1128-1172`, `PUT /pedidos/articulos/{id}`, permite cambiar `estado_item`
+   sin comprobar el estado terminal del pedido ni su sucursal. Un mesero/cocina/admin
+   puede pasar un artículo de un Uber ya entregado a `pendiente`; también puede hacerlo
+   desde otra sucursal si conoce el ID. El endpoint existía previamente, pero la nueva
+   protección post-entrega no lo cubre. No cambia el total, sí permite alterar artículos
+   que se documentan como inmutables. Validar sucursal y terminalidad antes de mutar;
+   probar petición válida, terminal y sucursal ajena con artículos reales.
+
+3. **P1 — Uber puede incorporarse a un turno que ya fue cerrado.**
+   Crear un pedido asigna `turno_id` (`pedidos.py:257`); entregar solo busca otro turno
+   si ese campo es nulo (`pedidos.py:1000`). Escenario: crear Uber en T1, cerrar T1,
+   abrir T2 y entregar. El pedido conserva T1: el corte congelado de T1 no lo incluyó
+   y T2 tampoco lo incluye. `obtener_resumen_turno` calcula Uber desde pedidos vivos,
+   por lo que además puede diferir de las columnas congeladas del turno cerrado.
+   Definir la regla para pedidos pendientes entre turnos, protegerla contra cierre
+   concurrente y probar este escenario. Es una brecha del nuevo canal aunque el
+   patrón de asignación ya exista en el cobro normal.
+
+4. **P2 — La cola optimista desaparece con navegación interna y no conserva errores.**
+   `RegistroRapidoView.vue:293-294` protege únicamente `beforeunload`; `volver()` usa
+   Vue Router sin guard. Al salir se pierde la lista local aunque las promesas puedan
+   seguir ejecutándose. Si fallan, no hay UI para recuperar el gasto/fotos. Recargar
+   también pierde pendientes en error/parcial, porque el aviso solo considera
+   `enviando`. Mantener las operaciones fuera de la vista o impedir salida mientras
+   haya trabajo sin resolver, con recuperación explícita. Probar volver durante envío,
+   error posterior al desmontaje y fotos parcialmente fallidas.
+
+5. **P2 — Borrar un adjunto puede devolver error después de haberlo eliminado de BD.**
+   `gasto_adjuntos.py:168-169` confirma la eliminación antes de borrar en storage y no
+   captura el fallo. Si R2 falla, queda archivo huérfano, se devuelve 500 y reintentar
+   devuelve 404: se perdió la referencia necesaria para limpiar. El borrado de gasto
+   completo captura el error, pero solo registra un warning; tampoco tiene limpieza
+   posterior durable. Registrar tareas de limpieza reintentables y probar storage caído.
+
+### Correcciones al alcance declarado
+
+- **“Todo en WebP” no está garantizado.** `useAdjuntosGasto.ts:30` conserva el original
+  si la conversión pesa más, incluso cuando sí pudo decodificarlo. También conserva
+  originales ante fallo de decodificación. HEIC aceptado por el backend no implica
+  HEIC visible en el visor, que solo usa `<img>` con un blob. Los tests HEIC usan
+  cabeceras sintéticas, no una foto decodificable. Validar con archivos reales y
+  definir conversión o mensaje de incompatibilidad antes de dar este requisito por cerrado.
+- Algunos tests Uber aceptan **400 o 422** (`test_uber_eats.py:91,165,167`). Un 422
+  puede ocurrir antes de entrar a la regla de negocio; esos asserts no demuestran
+  necesariamente el bloqueo descrito. Usar payloads válidos y exigir el rechazo
+  específico de dividir/editar Uber.
+- El store compartido, precio sugerido y unificación del payload siguen sin hacerse:
+  hay POST directos en Checkout, Rápido y FormModal además del composable.
+  `GastoForm.vue` y `GastosAnalytics.vue` siguen presentes. Es deuda de alcance pendiente,
+  no una validación completada por este PR.
+
+### Puertas de salida
+
+Primero corregir P1 y añadir pruebas de regresión; después P2 y la captura/visualización
+de fotos. Completar el barrido de Dashboard, Usuarios, Turnos, Recursos Humanos y
+modales a 375 px. Mantener R2 real y cámara/HEIC como **no verificados** hasta disponer
+de credenciales de prueba y un dispositivo físico. La suite local usa SQLite por
+defecto y no certifica locks ni migraciones de PostgreSQL. El plan de Gastos requiere
+implementación o una decisión explícita de separarlo del alcance del merge.
