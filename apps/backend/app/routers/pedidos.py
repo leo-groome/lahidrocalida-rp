@@ -898,7 +898,13 @@ async def update_pedido(
     Actualizar el estado de un pedido.
     Solo cocina y administradores pueden cambiar estados.
     """
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    pedido = (
+        db.query(Pedido)
+        .filter(Pedido.id == pedido_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
 
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
@@ -997,10 +1003,18 @@ async def update_pedido(
         )
         if pedido.fecha_pago is None:
             pedido.fecha_pago = get_mexico_now()
-        if pedido.turno_id is None:
-            turno_activo = _get_turno_activo(db, pedido.sucursal_id)
-            if turno_activo:
-                pedido.turno_id = turno_activo.id
+        turno_activo = (
+            db.query(Turno)
+            .filter(Turno.sucursal_id == pedido.sucursal_id, Turno.estado == "abierto")
+            .with_for_update()
+            .populate_existing()
+            .first()
+        )
+        if turno_activo is None:
+            raise HTTPException(
+                status_code=409, detail="Inicia un turno para entregar el pedido Uber Eats"
+            )
+        pedido.turno_id = turno_activo.id
         for articulo in pedido.articulos_pedido:
             if articulo.estado_item != "entregado":
                 articulo.estado_item = "entregado"
@@ -1126,31 +1140,37 @@ async def update_articulo_estado(
     Si todos los artículos están listos, el pedido pasa a 'listo'.
     """
 
-    # Obtener el artículo. with_for_update() lo bloquea contra otro request
-    # concurrente sobre el MISMO artículo (ej. doble tap accidental).
-    articulo = (
-        db.query(ArticuloPedido).filter(ArticuloPedido.id == articulo_id).with_for_update().first()
-    )
-    if not articulo:
+    # Bloquear primero el pedido: todas las ediciones de sus artículos se
+    # serializan con la entrega terminal, sin invertir el orden de locks.
+    pedido_id = db.query(ArticuloPedido.pedido_id).filter(ArticuloPedido.id == articulo_id).scalar()
+    if pedido_id is None:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
-
-    # Validar estado
-    if data.estado_item not in ["pendiente", "preparando", "listo", "entregado"]:
+    pedido = (
+        db.query(Pedido)
+        .filter(Pedido.id == pedido_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if pedido is None or pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    if pedido.estado in EstadoPedido.terminales():
         raise HTTPException(
-            status_code=400,
-            detail="Estado inválido. Valores permitidos: pendiente, preparando, listo, entregado",
+            status_code=400, detail="No se pueden modificar artículos de un pedido terminal"
         )
-
-    # Actualizar estado del artículo
+    articulo = (
+        db.query(ArticuloPedido)
+        .filter(ArticuloPedido.id == articulo_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if articulo is None:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    if data.estado_item not in ["pendiente", "preparando", "listo", "entregado"]:
+        raise HTTPException(status_code=400, detail="Estado de artículo inválido")
     old_estado = articulo.estado_item
     articulo.estado_item = data.estado_item
-
-    # Bloquear el PEDIDO (no solo el artículo): serializa contra otros
-    # artículos del mismo pedido actualizándose en paralelo. Antes esto era
-    # check-then-act sin lock: dos artículos del mismo pedido marcados
-    # "listo" casi simultáneamente podían leerse el uno al otro como
-    # "todavía no completado" y ninguno disparaba el pedido -> listo.
-    pedido = db.query(Pedido).filter(Pedido.id == articulo.pedido_id).with_for_update().first()
 
     # Verificar si todos los artículos están completados (listo o entregado).
     # articulo ya está mutado en la identity map de esta sesión, así que esta
@@ -1270,7 +1290,13 @@ async def agregar_articulos_pedido(
         raise HTTPException(status_code=400, detail="Debe agregar al menos un artículo")
 
     # Buscar el pedido
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    pedido = (
+        db.query(Pedido)
+        .filter(Pedido.id == pedido_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
@@ -1300,6 +1326,7 @@ async def agregar_articulos_pedido(
         "cuenta_solicitada",
         "pagado",
         "cancelado",
+        "dividido",
         EstadoPedido.ENTREGADO_REPARTIDOR,
     ]:
         raise HTTPException(
@@ -1476,7 +1503,13 @@ async def actualizar_articulos_pedido(
     """
 
     # Buscar el pedido
-    pedido = db.query(Pedido).filter(Pedido.id == pedido_id).first()
+    pedido = (
+        db.query(Pedido)
+        .filter(Pedido.id == pedido_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 

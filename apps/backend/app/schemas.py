@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -325,6 +326,7 @@ class GastoBase(BaseModel):
 
 
 class GastoCreate(GastoBase):
+    client_request_id: Optional[UUID] = None
     detalles: List[GastoDetalleCreate] = []
     nomina_detalles: List[NominaDetalleCreate] = []
     fecha_gasto: Optional[datetime] = None

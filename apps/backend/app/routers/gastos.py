@@ -1,3 +1,5 @@
+import hashlib
+import json
 import logging
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -5,6 +7,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_active_user
@@ -17,6 +20,7 @@ from app.models import (
     Gasto,
     GastoDetalle,
     NominaDetalle,
+    OperacionGasto,
     Proveedor,
     Usuario,
     get_local_datetime,
@@ -39,7 +43,7 @@ from app.schemas import (
     ProveedorResponse,
     UsuarioResponse,
 )
-from app.services.storage import Storage, get_storage
+from app.services.storage_cleanup import programar_borrado
 from app.utils.timezone import MEXICO_TZ
 
 logger = logging.getLogger(__name__)
@@ -357,12 +361,57 @@ def list_empleados_nomina(
     )
 
 
+def _replay_gasto(db: Session, operation: OperacionGasto, fingerprint: str, user: Usuario) -> Gasto:
+    if operation.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="La operación pertenece a otro usuario")
+    if operation.payload_hash != fingerprint:
+        raise HTTPException(status_code=409, detail="La clave ya se usó con otro contenido")
+    gasto = db.get(Gasto, operation.gasto_id) if operation.gasto_id else None
+    if gasto is None:
+        raise HTTPException(status_code=410, detail="El gasto de esta operación fue eliminado")
+    return gasto
+
+
 @router.post("/", response_model=GastoResponse, status_code=status.HTTP_201_CREATED)
 def create_gasto(
     data: GastoCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            data.model_dump(mode="json", exclude={"client_request_id"}),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    request_id = str(data.client_request_id) if data.client_request_id else None
+    operation = None
+    if request_id:
+        operation = (
+            db.query(OperacionGasto)
+            .filter_by(sucursal_id=current_user.sucursal_id, client_request_id=request_id)
+            .first()
+        )
+        if operation:
+            return _replay_gasto(db, operation, fingerprint, current_user)
+        operation = OperacionGasto(
+            sucursal_id=current_user.sucursal_id,
+            usuario_id=current_user.id,
+            client_request_id=request_id,
+            payload_hash=fingerprint,
+        )
+        db.add(operation)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            existing = (
+                db.query(OperacionGasto)
+                .filter_by(sucursal_id=current_user.sucursal_id, client_request_id=request_id)
+                .one()
+            )
+            return _replay_gasto(db, existing, fingerprint, current_user)
     _validate_gasto_inputs(data)
 
     detalles: list[GastoDetalle] = []
@@ -407,6 +456,8 @@ def create_gasto(
         nomina_detalles=nomina_detalles,
     )
     db.add(gasto)
+    if operation is not None:
+        operation.gasto = gasto
     db.commit()
     db.refresh(gasto)
     return gasto
@@ -745,23 +796,19 @@ async def delete_gasto(
     gasto_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
-    storage: Storage = Depends(get_storage),
 ):
-    gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
+    gasto = (
+        db.query(Gasto).filter(Gasto.id == gasto_id).with_for_update().populate_existing().first()
+    )
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
     if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    llaves = [a.storage_key for a in gasto.adjuntos]
+    db.query(OperacionGasto).filter(OperacionGasto.gasto_id == gasto.id).update({"gasto_id": None})
+    for adjunto in gasto.adjuntos:
+        programar_borrado(db, adjunto.storage_key)
     db.delete(gasto)
     db.commit()
-    # Tras el commit: si el storage falla, el gasto ya no existe; un archivo
-    # huérfano es preferible a una fila que apunta a una foto inexistente.
-    for llave in llaves:
-        try:
-            await storage.borrar(llave)
-        except Exception:
-            logger.warning("No se pudo borrar adjunto huérfano de gasto %s", gasto_id)
     return None

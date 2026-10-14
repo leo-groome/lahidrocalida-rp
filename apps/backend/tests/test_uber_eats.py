@@ -86,9 +86,9 @@ def test_uber_no_se_puede_dividir(como_rol, seed, db_session):
 
     r = como_rol("administrador").post(
         f"/pedidos/{pedido.id}/dividir_por_montos",
-        json={"montos": [100, 150], "client_request_id": "x"},
+        json={"cuentas": [{"monto": 100}, {"monto": 150}], "client_request_id": "x"},
     )
-    assert r.status_code in (400, 422)
+    assert r.status_code == 400
 
 
 def test_corte_turno_separa_uber_del_efectivo(como_rol, seed, db_session):
@@ -162,9 +162,9 @@ def test_no_se_agregan_ni_editan_articulos_tras_entrega_al_repartidor(como_rol, 
 
     client = como_rol("administrador")
     r = client.put(f"/pedidos/{pedido.id}/agregar-articulos", json={"articulos": []})
-    assert r.status_code in (400, 422)
+    assert r.status_code == 400
     r = client.put(f"/pedidos/{pedido.id}/actualizar-articulos", json={"articulos": []})
-    assert r.status_code in (400, 422)
+    assert r.status_code == 400
     db_session.refresh(pedido)
     assert float(pedido.total) == 250.0
 
@@ -188,3 +188,34 @@ def test_tickets_del_dia_incluye_uber_entregado_con_su_estado(como_rol, seed, db
     assert por_numero["U1"]["metodo_pago"] is None
     # La hora del evento es la de entrega al repartidor, no la de creación.
     assert por_numero["U1"]["fecha_evento"] == por_numero["U1"]["fecha_pago"]
+
+
+def test_entrega_uber_pertenece_al_turno_abierto_actual(como_rol, seed, db_session):
+    t1 = _turno_abierto(db_session, seed)
+    pedido = _pedido(db_session, seed, t1, tipo="uber_eats", estado="listo", total=250)
+    client = como_rol("administrador")
+    assert client.post(f"/turnos/{t1.id}/cerrar", json={"conteo_final": CONTEO}).status_code == 200
+    t2 = _turno_abierto(db_session, seed)
+    assert (
+        client.put(f"/pedidos/{pedido.id}", json={"estado": "entregado_repartidor"}).status_code
+        == 200
+    )
+    db_session.refresh(pedido)
+    assert pedido.turno_id == t2.id
+    assert client.get(f"/turnos/{t1.id}/resumen").json()["uber_eats"] == {"pedidos": 0, "total": 0}
+    assert client.get(f"/turnos/{t2.id}/resumen").json()["uber_eats"] == {
+        "pedidos": 1,
+        "total": 250,
+    }
+
+
+def test_entrega_uber_sin_turno_no_modifica_pedido(como_rol, seed, db_session):
+    turno = _turno_abierto(db_session, seed)
+    pedido = _pedido(db_session, seed, turno, tipo="uber_eats", estado="listo", total=250)
+    turno.estado = "cerrado"
+    db_session.commit()
+    r = como_rol("mesero").put(f"/pedidos/{pedido.id}", json={"estado": "entregado_repartidor"})
+    assert r.status_code == 409
+    db_session.refresh(pedido)
+    assert pedido.estado == "listo"
+    assert pedido.fecha_pago is None

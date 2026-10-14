@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -25,6 +24,8 @@ from app.routers import (
     turnos,
     users,
 )
+from app.services.adjunto_body_limit import AdjuntoBodyLimitMiddleware
+from app.services.storage_cleanup import cleanup_consumer
 from app.websocket_manager import websocket_manager
 
 # Sin esto, los logger.* de los módulos propios no salen en los logs del host
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     tasks = [
         asyncio.create_task(events.event_consumer(stop_event)),
+        asyncio.create_task(cleanup_consumer(stop_event)),
         asyncio.create_task(events.redis_subscriber(stop_event)),
         asyncio.create_task(websocket_manager._cleanup_zombies()),
     ]
@@ -66,18 +68,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Tope de body en subida de fotos: Starlette parsea el multipart ANTES de
-# resolver auth, así que se corta por Content-Length antes de leer nada.
-_MAX_BODY_ADJUNTO = 9 * 1024 * 1024
-
-
-@app.middleware("http")
-async def limitar_body_adjuntos(request, call_next):
-    if request.method == "POST" and request.url.path.endswith("/adjuntos"):
-        largo = request.headers.get("content-length")
-        if largo is None or not largo.isdigit() or int(largo) > _MAX_BODY_ADJUNTO:
-            return JSONResponse(status_code=413, content={"detail": "Archivo demasiado grande"})
-    return await call_next(request)
+app.add_middleware(AdjuntoBodyLimitMiddleware)
 
 
 # Incluir routers

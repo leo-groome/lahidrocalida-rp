@@ -1,5 +1,7 @@
 """PUT /pedidos/articulos/{id}: un solo commit, lock de pedido (S2 2.5)."""
 
+import pytest
+
 from app.models import ArticuloPedido, Pedido
 
 
@@ -82,3 +84,27 @@ def test_estado_item_invalido_400(como_rol, seed, db_session):
         f"/pedidos/articulos/{articulos[0].id}", json={"estado_item": "no-existe"}
     )
     assert r.status_code == 400
+
+
+@pytest.mark.parametrize("estado", ["pagado", "cancelado", "dividido", "entregado_repartidor"])
+def test_articulo_terminal_no_se_modifica(como_rol, seed, db_session, estado):
+    pedido, articulos = _crear_pedido_preparando(db_session, seed, 1)
+    pedido.estado = estado
+    db_session.commit()
+    r = como_rol("administrador").put(
+        f"/pedidos/articulos/{articulos[0].id}", json={"estado_item": "pendiente"}
+    )
+    assert r.status_code == 400
+    db_session.refresh(articulos[0])
+    assert articulos[0].estado_item == "preparando"
+
+
+@pytest.mark.parametrize("rol", ["mesero", "cocina", "administrador"])
+def test_articulo_otra_sucursal_no_se_modifica(como_rol, seed, db_session, rol):
+    pedido, articulos = _crear_pedido_preparando(db_session, seed, 1)
+    r = como_rol(rol, sucursal_id=seed["sucursal"].id + 1).put(
+        f"/pedidos/articulos/{articulos[0].id}", json={"estado_item": "listo"}
+    )
+    assert r.status_code == 404
+    db_session.refresh(articulos[0])
+    assert articulos[0].estado_item == "preparando"

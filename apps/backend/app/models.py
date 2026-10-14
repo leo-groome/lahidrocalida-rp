@@ -236,6 +236,24 @@ class Gasto(Base):
         return len(self.adjuntos)
 
 
+class OperacionGasto(Base):
+    """Registro durable de idempotencia; sobrevive al borrado del gasto."""
+
+    __tablename__ = "operaciones_gasto"
+    __table_args__ = (
+        UniqueConstraint(
+            "sucursal_id", "client_request_id", name="uq_operacion_gasto_sucursal_request"
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    client_request_id = Column(String(36), nullable=False)
+    payload_hash = Column(String(64), nullable=False)
+    gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="SET NULL"), nullable=True)
+    gasto = relationship("Gasto", passive_deletes=True)
+
+
 class GastoDetalle(Base):
     __tablename__ = "gasto_detalles"
 
@@ -251,11 +269,27 @@ class GastoDetalle(Base):
     articulo = relationship("Articulo", back_populates="detalles_gasto")
 
 
+class StorageBorrado(Base):
+    """Outbox de limpieza independiente del gasto y de sus cascades."""
+
+    __tablename__ = "storage_borrados"
+    id = Column(Integer, primary_key=True)
+    storage_key = Column(String(255), unique=True, nullable=False)
+    intentos = Column(Integer, nullable=False, default=0)
+    ultimo_error = Column(Text)
+    proximo_intento = Column(DateTime(timezone=True), nullable=False, default=get_local_datetime)
+
+
 class GastoAdjunto(Base):
     """Foto del ticket/factura de un gasto. El archivo vive en el storage
     (R2/disco) bajo `storage_key`; aquí solo la referencia y metadatos."""
 
     __tablename__ = "gasto_adjuntos"
+    __table_args__ = (
+        UniqueConstraint("gasto_id", "client_request_id", name="uq_adjunto_gasto_request"),
+    )
+    client_request_id = Column(String(36), nullable=True)
+    payload_hash = Column(String(64), nullable=True)
 
     id = Column(Integer, primary_key=True, index=True)
     gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="CASCADE"), nullable=False)
@@ -326,6 +360,7 @@ class Turno(Base):
             sucursal_id,
             unique=True,
             postgresql_where=estado == "abierto",
+            sqlite_where=estado == "abierto",
         ),
         CheckConstraint("estado IN ('abierto', 'cerrado')", name="chk_turno_estado"),
     )

@@ -66,11 +66,28 @@ jobs:
       - name: Run Pytest
         working-directory: ./apps/backend
         env:
-          DATABASE_URL: postgresql+asyncpg://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
-          DATABASE_URL_TEST: postgresql+asyncpg://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
+          TEST_DATABASE_URL: sqlite://
           SECRET_KEY: ci-test-secret-key-not-used-in-production
           CORS_ORIGINS: http://localhost:5173
         run: uv run pytest
+
+      - name: Verify PostgreSQL Migrations
+        working-directory: ./apps/backend
+        env:
+          DATABASE_URL: postgresql://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
+          SECRET_KEY: ci-test-secret-key-not-used-in-production
+          CORS_ORIGINS: http://localhost:5173
+          ENVIRONMENT: development
+        run: uv run alembic upgrade head
+
+      - name: Verify PostgreSQL Concurrency
+        working-directory: ./apps/backend
+        env:
+          TEST_DATABASE_URL: postgresql://hidrocalida:hidrocalida@localhost:5432/hidrocalida_test
+          SECRET_KEY: ci-test-secret-key-not-used-in-production
+          CORS_ORIGINS: http://localhost:5173
+          ENVIRONMENT: development
+        run: uv run pytest tests/test_compras_concurrencia.py
 
       - name: Notify Telegram on Success
         if: success()

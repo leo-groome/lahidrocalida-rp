@@ -10,7 +10,10 @@ Reglas de seguridad:
 - El archivo se sirve solo por este endpoint autenticado (bucket privado).
 """
 
+import asyncio
+import hashlib
 from typing import List
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, status
 from sqlalchemy.orm import Session
@@ -19,6 +22,7 @@ from app.db.session import get_db
 from app.deps import require_roles
 from app.models import Gasto, GastoAdjunto, Usuario
 from app.schemas import AdjuntoResponse
+from app.services.imagenes import normalizar_imagen
 from app.services.storage import (
     MAX_ADJUNTO_BYTES,
     AdjuntoInvalido,
@@ -27,6 +31,7 @@ from app.services.storage import (
     generar_llave,
     get_storage,
 )
+from app.services.storage_cleanup import programar_borrado
 
 router = APIRouter(prefix="/gastos", tags=["gastos"])
 
@@ -36,8 +41,13 @@ _CHUNK = 64 * 1024
 _roles_gastos = require_roles("administrador", "compras", "cajero")
 
 
-def _gasto_de_mi_sucursal(db: Session, gasto_id: int, user: Usuario) -> Gasto:
-    gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
+def _gasto_de_mi_sucursal(
+    db: Session, gasto_id: int, user: Usuario, *, bloquear: bool = False
+) -> Gasto:
+    query = db.query(Gasto).filter(Gasto.id == gasto_id)
+    if bloquear:
+        query = query.with_for_update().populate_existing()
+    gasto = query.first()
     # 404 (no 403) cuando es de otra sucursal: no revelar que el gasto existe.
     if gasto is None or gasto.sucursal_id != user.sucursal_id:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
@@ -81,29 +91,50 @@ async def _leer_limitado(archivo: UploadFile) -> bytes:
 async def subir_adjunto(
     gasto_id: int,
     archivo: UploadFile,
+    client_request_id: UUID | None = None,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(_roles_gastos),
     storage: Storage = Depends(get_storage),
 ):
-    gasto = _gasto_de_mi_sucursal(db, gasto_id, current_user)
-
-    if len(gasto.adjuntos) >= MAX_ADJUNTOS_POR_GASTO:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Máximo {MAX_ADJUNTOS_POR_GASTO} fotos por gasto",
-        )
-
+    # Registrar el posible huérfano ANTES de escribir en storage. Una caída
+    # entre put y commit deja una tarea durable para reconciliarlo.
+    _gasto_de_mi_sucursal(db, gasto_id, current_user)
     datos = await _leer_limitado(archivo)
     if not datos:
         raise HTTPException(status_code=400, detail="Archivo vacío")
+    fingerprint = hashlib.sha256(datos).hexdigest()
     try:
-        content_type = detectar_tipo(datos[:16])
-    except AdjuntoInvalido as e:
-        raise HTTPException(status_code=415, detail=str(e))
-
-    llave = generar_llave(f"gastos/{gasto.sucursal_id}", content_type)
-    await storage.guardar(llave, datos, content_type)
-
+        detectar_tipo(datos[:16])
+        datos = await asyncio.to_thread(normalizar_imagen, datos)
+    except AdjuntoInvalido as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    content_type = "image/webp"
+    llave = generar_llave(f"gastos/{current_user.sucursal_id}", content_type)
+    cleanup = programar_borrado(db, llave, demora=3600)
+    db.commit()
+    gasto = _gasto_de_mi_sucursal(db, gasto_id, current_user, bloquear=True)
+    request_id = str(client_request_id) if client_request_id else None
+    if request_id:
+        existing = (
+            db.query(GastoAdjunto)
+            .filter_by(gasto_id=gasto.id, client_request_id=request_id)
+            .first()
+        )
+        if existing:
+            db.delete(cleanup)
+            db.commit()
+            if existing.payload_hash != fingerprint:
+                raise HTTPException(
+                    status_code=409, detail="La foto ya se envió con otro contenido"
+                )
+            return existing
+    if db.query(GastoAdjunto).filter_by(gasto_id=gasto.id).count() >= MAX_ADJUNTOS_POR_GASTO:
+        db.delete(cleanup)
+        db.commit()
+        raise HTTPException(
+            status_code=400, detail=f"Máximo {MAX_ADJUNTOS_POR_GASTO} fotos por gasto"
+        )
+    await asyncio.wait_for(storage.guardar(llave, datos, content_type), timeout=60)
     adjunto = GastoAdjunto(
         gasto_id=gasto.id,
         sucursal_id=gasto.sucursal_id,
@@ -111,13 +142,15 @@ async def subir_adjunto(
         content_type=content_type,
         size=len(datos),
         subido_por_id=current_user.id,
+        client_request_id=request_id,
+        payload_hash=fingerprint,
     )
     db.add(adjunto)
+    db.delete(cleanup)
     try:
         db.commit()
     except Exception:
-        db.rollback()
-        await storage.borrar(llave)  # no dejar archivos huérfanos
+        db.rollback()  # La tarea confirmada antes del put permanece pendiente.
         raise
     db.refresh(adjunto)
     return adjunto
@@ -162,9 +195,15 @@ async def borrar_adjunto(
     current_user: Usuario = Depends(_roles_gastos),
     storage: Storage = Depends(get_storage),
 ):
-    adjunto = _adjunto_de_mi_sucursal(db, gasto_id, adjunto_id, current_user)
-    llave = adjunto.storage_key
+    _gasto_de_mi_sucursal(db, gasto_id, current_user, bloquear=True)
+    adjunto = (
+        db.query(GastoAdjunto)
+        .filter_by(id=adjunto_id, gasto_id=gasto_id, sucursal_id=current_user.sucursal_id)
+        .first()
+    )
+    if adjunto is None:
+        return None  # Replay autorizado; la fila ya fue eliminada.
+    programar_borrado(db, adjunto.storage_key)
     db.delete(adjunto)
     db.commit()
-    await storage.borrar(llave)
     return None
