@@ -45,7 +45,12 @@ function isCredentialEndpoint(url: string): boolean {
 // importan `api` de este módulo, así que un `import` estático aquí crearía
 // un ciclo. El dinámico se resuelve en tiempo de llamada, no de carga.
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = response.config.method?.toLowerCase()
+    if (method && method !== 'get' && /\/gastos\/(proveedores|articulos|categorias-articulo)(\/|$)/.test(response.config.url ?? ''))
+      window.dispatchEvent(new Event('catalogos-gastos-cambiados'))
+    return response
+  },
   async (error) => {
     if (error.response?.status === 401) {
       const url: string = error.config?.url ?? ''

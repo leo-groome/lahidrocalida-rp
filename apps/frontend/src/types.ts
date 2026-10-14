@@ -96,6 +96,8 @@ export interface Turno {
   propinas_efectivo: number | null;
   diferencia: number | null;
   fondo_anterior: number | null;
+  pedidos_uber?: number;
+  ventas_uber?: number;
   observaciones: string | null;
   denominaciones_iniciales: Denominacion[];
   denominaciones_finales: Denominacion[] | null;
@@ -142,6 +144,11 @@ export interface ReporteDiaAnalytics {
     cantidad: number;
     total: number;
   }>;
+  /** Uber Eats entregado al repartidor: fuera de `ingresos` (depósito a tarjeta). */
+  uber_eats?: {
+    pedidos: number;
+    total: number;
+  };
   tipos_orden: Array<{
     tipo: string;
     cantidad: number;

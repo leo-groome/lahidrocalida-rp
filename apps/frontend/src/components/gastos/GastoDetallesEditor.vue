@@ -32,6 +32,7 @@
             <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1 md:hidden">Artículo</label>
             <SearchableSelect
               v-model="detalle.articulo_id"
+              @update:model-value="sugerirPrecio(idx)"
               :options="articulos"
               placeholder="Buscar artículo..."
               class="w-full"
@@ -60,7 +61,7 @@
                   step="0.01"
                   min="0"
                   v-model.number="detalle.precio_unitario"
-                  @input="recalcLinea(idx)"
+                  @input="detalle._precioEditado = true; recalcLinea(idx)"
                   class="w-full bg-slate-50 border-0 rounded-xl pl-5 pr-2 py-2.5 text-sm font-black text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 text-right"
                 >
               </div>
@@ -74,7 +75,7 @@
                   step="0.01"
                   min="0"
                   v-model.number="detalle.subtotal_linea"
-                  @input="detalle._editadoManual = true"
+                  @input="detalle._editadoManual = true; detalle._precioEditado = true"
                   class="w-full bg-indigo-50/60 border border-indigo-100 rounded-xl pl-5 pr-2 py-2.5 text-sm font-black text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 text-right"
                 >
               </div>
@@ -125,11 +126,12 @@
 </template>
 
 <script setup lang="ts">
+import { precioSugerido } from '@/utils/precio-sugerido'
 import { computed } from 'vue'
 import SearchableSelect from './SearchableSelect.vue'
 import { Plus, Trash2, ShoppingBag } from 'lucide-vue-next'
 
-defineProps<{
+const props = defineProps<{
   articulos: any[]
 }>()
 
@@ -156,6 +158,13 @@ const recalcLinea = (idx: number) => {
   const cant = Number(d.cantidad) || 0
   const pu = Number(d.precio_unitario) || 0
   d.subtotal_linea = Number((cant * pu).toFixed(2))
+}
+
+function sugerirPrecio(idx: number) {
+  const d = detalles.value[idx]
+  const article = props.articulos.find(a => a.id === d.articulo_id)
+  d.precio_unitario = precioSugerido(Number(d.precio_unitario) || 0, Number(article?.costo_estandar), !!d._precioEditado || !!d._editadoManual)
+  recalcLinea(idx)
 }
 
 const addDetalle = () => {

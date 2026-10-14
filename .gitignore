@@ -394,3 +394,7 @@ apps/go-print-service/go-print-service.exe
 apps/go-print-service/go-print-service-dev
 apps/go-print-service/config.yaml
 apps/go-print-service/*.log
+
+# Adjuntos locales (dev) — en produccion van a R2
+apps/backend/uploads/
+uploads/

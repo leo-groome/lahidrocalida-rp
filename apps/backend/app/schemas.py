@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -325,13 +326,25 @@ class GastoBase(BaseModel):
 
 
 class GastoCreate(GastoBase):
+    client_request_id: Optional[UUID] = None
     detalles: List[GastoDetalleCreate] = []
     nomina_detalles: List[NominaDetalleCreate] = []
     fecha_gasto: Optional[datetime] = None
 
 
+class AdjuntoResponse(BaseModel):
+    id: int
+    content_type: str
+    size: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class GastoResponse(GastoBase):
     id: int
+    num_adjuntos: int = 0
     subtotal: Decimal
     total: Decimal
     fecha_gasto: datetime
@@ -408,6 +421,8 @@ class TurnoResponse(BaseModel):
     propinas_efectivo: Optional[float] = None
     diferencia: Optional[float] = None
     fondo_anterior: Optional[float] = None
+    pedidos_uber: int = 0
+    ventas_uber: float = 0.0
     observaciones: Optional[str] = None
     denominaciones_iniciales: List[DenominacionBase]
     denominaciones_finales: Optional[List[DenominacionBase]] = None

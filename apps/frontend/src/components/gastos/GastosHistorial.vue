@@ -140,7 +140,7 @@
                 <h3 class="text-xl font-black text-slate-900 tracking-tight">
                   {{ gasto.tipo_gasto === 'nomina'
                     ? 'Pago de Nómina'
-                    : (gasto.proveedor?.nombre || 'Proveedor Desconocido') }}
+                    : (gasto.proveedor?.nombre || (gasto.detalles?.length ? 'Proveedor Desconocido' : 'Compra rápida')) }}
                 </h3>
                 <div class="flex gap-2">
                   <span :class="[
@@ -154,6 +154,16 @@
                     <component :is="gasto.metodo_pago === 'efectivo' ? Banknote : CreditCard" class="w-3 h-3" />
                     {{ gasto.metodo_pago }}
                   </span>
+                  <button
+                    v-if="gasto.num_adjuntos > 0"
+                    type="button"
+                    @click.stop="gastoConFotos = gasto.id"
+                    class="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 hover:bg-indigo-100 transition-colors"
+                    title="Ver foto del ticket"
+                  >
+                    <Paperclip class="w-3 h-3" />
+                    {{ gasto.num_adjuntos }}
+                  </button>
                 </div>
               </div>
 
@@ -208,7 +218,7 @@
                     {{ formatCurrency(gasto.total) }}
                   </span>
                 </div>
-                <div v-if="gasto.total_manual" class="flex justify-end mt-1">
+                <div v-if="gasto.total_manual && gasto.detalles?.length" class="flex justify-end mt-1">
                   <span class="text-[10px] font-black text-amber-600 border border-amber-200 bg-amber-50 px-2 py-0.5 rounded-lg flex items-center gap-1">
                     <AlertCircle class="w-3 h-3" /> AJUSTE MANUAL
                   </span>
@@ -257,10 +267,15 @@
         </div>
       </div>
     </div>
-  </div>
+    <GastoAdjuntosVisor v-if="gastoConFotos" :gasto-id="gastoConFotos" @close="gastoConFotos = null" />
+</div>
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores } = storeToRefs(catalogos)
 import { ref, onMounted, watch, computed } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
@@ -277,13 +292,15 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
-  Hash
+  Hash,
+  Paperclip
 } from 'lucide-vue-next'
+import GastoAdjuntosVisor from './GastoAdjuntosVisor.vue'
 
 const emit = defineEmits(['new-gasto', 'edit-gasto'])
 
 const gastos = ref<any[]>([])
-const proveedores = ref<any[]>([])
+const gastoConFotos = ref<number | null>(null)
 const loading = ref(false)
 
 // Paginación
@@ -332,8 +349,7 @@ const getMonth = (dateStr: string) => {
 
 const loadProveedores = async () => {
   try {
-    const res = await api.get('/gastos/proveedores')
-    proveedores.value = res.data
+    await catalogos.cargar()
   } catch (e) {
     console.error(e)
   }

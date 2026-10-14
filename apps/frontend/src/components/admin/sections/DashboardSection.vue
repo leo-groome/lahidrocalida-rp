@@ -165,7 +165,7 @@
             </div>
           </div>
           
-          <div class="overflow-hidden">
+          <div class="overflow-x-auto">
             <table class="min-w-full">
               <thead>
                 <tr class="border-b border-slate-100">
@@ -574,7 +574,7 @@ const hourChartData = computed(() => {
 const orderTypeChartData = computed(() => {
   if (!advancedAnalyticsData.value?.tipos_orden?.length) return null
   const data = advancedAnalyticsData.value.tipos_orden
-  const labelsMap: any = { 'local': 'Aquí', 'llevar': 'Llevar', 'uber': 'Uber Eats', 'rappi': 'Rappi' }
+  const labelsMap: any = { 'aqui': 'Aquí', 'llevar': 'Llevar', 'uber_eats': 'Uber Eats' }
   return {
     labels: data.map((d: any) => labelsMap[d.tipo] || d.tipo),
     datasets: [{

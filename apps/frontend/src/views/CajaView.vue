@@ -251,7 +251,10 @@ const searchQuery = ref<string>('')
 const showMesaMap = ref(false)
 
 // Estados para tabla de pedidos del día en analíticas
-const selectedPaymentMethod = ref<'todos' | 'efectivo' | 'tarjeta' | 'transferencia'>('todos')
+const selectedPaymentMethod = ref<'todos' | 'efectivo' | 'tarjeta' | 'transferencia' | 'uber_eats'>('todos')
+
+// Uber Eats no se cobra en Caja: se audita aparte y NUNCA entra a los totales de terminal
+const esTicketUber = (t: ReporteDiaTicket) => t.tipo_orden === 'uber_eats'
 const sortDescending = ref(true)
 
 const filteredPedidosDelDia = computed(() => {
@@ -260,7 +263,9 @@ const filteredPedidosDelDia = computed(() => {
   let result = [...ticketsDelDia.value]
 
   // Filtrar por método de pago
-  if (selectedPaymentMethod.value !== 'todos') {
+  if (selectedPaymentMethod.value === 'uber_eats') {
+    result = result.filter(esTicketUber)
+  } else if (selectedPaymentMethod.value !== 'todos') {
     result = result.filter(p => p.metodo_pago === selectedPaymentMethod.value)
   }
 
@@ -275,8 +280,18 @@ const filteredPedidosDelDia = computed(() => {
   return result
 })
 
+// Resumen de Uber Eats de la tabla filtrada (fila propia, fuera de "Total Filtro")
+const uberSummary = computed(() => {
+  const pedidos = filteredPedidosDelDia.value.filter(esTicketUber)
+  if (pedidos.length === 0) return null
+  return {
+    count: pedidos.length,
+    total: pedidos.reduce((sum, p) => sum + Number(p.total), 0)
+  }
+})
+
 const filteredSummary = computed(() => {
-  const pedidos = filteredPedidosDelDia.value
+  const pedidos = filteredPedidosDelDia.value.filter(p => !esTicketUber(p))
   const count = pedidos.length
   if (count === 0) return null
 
@@ -693,6 +708,7 @@ const turnoMetrics = computed(() => {
   
   // Filtrar tickets pagados DESPUÉS del inicio del turno
   const ticketsDelTurno = ticketsDelDia.value.filter(t => {
+    if (esTicketUber(t)) return false
     if (!t.fecha_pago) return false
     const fechaPago = new Date(t.fecha_pago).getTime()
     return fechaPago >= inicioTurno
@@ -713,6 +729,12 @@ const turnoMetrics = computed(() => {
   const propinasTarjeta = ticketsDelTurno
     .reduce((sum, t) => sum + Number(t.propina_tarjeta || 0), 0)
 
+  // Uber Eats entregado al repartidor en el turno: segmento aparte, fuera del arqueo
+  const ticketsUber = ticketsDelDia.value.filter(t =>
+    esTicketUber(t) && t.fecha_pago && new Date(t.fecha_pago).getTime() >= inicioTurno
+  )
+  const ventasUber = ticketsUber.reduce((sum, t) => sum + Number(t.total), 0)
+
   // Gastos del turno (desde el resumen del backend)
   const gastosTurno = shiftSummary.value?.gastos_turno || 0
 
@@ -721,6 +743,8 @@ const turnoMetrics = computed(() => {
 
   return {
     ticketsCount: ticketsDelTurno.length,
+    ventasUber,
+    pedidosUber: ticketsUber.length,
     ventasEfectivo,
     ventasTarjeta,
     propinasEfectivo,
@@ -1333,6 +1357,23 @@ const showErrorNotification = (message: string) => {
   setTimeout(() => {
     showNotification.value = false
   }, 3000) // 3 segundos para errores - tiempo suficiente para leer
+}
+
+// Uber Eats: no se cobra en Caja; solo se marca que el repartidor lo recogió
+const uberEntregando = ref<number | null>(null)
+const marcarUberEntregado = async (pedido: PedidoResponse) => {
+  if (uberEntregando.value !== null) return
+  uberEntregando.value = pedido.id
+  try {
+    const ok = await pedidosStore.updatePedidoEstado(pedido.id, 'entregado_repartidor')
+    if (ok) {
+      showSuccessNotification(`Uber Eats #${pedido.numero_display} entregado al repartidor`)
+    } else {
+      showErrorNotification(pedidosStore.error || 'No se pudo marcar la entrega')
+    }
+  } finally {
+    uberEntregando.value = null
+  }
 }
 
 const showSuccessNotification = (message: string) => {
@@ -2113,6 +2154,29 @@ const handleGastoSaved = async () => {
 
       <!-- Tab Overview General -->
       <div v-else-if="activeTab === 'overview'" class="space-y-8 mt-6">
+        <!-- Uber Eats: sin cobro en Caja, solo entrega al repartidor -->
+        <section v-if="pedidosStore.pedidosUber.length" class="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-black text-emerald-900 uppercase tracking-widest">🚗 Uber Eats ({{ pedidosStore.pedidosUber.length }})</h4>
+            <span class="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">Depósito a tarjeta · fuera del corte de caja</span>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div v-for="p in pedidosStore.pedidosUber" :key="p.id" class="bg-white rounded-2xl border border-emerald-100 p-4 flex flex-col gap-3">
+              <div class="min-w-0">
+                <div class="font-black text-slate-800 break-words">#{{ p.numero_display }} · {{ p.nombre_cliente || 'Uber' }}</div>
+                <div class="text-xs font-bold text-slate-400 uppercase">{{ p.estado }} · ${{ Number(p.total).toFixed(2) }}</div>
+              </div>
+              <button
+                @click="marcarUberEntregado(p)"
+                :disabled="uberEntregando === p.id"
+                class="w-full px-4 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider rounded-xl"
+              >
+                {{ uberEntregando === p.id ? '...' : 'Entregado a repartidor' }}
+              </button>
+            </div>
+          </div>
+        </section>
+
         <!-- Header Unificado -->
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-4">
@@ -2459,6 +2523,18 @@ const handleGastoSaved = async () => {
               </div>
             </div>
 
+            <!-- Uber Eats: segmento aparte y discreto, fuera de ventas del turno y mix de cobro -->
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 flex items-center justify-between gap-4">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-base">🚗</span>
+                <div class="min-w-0">
+                  <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uber Eats · {{ analyticsDia.uber_eats?.pedidos ?? 0 }} pedido{{ (analyticsDia.uber_eats?.pedidos ?? 0) === 1 ? '' : 's' }}</div>
+                  <div class="text-[10px] font-bold text-slate-400/80 uppercase tracking-wider">Depósito a tarjeta · no suma a ventas del turno</div>
+                </div>
+              </div>
+              <div class="text-xl font-black text-slate-500 tracking-tight">${{ Number(analyticsDia.uber_eats?.total ?? 0).toFixed(2) }}</div>
+            </div>
+
             <!-- Gráficos y Listas -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
               
@@ -2701,6 +2777,18 @@ const handleGastoSaved = async () => {
                     </div>
                     <div class="text-3xl font-black text-indigo-800 tracking-tighter">${{ turnoMetrics.propinasTarjeta.toFixed(2) }}</div>
                   </div>
+
+                  <!-- Uber Eats: segmento aparte y discreto, fuera del efectivo esperado -->
+                  <div class="col-span-2 bg-slate-50 border border-slate-200 rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <span class="text-base">🚗</span>
+                      <div class="min-w-0">
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Uber Eats · {{ turnoMetrics.pedidosUber }} pedido{{ turnoMetrics.pedidosUber === 1 ? '' : 's' }}</div>
+                        <div class="text-[10px] font-bold text-slate-400/80 uppercase tracking-wider">Depósito a tarjeta · no entra a caja</div>
+                      </div>
+                    </div>
+                    <div class="text-lg font-black text-slate-500 tracking-tight">${{ turnoMetrics.ventasUber.toFixed(2) }}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2712,7 +2800,7 @@ const handleGastoSaved = async () => {
               <h3 class="text-xl font-black text-slate-800 flex items-center gap-3">
                 <ScrollText class="w-6 h-6 text-[#00126D]" />
                 Auditoría de Comandas
-                <span class="text-[10px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-widest ml-2">{{ filteredSummary?.count || 0 }} tickets</span>
+                <span class="text-[10px] font-black text-slate-400 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-widest ml-2">{{ filteredPedidosDelDia.length }} tickets</span>
               </h3>
               
               <!-- Filtros de la tabla -->
@@ -2725,6 +2813,7 @@ const handleGastoSaved = async () => {
                   <option value="efectivo">Efectivo</option>
                   <option value="tarjeta">Tarjeta</option>
                   <option value="transferencia">Transferencia</option>
+                  <option value="uber_eats">Uber Eats</option>
                 </select>
                 <button 
                   @click="sortDescending = !sortDescending"
@@ -2776,7 +2865,10 @@ const handleGastoSaved = async () => {
                       <div class="text-xs font-bold text-slate-400 uppercase">{{ formatTime(pedido.fecha_pago || pedido.fecha_creacion) }}</div>
                     </td>
                     <td class="px-8 py-5 text-center">
-                      <span :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
+                      <span v-if="esTicketUber(pedido)" class="inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border bg-emerald-50 text-emerald-700 border-emerald-200">
+                        🚗 <span class="ml-1.5">Uber Eats</span>
+                      </span>
+                      <span v-else :class="['inline-flex items-center px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border', getPaymentMethodColor(pedido.metodo_pago)]">
                         {{ getPaymentMethodIcon(pedido.metodo_pago) }}
                         <span class="ml-1.5">{{ pedido.metodo_pago || '---' }}</span>
                       </span>
@@ -2800,6 +2892,7 @@ const handleGastoSaved = async () => {
                           <Printer class="w-4 h-4" />
                         </button>
                         <button 
+                          v-if="!esTicketUber(pedido)"
                           @click="abrirEditarPropina(pedido)"
                           class="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-xl transition-all"
                           title="Editar Propina"
@@ -2810,8 +2903,13 @@ const handleGastoSaved = async () => {
                     </td>
                   </tr>
                 </tbody>
-                <tfoot v-if="filteredSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
-                  <tr class="text-xs uppercase tracking-widest">
+                <tfoot v-if="filteredSummary || uberSummary" class="bg-slate-50/30 font-black text-slate-800 border-t border-slate-100">
+                  <tr v-if="uberSummary" class="text-xs uppercase tracking-widest text-slate-500">
+                    <td colspan="4" class="px-8 py-4 text-right">🚗 Uber Eats ({{ uberSummary.count }}) · aparte</td>
+                    <td class="px-8 py-4 text-right text-lg tracking-tighter">${{ uberSummary.total.toFixed(2) }}</td>
+                    <td colspan="2"></td>
+                  </tr>
+                  <tr v-if="filteredSummary" class="text-xs uppercase tracking-widest">
                     <td colspan="4" class="px-8 py-6 text-right text-slate-400">Total Filtro</td>
                     <td class="px-8 py-6 text-right text-lg tracking-tighter">${{ filteredSummary.total.toFixed(2) }}</td>
                     <td class="px-8 py-6 text-right text-emerald-600 text-lg tracking-tighter">+${{ filteredSummary.propina_total.toFixed(2) }}</td>

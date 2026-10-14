@@ -15,6 +15,7 @@ from app.routers import (
     admin,
     asistencia,
     auth,
+    gasto_adjuntos,
     gastos,
     pedidos,
     products,
@@ -23,6 +24,8 @@ from app.routers import (
     turnos,
     users,
 )
+from app.services.adjunto_body_limit import AdjuntoBodyLimitMiddleware
+from app.services.storage_cleanup import cleanup_consumer
 from app.websocket_manager import websocket_manager
 
 # Sin esto, los logger.* de los módulos propios no salen en los logs del host
@@ -40,6 +43,7 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     tasks = [
         asyncio.create_task(events.event_consumer(stop_event)),
+        asyncio.create_task(cleanup_consumer(stop_event)),
         asyncio.create_task(events.redis_subscriber(stop_event)),
         asyncio.create_task(websocket_manager._cleanup_zombies()),
     ]
@@ -64,6 +68,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(AdjuntoBodyLimitMiddleware)
+
+
 # Incluir routers
 app.include_router(auth.router)
 app.include_router(asistencia.router)
@@ -71,6 +78,7 @@ app.include_router(users.router)
 app.include_router(products.router)
 app.include_router(pedidos.router)
 app.include_router(gastos.router)
+app.include_router(gasto_adjuntos.router)
 app.include_router(admin.router)
 app.include_router(propinas.router)
 app.include_router(reportes.router)

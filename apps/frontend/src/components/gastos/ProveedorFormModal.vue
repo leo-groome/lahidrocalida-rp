@@ -1,9 +1,9 @@
 <template>
-  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[60] animate-in fade-in duration-200">
-    <div class="bg-white p-10 rounded-[3rem] shadow-2xl w-full max-w-xl animate-in zoom-in-95 duration-200 overflow-hidden">
-      <div class="mb-10 flex items-center justify-between">
+  <div class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-stretch sm:items-center justify-center sm:p-4 z-[60] animate-in fade-in duration-200">
+    <div class="bg-white p-5 sm:p-10 rounded-none sm:rounded-[3rem] shadow-2xl w-full max-w-xl max-h-dvh sm:max-h-[92dvh] overflow-y-auto animate-in zoom-in-95 duration-200">
+      <div class="mb-6 sm:mb-10 flex items-center justify-between">
         <div class="space-y-1">
-          <h3 class="text-3xl font-black text-slate-800 tracking-tight">
+          <h3 class="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">
             {{ initialData ? 'Editar Socio' : 'Aliado Operativo' }}
           </h3>
           <p class="text-slate-400 text-xs font-black uppercase tracking-[0.2em] mt-1 ml-1">Eslabón de Suministro</p>

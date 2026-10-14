@@ -13,7 +13,7 @@ dependencies = [
     "python-dotenv==1.1.1",
     "python-jose[cryptography]==3.3.0",
     "passlib[argon2,bcrypt]==1.7.4",
-    "python-multipart==0.0.9",
+    "python-multipart>=0.0.20",
     "psycopg2-binary==2.9.10",
     "websockets==11.0.3",
     "pytz==2024.1",
@@ -22,6 +22,9 @@ dependencies = [
     "anyio==4.11.0",
     "httpx==0.28.1",
     "redis==5.2.1",
+    "aioboto3>=15.5.0",
+    "pillow>=11.3",
+    "pillow-heif>=1.1",
 ]
 
 [project.optional-dependencies]

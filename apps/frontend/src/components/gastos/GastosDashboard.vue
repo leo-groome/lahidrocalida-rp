@@ -1,43 +1,43 @@
 <template>
-  <div class="gastos-dashboard space-y-10 animate-in fade-in slide-in-from-bottom-5 duration-700">
+  <div class="gastos-dashboard space-y-6 sm:space-y-10 animate-in fade-in slide-in-from-bottom-5 duration-700">
     <!-- Header & Date Controls -->
-    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-4 lg:gap-8">
       <div class="space-y-1">
         <h2 class="text-xs font-black tracking-[0.3em] text-slate-400 uppercase">Analíticas</h2>
-        <h1 class="text-5xl font-black tracking-tight text-slate-900 flex items-center gap-3">
+        <h1 class="text-3xl sm:text-5xl font-black tracking-tight text-slate-900 flex flex-wrap items-center gap-x-3">
           PANEL <span class="text-red-500">CONTROL</span>
         </h1>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="flex flex-wrap items-center gap-3 max-w-full">
         <!-- Modern Date Picker Module -->
-        <div class="bg-white border-2 border-slate-100 rounded-[1.75rem] p-1.5 flex items-center shadow-sm">
-          <div class="flex items-center px-4 gap-3">
+        <div class="bg-white border-2 border-slate-100 rounded-[1.75rem] p-1.5 flex flex-wrap sm:flex-nowrap items-center shadow-sm max-w-full">
+          <div class="flex items-center px-3 sm:px-4 gap-2 sm:gap-3">
             <Calendar class="h-4 w-4 text-slate-400" />
             <div class="flex flex-col">
               <span class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Desde</span>
               <input 
                 type="date" 
                 v-model="dates.start"
-                class="bg-transparent border-none p-0 text-xs font-black text-slate-700 focus:ring-0 w-24 uppercase"
+                class="bg-transparent border-none p-0 text-xs font-black text-slate-700 focus:ring-0 w-28 uppercase"
               >
             </div>
           </div>
-          <div class="w-px h-8 bg-slate-100 mx-1"></div>
-          <div class="flex items-center px-4 gap-3">
+          <div class="hidden sm:block w-px h-8 bg-slate-100 mx-1"></div>
+          <div class="flex items-center px-3 sm:px-4 gap-3">
             <div class="flex flex-col">
               <span class="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Hasta</span>
               <input 
                 type="date" 
                 v-model="dates.end"
-                class="bg-transparent border-none p-0 text-xs font-black text-slate-700 focus:ring-0 w-24 uppercase"
+                class="bg-transparent border-none p-0 text-xs font-black text-slate-700 focus:ring-0 w-28 uppercase"
               >
             </div>
           </div>
           <button 
             @click="loadDashboard" 
             :disabled="loading"
-            class="bg-slate-900 text-white h-[48px] px-6 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 transition-all ml-2 shadow-lg shadow-slate-200"
+            class="bg-slate-900 text-white h-[48px] px-6 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 disabled:opacity-50 transition-all sm:ml-2 w-full sm:w-auto mt-1.5 sm:mt-0 shadow-lg shadow-slate-200"
           >
              <span v-if="!loading">Actualizar</span>
              <Loader2 v-else class="w-4 h-4 animate-spin" />

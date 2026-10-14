@@ -17,6 +17,8 @@ export const EstadoPedido = {
   PAGADO: 'pagado',
   CANCELADO: 'cancelado',
   DIVIDIDO: 'dividido',
+  /** Solo Uber Eats: el repartidor ya recogió el pedido (no se cobra en Caja). */
+  ENTREGADO_REPARTIDOR: 'entregado_repartidor',
 } as const
 
 export type EstadoPedido = (typeof EstadoPedido)[keyof typeof EstadoPedido]
@@ -44,4 +46,8 @@ export const ESTADOS_PEDIDO_FINALES: readonly EstadoPedido[] = [
   EstadoPedido.PAGADO,
   EstadoPedido.CANCELADO,
   EstadoPedido.DIVIDIDO,
+  EstadoPedido.ENTREGADO_REPARTIDOR,
 ]
+
+/** Tipo de orden del canal Uber Eats (se cobra fuera de Caja). */
+export const TIPO_ORDEN_UBER = 'uber_eats'

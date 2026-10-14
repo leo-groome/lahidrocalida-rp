@@ -3,12 +3,16 @@
 
 FROM python:3.12.7-slim AS builder
 
+COPY --from=ghcr.io/astral-sh/uv:0.12.10 /uv /usr/local/bin/uv
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_PYTHON_DOWNLOADS=never
+
 RUN apt-get update && apt-get install -y --no-install-recommends gcc \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 
 FROM python:3.12.7-slim
@@ -18,13 +22,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && useradd --create-home --shell /usr/sbin/nologin appuser
 
 ENV HOME=/home/appuser \
-    PATH=/home/appuser/.local/bin:$PATH \
+    PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /home/appuser/.local
+COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini .

@@ -140,8 +140,13 @@ def seed(db_session):
 
 
 @pytest.fixture()
-def client(db_engine, db_session, seed):
+def client(db_engine, db_session, seed, monkeypatch):
     Session = sessionmaker(bind=db_engine)
+
+    async def no_cleanup(stop):
+        await stop.wait()
+
+    monkeypatch.setattr("app.main.cleanup_consumer", no_cleanup)
 
     def override_db():
         s = Session()

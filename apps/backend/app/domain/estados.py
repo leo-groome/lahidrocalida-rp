@@ -24,6 +24,7 @@ __all__ = [
     "EstadoTurno",
     "TRANSICIONES_PEDIDO",
     "transicion_permitida",
+    "TIPO_ORDEN_UBER",
     "MAX_HORAS_JORNADA",
 ]
 
@@ -44,11 +45,15 @@ class EstadoPedido(StrEnum):
     PAGADO = "pagado"
     CANCELADO = "cancelado"
     DIVIDIDO = "dividido"
+    # Solo pedidos `uber_eats`: el repartidor ya recogió el pedido. No se cobra
+    # en Caja (el dinero llega por depósito a tarjeta), así que nunca pasa por
+    # `pagado` y queda fuera de todas las sumas de ventas por construcción.
+    ENTREGADO_REPARTIDOR = "entregado_repartidor"
 
     @classmethod
     def terminales(cls) -> frozenset["EstadoPedido"]:
         """Estados finales: el pedido ya no admite modificaciones."""
-        return frozenset({cls.PAGADO, cls.CANCELADO, cls.DIVIDIDO})
+        return frozenset({cls.PAGADO, cls.CANCELADO, cls.DIVIDIDO, cls.ENTREGADO_REPARTIDOR})
 
     @classmethod
     def activos(cls) -> frozenset["EstadoPedido"]:
@@ -74,11 +79,26 @@ TRANSICIONES_PEDIDO: dict[EstadoPedido, frozenset[str]] = {
     # de vía /dividir y /dividir_por_montos, que lo setean directo sin pasar
     # por esta tabla.
     EstadoPedido.DIVIDIDO: frozenset({"administrador"}),
+    EstadoPedido.ENTREGADO_REPARTIDOR: frozenset({"mesero", "cajero", "administrador"}),
 }
 
+TIPO_ORDEN_UBER = "uber_eats"
 
-def transicion_permitida(origen: str, destino: str, rol: str) -> bool:
+# Un pedido Uber Eats no se cobra ni se divide en Caja: ninguno de estos
+# destinos tiene sentido para él.
+_DESTINOS_PROHIBIDOS_UBER = frozenset(
+    {EstadoPedido.CUENTA_SOLICITADA, EstadoPedido.PAGADO, EstadoPedido.DIVIDIDO}
+)
+
+
+def transicion_permitida(
+    origen: str, destino: str, rol: str, tipo_orden: str | None = None
+) -> bool:
     """True si `rol` puede mover un pedido en estado `origen` a `destino`.
+
+    `tipo_orden` (opcional) activa las reglas del canal Uber Eats:
+    `entregado_repartidor` solo es alcanzable por pedidos `uber_eats`, y estos
+    no pueden ir a `cuenta_solicitada`/`pagado`/`dividido`.
 
     Un pedido en estado terminal (`EstadoPedido.terminales()`) no admite
     ninguna transición más, sin importar el rol: es el bug que cierra esta
@@ -93,6 +113,10 @@ def transicion_permitida(origen: str, destino: str, rol: str) -> bool:
     try:
         destino_enum = EstadoPedido(destino)
     except ValueError:
+        return False
+    if destino_enum == EstadoPedido.ENTREGADO_REPARTIDOR and tipo_orden != TIPO_ORDEN_UBER:
+        return False
+    if tipo_orden == TIPO_ORDEN_UBER and destino_enum in _DESTINOS_PROHIBIDOS_UBER:
         return False
     return rol in TRANSICIONES_PEDIDO.get(destino_enum, frozenset())
 

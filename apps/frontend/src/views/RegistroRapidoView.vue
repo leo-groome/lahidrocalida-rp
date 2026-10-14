@@ -19,10 +19,59 @@
 
     <!-- Contenido -->
     <main class="flex-1 max-w-xl w-full mx-auto px-4 py-5 space-y-4">
+      <!-- Envíos en curso (UI optimista): el formulario ya quedó libre para el siguiente gasto -->
+      <ul v-if="pendientes.length" class="space-y-2" aria-live="polite">
+        <li
+          v-for="p in pendientes"
+          :key="p.id"
+          class="flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-bold transition-colors"
+          :class="{
+            'bg-white border-slate-200 text-slate-600': p.estado === 'enviando',
+            'bg-emerald-50 border-emerald-200 text-emerald-700': p.estado === 'ok',
+            'bg-amber-50 border-amber-200 text-amber-700': p.estado === 'parcial',
+            'bg-rose-50 border-rose-200 text-rose-700': p.estado === 'error',
+          }"
+        >
+          <Loader2 v-if="p.estado === 'enviando'" class="w-4 h-4 animate-spin flex-shrink-0" />
+          <Check v-else-if="p.estado === 'ok'" class="w-4 h-4 flex-shrink-0" />
+          <AlertTriangle v-else class="w-4 h-4 flex-shrink-0" />
+          <span class="flex-1 min-w-0 truncate">
+            ${{ p.total.toFixed(2) }} · {{ p.resumen }}
+            <span v-if="p.estado === 'enviando'" class="font-medium">· guardando…</span>
+            <span v-else-if="p.estado === 'parcial'" class="font-medium">· {{ p.fotosFallidas }} foto(s) sin subir · {{ p.error }}</span>
+            <span v-else-if="p.estado === 'error'" class="font-medium">· {{ p.error }}</span>
+          </span>
+          <template v-if="p.estado !== 'enviando'">
+            <button type="button" v-if="p.estado !== 'ok'" class="font-black underline" @click="reintentar(p)">{{ p.gastoId ? 'Reintentar fotos' : 'Reintentar' }}</button>
+            <button type="button" class="p-1" title="Descartar" @click="descartar(p.id)"><X class="w-4 h-4" /></button>
+          </template>
+        </li>
+      </ul>
+
+      <!-- Captura rápida: monto + foto del ticket -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+        <label class="text-xs font-black text-slate-400 uppercase tracking-widest">
+          Monto total <span class="normal-case font-bold tracking-normal">(si no vas a listar artículos)</span>
+        </label>
+        <div class="relative">
+          <span class="absolute inset-y-0 left-4 flex items-center text-slate-400 font-black text-xl">$</span>
+          <input
+            v-model="montoTotal"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            class="w-full pl-9 pr-4 py-3 text-2xl font-black text-slate-900 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#00126D]/20 focus:border-[#00126D]"
+          >
+        </div>
+        <FotoTicketInput v-model="fotos" v-model:processing="preparandoFotos" />
+      </div>
+
       <!-- Dictado / pegado -->
       <div class="space-y-2">
         <label class="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
-          Escribe o dicta tus compras, una por línea
+          O escribe / dicta tus compras, una por línea
         </label>
         <textarea
           ref="textareaRef"
@@ -70,7 +119,7 @@
         <div v-show="ajustesAbiertos" class="px-4 pb-4 space-y-4 border-t border-slate-100 pt-4">
           <div class="space-y-1">
             <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-              Proveedor <span class="text-rose-400">*</span>
+              Proveedor <span class="normal-case font-bold tracking-normal">(opcional)</span>
             </label>
             <SearchableSelect
               v-model="proveedorId"
@@ -106,22 +155,18 @@
         </div>
       </div>
 
-      <p v-if="filas.length && !proveedorId" class="text-[11px] font-bold text-amber-600 text-center">
-        Falta elegir proveedor (en Ajustes).
-      </p>
     </main>
 
     <!-- Footer fijo -->
-    <footer class="sticky bottom-0 bg-white/90 backdrop-blur border-t border-slate-100 px-4 py-3">
+    <footer class="safe-area-bottom sticky bottom-0 bg-white/90 backdrop-blur border-t border-slate-100 px-4 py-3">
       <div class="max-w-xl mx-auto">
         <button
           type="button"
           @click="registrar"
-          :disabled="!puedeRegistrar || submitting"
+          :disabled="!puedeRegistrar || cola.escribiendo || preparandoFotos"
           class="w-full py-4 bg-[#00126D] text-white font-black rounded-2xl disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-2"
         >
-          <Loader2 v-if="submitting" class="w-4 h-4 animate-spin" />
-          {{ submitting ? 'Registrando...' : `Registrar gasto${totalTexto}` }}
+          {{ `Registrar gasto${totalTexto}` }}
         </button>
       </div>
     </footer>
@@ -138,9 +183,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
-import { api } from '@/api/client'
+import { storeToRefs } from "pinia"
+import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
+const catalogos = useCatalogosGastosStore()
+const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import {
   construirFilas,
   filasListas,
@@ -148,13 +196,16 @@ import {
   precioUnitarioFila,
   type FilaCompra,
 } from '@/utils/parseCompraTexto'
-import { useCrearGasto } from '@/composables/useCrearGasto'
+import { useGastosPendientesStore } from '@/stores/gastos-pendientes'
+import type { GastoPendiente } from '@/utils/gasto-queue-db'
 import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
-import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-vue-next'
+import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
+import { AlertTriangle, ArrowLeft, Check, ChevronDown, Loader2, X } from 'lucide-vue-next'
 
 const router = useRouter()
-const { crearGasto, submitting, error } = useCrearGasto()
+const cola = useGastosPendientesStore()
+const pendientes = computed(() => cola.pendientes)
 
 const PROVEEDOR_LS_KEY = 'rapido:ultimoProveedorId'
 const metodos = [
@@ -166,15 +217,15 @@ const texto = ref('')
 const filas = ref<FilaCompra[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
-const proveedores = ref<any[]>([])
-const articulos = ref<any[]>([])
-const categorias = ref<any[]>([])
 
 const ultimoProveedor = Number(localStorage.getItem(PROVEEDOR_LS_KEY))
 const proveedorId = ref<number | null>(Number.isFinite(ultimoProveedor) && ultimoProveedor > 0 ? ultimoProveedor : null)
 const metodoPago = ref<'efectivo' | 'tarjeta'>('efectivo')
 const fecha = ref(localNow())
 const ajustesAbiertos = ref(false)
+const montoTotal = ref<string>('')
+const fotos = ref<File[]>([])
+const preparandoFotos = ref(false)
 
 const toast = ref<{ msg: string; tipo: 'ok' | 'error' } | null>(null)
 let toastTimer: ReturnType<typeof setTimeout> | undefined
@@ -191,9 +242,16 @@ const lineasContadas = computed(
 const proveedorNombre = computed(
   () => proveedores.value.find((p) => p.id === proveedorId.value)?.nombre ?? '',
 )
-const puedeRegistrar = computed(() => filasListas(filas.value) && !!proveedorId.value)
+const montoNum = computed(() => Number(montoTotal.value) || 0)
+// Con artículos: todas las filas resueltas. Sin artículos: basta un monto > 0.
+const modoLista = computed(() => filas.value.length > 0)
+const puedeRegistrar = computed(() =>
+  modoLista.value ? filasListas(filas.value) : montoNum.value > 0,
+)
 const totalGasto = computed(() =>
-  filas.value.reduce((s, f) => s + (Number(f.cantidad) || 0) * precioUnitarioFila(f), 0),
+  modoLista.value
+    ? filas.value.reduce((s, f) => s + (Number(f.cantidad) || 0) * precioUnitarioFila(f), 0)
+    : montoNum.value,
 )
 const totalTexto = computed(() =>
   puedeRegistrar.value ? ` · $${totalGasto.value.toFixed(2)}` : '',
@@ -207,7 +265,6 @@ function mostrarToast(msg: string, tipo: 'ok' | 'error' = 'ok') {
 
 function analizar() {
   filas.value = construirFilas(texto.value, articulos.value)
-  if (filas.value.length && !proveedorId.value) ajustesAbiertos.value = true
 }
 
 function quitarFila(id: number) {
@@ -218,26 +275,49 @@ function onArticulosActualizados(arts: any[]) {
   articulos.value = arts
 }
 
+// --- UI optimista -----------------------------------------------------------
+// Al registrar, el formulario se limpia al instante y el envío corre en segundo
+// plano; cada gasto aparece en `pendientes` y solo el que falla pide acción.
+const hayEnVuelo = computed(() => cola.escribiendo)
+function avisarSalida(e: BeforeUnloadEvent) {
+  if (hayEnVuelo.value) e.preventDefault()
+}
+window.addEventListener('beforeunload', avisarSalida)
+onBeforeUnmount(() => window.removeEventListener('beforeunload', avisarSalida))
+onBeforeRouteLeave(() => !cola.escribiendo)
+
+async function descartar(id: string) {
+  if (!window.confirm('Descartar el pendiente local no borra un gasto ya guardado. ¿Continuar?')) return
+  try { await cola.descartar(id) } catch { mostrarToast('No se pudo descartar el pendiente', 'error') }
+}
+function reintentar(p: GastoPendiente) {
+  void cola.enviar(p).catch(() => mostrarToast('Inicia sesión para reintentar', 'error'))
+}
+
 async function registrar() {
-  if (!puedeRegistrar.value || submitting.value) return
+  if (!puedeRegistrar.value || cola.escribiendo || preparandoFotos.value) return
+  let p: GastoPendiente
   try {
-    await crearGasto({
-      proveedorId: proveedorId.value,
-      tipoGasto: 'directo',
-      metodoPago: metodoPago.value,
-      detalles: filasToDetalles(filas.value),
-      fechaGasto: fecha.value,
-    })
-    localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
-    mostrarToast(`Gasto registrado · ${filas.value.length} artículo(s)`)
-    texto.value = ''
-    filas.value = []
-    fecha.value = localNow()
-    await nextTick()
-    textareaRef.value?.focus()
+    p = await cola.agregar({
+      proveedor_id: proveedorId.value, tipo_gasto: 'directo', metodo_pago: metodoPago.value,
+      detalles: modoLista.value ? filasToDetalles(filas.value) : [],
+      total_manual: modoLista.value ? null : montoNum.value,
+      fecha_gasto: new Date(fecha.value).toISOString(),
+    }, [...fotos.value], totalGasto.value,
+    modoLista.value ? `${filas.value.length} artículo(s)` : 'compra rápida')
   } catch {
-    mostrarToast(error.value || 'Error al guardar', 'error')
+    mostrarToast('No se pudo conservar el gasto. La captura sigue en el formulario.', 'error')
+    return
   }
+  if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
+  texto.value = ''
+  filas.value = []
+  montoTotal.value = ''
+  fotos.value = []
+  fecha.value = localNow()
+  void cola.enviar(p).catch(() => mostrarToast("Inicia sesión para enviar el pendiente", "error"))
+  await nextTick()
+  textareaRef.value?.focus()
 }
 
 function volver() {
@@ -247,15 +327,9 @@ function volver() {
 
 onMounted(async () => {
   textareaRef.value?.focus()
+  try { await cola.cargar() } catch { mostrarToast("No se pudieron recuperar los pendientes", "error") }
   try {
-    const [provs, arts, cats] = await Promise.all([
-      api.get('/gastos/proveedores'),
-      api.get('/gastos/articulos'),
-      api.get('/gastos/categorias-articulo'),
-    ])
-    proveedores.value = provs.data
-    articulos.value = arts.data
-    categorias.value = cats.data
+    await catalogos.cargar()
   } catch {
     mostrarToast('No se pudieron cargar los catálogos', 'error')
   }

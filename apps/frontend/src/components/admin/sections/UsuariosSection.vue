@@ -17,7 +17,7 @@
     </div>
 
     <!-- User List as Modern Table -->
-    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden animate-in slide-in-from-bottom-2 duration-300">
+    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-x-auto animate-in slide-in-from-bottom-2 duration-300">
       <table class="min-w-full">
         <thead class="bg-slate-50/50">
           <tr>

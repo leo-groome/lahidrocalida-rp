@@ -15,6 +15,7 @@
 
         <!-- Right Side Actions -->
         <div class="flex items-center gap-3 sm:gap-6">
+          <GastosPendientesLink />
           <!-- Estado de conexión en tiempo real -->
           <div
             class="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 rounded-2xl border text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all duration-300 cursor-pointer active:scale-95 hover:shadow-sm"
@@ -66,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import GastosPendientesLink from "@/components/gastos/GastosPendientesLink.vue"
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'

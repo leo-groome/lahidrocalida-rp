@@ -1,9 +1,13 @@
+import hashlib
+import json
+import logging
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.auth import get_current_active_user
@@ -16,6 +20,7 @@ from app.models import (
     Gasto,
     GastoDetalle,
     NominaDetalle,
+    OperacionGasto,
     Proveedor,
     Usuario,
     get_local_datetime,
@@ -38,7 +43,10 @@ from app.schemas import (
     ProveedorResponse,
     UsuarioResponse,
 )
+from app.services.storage_cleanup import programar_borrado
 from app.utils.timezone import MEXICO_TZ
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gastos", tags=["gastos"])
 
@@ -75,10 +83,12 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
     else:
         if data.nomina_detalles:
             raise HTTPException(status_code=400, detail="Solo la nómina lleva empleados")
-        if data.proveedor_id is None:
-            raise HTTPException(status_code=400, detail="Proveedor requerido")
-        if not data.detalles:
-            raise HTTPException(status_code=400, detail="Se requiere al menos un artículo")
+        # Registro rápido: el proveedor es opcional (compra suelta) y, si hay un
+        # total capturado a mano, tampoco se exigen líneas de artículos.
+        if not data.detalles and data.total_manual is None:
+            raise HTTPException(status_code=400, detail="Captura un total o al menos un artículo")
+        if data.total_manual is not None and data.total_manual <= 0 and not data.detalles:
+            raise HTTPException(status_code=400, detail="El total debe ser mayor a 0")
 
 
 def _build_nomina_detalles(
@@ -351,12 +361,57 @@ def list_empleados_nomina(
     )
 
 
+def _replay_gasto(db: Session, operation: OperacionGasto, fingerprint: str, user: Usuario) -> Gasto:
+    if operation.usuario_id != user.id:
+        raise HTTPException(status_code=403, detail="La operación pertenece a otro usuario")
+    if operation.payload_hash != fingerprint:
+        raise HTTPException(status_code=409, detail="La clave ya se usó con otro contenido")
+    gasto = db.get(Gasto, operation.gasto_id) if operation.gasto_id else None
+    if gasto is None:
+        raise HTTPException(status_code=410, detail="El gasto de esta operación fue eliminado")
+    return gasto
+
+
 @router.post("/", response_model=GastoResponse, status_code=status.HTTP_201_CREATED)
 def create_gasto(
     data: GastoCreate,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            data.model_dump(mode="json", exclude={"client_request_id"}),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    request_id = str(data.client_request_id) if data.client_request_id else None
+    operation = None
+    if request_id:
+        operation = (
+            db.query(OperacionGasto)
+            .filter_by(sucursal_id=current_user.sucursal_id, client_request_id=request_id)
+            .first()
+        )
+        if operation:
+            return _replay_gasto(db, operation, fingerprint, current_user)
+        operation = OperacionGasto(
+            sucursal_id=current_user.sucursal_id,
+            usuario_id=current_user.id,
+            client_request_id=request_id,
+            payload_hash=fingerprint,
+        )
+        db.add(operation)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            existing = (
+                db.query(OperacionGasto)
+                .filter_by(sucursal_id=current_user.sucursal_id, client_request_id=request_id)
+                .one()
+            )
+            return _replay_gasto(db, existing, fingerprint, current_user)
     _validate_gasto_inputs(data)
 
     detalles: list[GastoDetalle] = []
@@ -369,12 +424,13 @@ def create_gasto(
         )
         total = subtotal
     else:
-        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-        if not proveedor:
-            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-        if proveedor.sucursal_id != current_user.sucursal_id:
-            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
-        proveedor_id = proveedor.id
+        if data.proveedor_id is not None:
+            proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+            if not proveedor:
+                raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+            if proveedor.sucursal_id != current_user.sucursal_id:
+                raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+            proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -400,6 +456,8 @@ def create_gasto(
         nomina_detalles=nomina_detalles,
     )
     db.add(gasto)
+    if operation is not None:
+        operation.gasto = gasto
     db.commit()
     db.refresh(gasto)
     return gasto
@@ -424,7 +482,7 @@ def list_gastos(
 
     query = db.query(Gasto)
 
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         query = query.filter(Gasto.sucursal_id == current_user.sucursal_id)
     elif sucursal_id is not None:
         query = query.filter(Gasto.sucursal_id == sucursal_id)
@@ -464,6 +522,7 @@ def list_gastos(
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
             selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
+            selectinload(Gasto.adjuntos),
         )
         .order_by(Gasto.fecha_gasto.desc())
         .offset((page - 1) * page_size)
@@ -488,7 +547,7 @@ def get_gastos_analiticas(
 
     base_query = db.query(Gasto)
 
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         base_query = base_query.filter(Gasto.sucursal_id == current_user.sucursal_id)
     elif sucursal_id is not None:
         base_query = base_query.filter(Gasto.sucursal_id == sucursal_id)
@@ -536,7 +595,7 @@ def get_gastos_analiticas(
     )
 
     # Aplicar mismos filtros a esta subquery
-    if current_user.rol == "compras":
+    if current_user.rol != "administrador":
         gastos_con_detalle = gastos_con_detalle.filter(
             Gasto.sucursal_id == current_user.sucursal_id
         )
@@ -655,6 +714,7 @@ def get_gasto(
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
             selectinload(Gasto.nomina_detalles).joinedload(NominaDetalle.usuario),
+            selectinload(Gasto.adjuntos),
         )
         .filter(Gasto.id == gasto_id)
         .first()
@@ -662,8 +722,8 @@ def get_gasto(
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para ver este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
     return gasto
 
 
@@ -680,8 +740,8 @@ def update_gasto(
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para editar este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
     detalles: list[GastoDetalle] = []
     nomina_detalles: list[NominaDetalle] = []
@@ -693,12 +753,13 @@ def update_gasto(
         )
         total = subtotal
     else:
-        proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
-        if not proveedor:
-            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
-        if proveedor.sucursal_id != current_user.sucursal_id:
-            raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
-        proveedor_id = proveedor.id
+        if data.proveedor_id is not None:
+            proveedor = db.query(Proveedor).filter(Proveedor.id == data.proveedor_id).first()
+            if not proveedor:
+                raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+            if proveedor.sucursal_id != current_user.sucursal_id:
+                raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
+            proveedor_id = proveedor.id
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -731,18 +792,23 @@ def update_gasto(
 
 
 @router.delete("/{gasto_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_gasto(
+async def delete_gasto(
     gasto_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_roles("administrador", "compras", "cajero")),
 ):
-    gasto = db.query(Gasto).filter(Gasto.id == gasto_id).first()
+    gasto = (
+        db.query(Gasto).filter(Gasto.id == gasto_id).with_for_update().populate_existing().first()
+    )
     if not gasto:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
-    if current_user.rol == "compras" and gasto.sucursal_id != current_user.sucursal_id:
-        raise HTTPException(status_code=403, detail="No autorizado para eliminar este gasto")
+    if current_user.rol != "administrador" and gasto.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=404, detail="Gasto no encontrado")
 
+    db.query(OperacionGasto).filter(OperacionGasto.gasto_id == gasto.id).update({"gasto_id": None})
+    for adjunto in gasto.adjuntos:
+        programar_borrado(db, adjunto.storage_key)
     db.delete(gasto)
     db.commit()
     return None

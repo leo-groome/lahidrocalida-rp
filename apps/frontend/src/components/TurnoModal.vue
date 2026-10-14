@@ -127,6 +127,11 @@
                 <span class="text-xs font-bold text-emerald-800 uppercase tracking-widest">Total Esperado</span>
                 <span class="text-xl font-black text-emerald-900 drop-shadow-sm">$ {{ (reporteTurno.ventas_hasta_ahora?.total_esperado ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
               </div>
+              <!-- Uber Eats: aparte del efectivo esperado (depósito a tarjeta) -->
+              <div v-if="(reporteTurno.uber_eats?.pedidos ?? 0) > 0" class="px-5 py-3 border-t border-gray-100 flex justify-between items-center bg-gray-50">
+                <span class="text-xs font-bold text-gray-600 uppercase tracking-widest">🚗 Uber Eats ({{ reporteTurno.uber_eats.pedidos }}) · no entra a caja</span>
+                <span class="text-base font-black text-gray-800">$ {{ (reporteTurno.uber_eats.total ?? 0).toLocaleString('es-MX', {minimumFractionDigits: 2}) }}</span>
+              </div>
             </div>
             
             <!-- Retiro vs Fondo (Cierre) -->

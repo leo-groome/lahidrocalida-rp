@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_active_user
 from app.db.session import get_db
+from app.domain.estados import EstadoPedido
 from app.models import ArticuloPedido, Pedido, Platillo, Turno, Usuario
 from app.utils.timezone import MEXICO_TZ, get_mexico_now
 
@@ -37,8 +38,12 @@ def tickets_del_dia(
     if user.rol not in ["cajero", "administrador"]:
         raise HTTPException(status_code=403, detail="Solo cajeros y administradores")
 
+    # Uber Eats entregado al repartidor entra a la auditoría con su hora de
+    # entrega (fecha_pago); el frontend lo separa de los totales de terminal.
+    estados_con_fecha_pago = ["pagado", EstadoPedido.ENTREGADO_REPARTIDOR]
+
     fecha_evento_expr = case(
-        (Pedido.estado == "pagado", Pedido.fecha_pago),
+        (Pedido.estado.in_(estados_con_fecha_pago), Pedido.fecha_pago),
         else_=Pedido.fecha_creacion,
     )
 
@@ -73,7 +78,7 @@ def tickets_del_dia(
     if tid:
         query = query.filter(
             Pedido.turno_id == tid,
-            Pedido.estado.in_(["pagado", "cancelado"]),
+            Pedido.estado.in_(["pagado", "cancelado", EstadoPedido.ENTREGADO_REPARTIDOR]),
         )
     else:
         # Fallback: fecha del día
@@ -86,7 +91,7 @@ def tickets_del_dia(
         query = query.filter(
             or_(
                 and_(
-                    Pedido.estado == "pagado",
+                    Pedido.estado.in_(estados_con_fecha_pago),
                     Pedido.fecha_pago.isnot(None),
                     Pedido.fecha_pago >= start_dt,
                     Pedido.fecha_pago < end_dt,
@@ -105,7 +110,9 @@ def tickets_del_dia(
     rows = query.order_by(fecha_evento_expr.desc()).limit(limit).offset(offset).all()
 
     def _serialize_ticket(row: Any) -> dict[str, Any]:
-        fecha_evento = row.fecha_pago if row.estado == "pagado" else row.fecha_creacion
+        fecha_evento = (
+            row.fecha_pago if row.estado in estados_con_fecha_pago else row.fecha_creacion
+        )
 
         return {
             "id": row.id,
@@ -276,6 +283,27 @@ def analytics_del_dia(
         .all()
     )
 
+    # Uber Eats entregado al repartidor: bloque aparte, fuera de ingresos de
+    # terminal (el dinero llega por depósito a tarjeta).
+    uber_filters = [
+        Pedido.estado == EstadoPedido.ENTREGADO_REPARTIDOR,
+        Pedido.sucursal_id == user.sucursal_id,
+    ]
+    if tid:
+        uber_filters.append(Pedido.turno_id == tid)
+    else:
+        hoy = get_mexico_now().date()
+        uber_filters += [
+            Pedido.fecha_creacion >= datetime.combine(hoy, datetime.min.time(), tzinfo=MEXICO_TZ),
+            Pedido.fecha_creacion
+            < datetime.combine(hoy + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ),
+        ]
+    uber_pedidos, uber_total = (
+        db.query(func.count(Pedido.id), func.coalesce(func.sum(Pedido.total), 0))
+        .filter(and_(*uber_filters))
+        .one()
+    )
+
     # Productos mas vendidos (top 5)
     productos_vendidos = (
         db.query(
@@ -311,6 +339,7 @@ def analytics_del_dia(
             "tarjeta": float(propina_tarjeta_total),
             "total": float(propina_total),
         },
+        "uber_eats": {"pedidos": int(uber_pedidos), "total": float(uber_total)},
         "ventas_por_hora": [
             {"hora": int(hora), "cantidad": int(cantidad), "total": float(total or 0)}
             for hora, cantidad, total in ventas_por_hora

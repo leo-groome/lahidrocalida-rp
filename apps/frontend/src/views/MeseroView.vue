@@ -1095,6 +1095,21 @@ const verPedidoActual = async () => {
   }
 }
 
+// Uber Eats: no se cobra en Caja, solo se marca que el repartidor lo recogió
+const marcarEntregadoRepartidor = async (pedido: any) => {
+  const success = await pedidosStore.updatePedidoEstado(pedido.id, 'entregado_repartidor')
+  if (success) {
+    showSuccessNotification(`Uber Eats entregado al repartidor: ${pedido.nombre_cliente || '#' + pedido.numero_display}`)
+    if (showVerPedidoModal.value) {
+      showVerPedidoModal.value = false
+    }
+    limpiarFormulario()
+    actualizarModalPedido()
+  } else {
+    showErrorNotification(pedidosStore.error || 'Error al marcar entrega al repartidor')
+  }
+}
+
 // Solicitar cuenta para pedido entregado (NUEVA FUNCIONALIDAD EN MESERO)
 const solicitarCuenta = async (pedido: any) => {
   try {
@@ -2567,9 +2582,19 @@ const guardarCambiosPedido = async () => {
               <span>Agregar Más Artículos</span>
             </button>
 
+            <!-- Uber Eats: sin cobro en Caja, solo entrega al repartidor -->
+            <button
+              v-if="pedidoActual?.tipo_orden === 'uber_eats'"
+              @click="marcarEntregadoRepartidor(pedidoActual)"
+              class="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black rounded-2xl transition-all text-xs uppercase tracking-wider shadow-xl shadow-emerald-600/25 flex items-center justify-center gap-2"
+            >
+              <CheckCircle class="w-4 h-4" />
+              <span>Entregado a Repartidor</span>
+            </button>
+
             <!-- Botón SOLICITAR CUENTA (prominente y clickeable) -->
             <button
-              v-if="pedidoActual?.estado === 'cuenta_solicitada'"
+              v-else-if="pedidoActual?.estado === 'cuenta_solicitada'"
               disabled
               class="w-full py-4 bg-purple-100 border border-purple-300 text-purple-800 font-black rounded-2xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-not-allowed"
             >
