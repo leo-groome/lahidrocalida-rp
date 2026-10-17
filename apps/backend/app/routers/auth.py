@@ -34,7 +34,7 @@ from app.utils.timezone import get_mexico_now, jornada_de
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
-ROLES_STAFF = ["cajero", "cocina", "mesero"]
+ROLES_STAFF = ["cajero", "cocina", "mesero", "compras"]
 ROLES_ADMIN = ["administrador"]
 
 

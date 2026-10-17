@@ -5,7 +5,7 @@ Fecha: 2026-10-13. Rama: `feat/compras-uber-mobile`. Base del trabajo de Claude:
 **Estado: implementación y validación local avanzadas; no aprobado para merge.**
 
 Commits de implementación: `1840f38` (backend) y `760d98c` (frontend).
-PR: pendiente de enlazar al publicar este checkpoint.
+PR en borrador: [#10 — tickets de gastos en R2, canal Uber separado y Admin móvil](https://github.com/leo-groome/lahidrocalida-rp/pull/10).
 
 Leer primero este archivo, después [la auditoría](AUDITORIA_compras-uber-mobile.md)
 y [el plan de correcciones](PLAN_CORRECCIONES_compras-uber-mobile.md). Los hallazgos

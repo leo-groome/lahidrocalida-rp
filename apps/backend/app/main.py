@@ -59,6 +59,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="La Hidrocálida POS API", lifespan=lifespan)
 
+# Orden: add_middleware deja lo último agregado como capa más externa. CORS va
+# DESPUÉS del limitador para que el 413 también lleve Access-Control-Allow-Origin
+# (sin él el navegador lo reporta como error CORS y oculta el motivo real).
+app.add_middleware(AdjuntoBodyLimitMiddleware)
+
 # CORS: orígenes declarados en CORS_ORIGINS (env), nunca hardcodeados en el código.
 app.add_middleware(
     CORSMiddleware,
@@ -67,8 +72,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.add_middleware(AdjuntoBodyLimitMiddleware)
 
 
 # Incluir routers

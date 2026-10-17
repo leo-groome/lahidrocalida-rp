@@ -5,6 +5,14 @@ import { createPinia } from 'pinia'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
 
+// beforeinstallprompt puede dispararse antes de que monte cualquier componente;
+// se captura aquí y InstallPWA lo consume.
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault()
+  ;(window as any).__pwaInstallPrompt = e
+  window.dispatchEvent(new Event('pwa-install-ready'))
+})
+
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
