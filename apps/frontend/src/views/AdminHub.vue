@@ -15,7 +15,7 @@
         </button>
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2">
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <router-link
           v-for="area in areas"
           :key="area.name"
@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { LayoutDashboard, ReceiptText, ChefHat, UtensilsCrossed } from 'lucide-vue-next'
+import { LayoutDashboard, ReceiptText, ChefHat, UtensilsCrossed, ShoppingCart } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
@@ -44,6 +44,7 @@ const areas = [
   { name: 'mesero', title: 'Mesero', description: 'Tomar pedidos y dar seguimiento a las mesas.', icon: UtensilsCrossed },
   { name: 'caja', title: 'Caja', description: 'Cobrar pedidos, gestionar turnos y revisar el corte.', icon: ReceiptText },
   { name: 'kds-manager', title: 'Cocina', description: 'Preparar y entregar los pedidos de cocina.', icon: ChefHat },
+  { name: 'registro-rapido', title: 'Compras', description: 'Registrar gastos y compras con foto del ticket.', icon: ShoppingCart },
   { name: 'admin', title: 'Administración', description: 'Configurar el negocio y consultar la gestión.', icon: LayoutDashboard },
 ]
 

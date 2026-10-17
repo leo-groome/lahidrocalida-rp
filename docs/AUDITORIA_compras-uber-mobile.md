@@ -104,6 +104,34 @@ Revisión posterior con `security-review`: sin hallazgos ≥8 de confianza.
 
 ---
 
+## Actualización posterior a la auditoría de Codex (2026-10-14)
+
+Este documento describe el estado al commit `f8c3de6`. Las correcciones de Codex
+(PR #10) están en [HANDOFF](HANDOFF_CLAUDE_compras-uber-mobile.md) y
+[PLAN_CORRECCIONES](PLAN_CORRECCIONES_compras-uber-mobile.md); donde difieran, mandan esos.
+Cambios hechos después, con su razón:
+
+| Commit | Cambio | Por qué |
+|---|---|---|
+| `b8a4719` | Tarjeta **Compras** en `AdminHub` → `/rapido` | El administrador no tenía acceso directo al registro rápido; el router ya permitía su rol. |
+| `2fbeec1` | `GET …/adjuntos/{id}/archivo` responde **404** si el archivo no está en el storage (`ObjetoNoEncontrado`) | Filas creadas con storage local antes de pasar a R2 daban 500 sin cabeceras CORS; el navegador lo mostraba como "CORS blocked". |
+| (este push) | `AdjuntoBodyLimitMiddleware` se registra **antes** de `CORSMiddleware` | El 413 salía sin `Access-Control-Allow-Origin` (pendiente §1 del handoff). Test de regresión con `Origin` permitido; verificado que falla sin el cambio. |
+
+Verificación local con **R2 real** (bucket del `.env`, no certifica producción):
+subida de imagen pequeña y de JPEG de 3.8 MB desde `/rapido` → `POST …/adjuntos` 201,
+objeto legible por `GET` (200 `image/webp`); llave inexistente → 404.
+Lección operativa: un contenedor backend sin recrear (`docker compose up -d --build backend`)
+corre código y variables viejos; síntoma: `POST …/adjuntos` sin respuesta.
+
+Estados que cambiaron respecto a las secciones de arriba (resueltos por Codex, ver handoff):
+R2 probado localmente; WebP garantizado por el backend (Pillow, sin EXIF); límite de 5 fotos
+bajo lock; idempotencia de gastos y de adjuntos; limpieza durable de storage.
+Siguen abiertos: cámara/HEIC en dispositivo físico, barrido a 375 px de las secciones del
+admin no revisadas, y el plan de Gastos (store de catálogos, precio sugerido, borrar
+`GastoForm.vue`/`GastosAnalytics.vue`).
+
+---
+
 ## Pendientes antes de merge
 1. Credenciales R2 (bucket privado + `STORAGE_BACKEND=r2` + 4 `R2_*` en Railway) y una prueba real de subida/lectura/borrado.
 2. Probar cámara y HEIC en un celular.

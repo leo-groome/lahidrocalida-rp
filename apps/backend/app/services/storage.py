@@ -29,6 +29,10 @@ _TIPOS = {
 _HEIC_BRANDS = {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1", b"heim", b"heis"}
 
 
+class ObjetoNoEncontrado(Exception):
+    """La llave existe en la BD pero no en el storage (borrado o backend distinto)."""
+
+
 class AdjuntoInvalido(ValueError):
     """El contenido no es una imagen permitida."""
 
@@ -78,7 +82,10 @@ class LocalStorage:
         await asyncio.to_thread(_write)
 
     async def leer(self, llave: str) -> bytes:
-        return await asyncio.to_thread(self._ruta(llave).read_bytes)
+        try:
+            return await asyncio.to_thread(self._ruta(llave).read_bytes)
+        except FileNotFoundError as exc:
+            raise ObjetoNoEncontrado(llave) from exc
 
     async def borrar(self, llave: str) -> None:
         ruta = self._ruta(llave)
@@ -112,7 +119,10 @@ class R2Storage:
 
     async def leer(self, llave: str) -> bytes:
         async with self._client() as s3:
-            resp = await s3.get_object(Bucket=self._bucket, Key=llave)
+            try:
+                resp = await s3.get_object(Bucket=self._bucket, Key=llave)
+            except s3.exceptions.NoSuchKey as exc:
+                raise ObjetoNoEncontrado(llave) from exc
             return await resp["Body"].read()
 
     async def borrar(self, llave: str) -> None:

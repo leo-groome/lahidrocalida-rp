@@ -26,6 +26,7 @@ from app.services.imagenes import normalizar_imagen
 from app.services.storage import (
     MAX_ADJUNTO_BYTES,
     AdjuntoInvalido,
+    ObjetoNoEncontrado,
     Storage,
     detectar_tipo,
     generar_llave,
@@ -175,7 +176,11 @@ async def ver_adjunto(
     storage: Storage = Depends(get_storage),
 ):
     adjunto = _adjunto_de_mi_sucursal(db, gasto_id, adjunto_id, current_user)
-    datos = await storage.leer(adjunto.storage_key)
+    try:
+        datos = await storage.leer(adjunto.storage_key)
+    except ObjetoNoEncontrado:
+        # Fila sin archivo (p. ej. subida en otro backend de storage): 404, no 500.
+        raise HTTPException(status_code=404, detail="Archivo no disponible")
     return Response(
         content=datos,
         media_type=adjunto.content_type,

@@ -327,3 +327,31 @@ def test_adjunto_replay_con_cuota_llena_no_consume_plaza(como_rol, seed, db_sess
     assert replay.status_code == 201 and replay.json()["id"] == first.json()["id"]
     assert len(client.get(f"/gastos/{gasto.id}/adjuntos").json()) == 5
     assert _subir(client, gasto.id, JPEG).status_code == 400
+
+
+def test_archivo_faltante_en_storage_da_404_no_500(como_rol, seed, db_session, storage_tmp):
+    gasto = _gasto(db_session, seed["sucursal"].id)
+    client = como_rol("compras")
+    adj = _subir(client, gasto.id, JPEG).json()
+    for f in storage_tmp.rglob("*.webp"):
+        f.unlink()
+    for f in storage_tmp.rglob("*.jpg"):
+        f.unlink()
+
+    r = client.get(f"/gastos/{gasto.id}/adjuntos/{adj['id']}/archivo")
+    assert r.status_code == 404
+
+
+def test_413_lleva_cabeceras_cors(como_rol, seed, db_session):
+    from app.core.config import settings
+
+    origen = settings.cors_origins_list[0]
+    gasto = _gasto(db_session, seed["sucursal"].id)
+    client = como_rol("compras")
+    r = client.post(
+        f"/gastos/{gasto.id}/adjuntos",
+        files={"archivo": ("t.jpg", JPEG + b"\x00" * (10 * 1024 * 1024), "image/jpeg")},
+        headers={"Origin": origen},
+    )
+    assert r.status_code == 413
+    assert r.headers.get("access-control-allow-origin") == origen
