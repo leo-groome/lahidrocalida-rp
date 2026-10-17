@@ -6,7 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -31,7 +31,9 @@ from app.schemas import (
     CategoriaArticuloCreate,
     CategoriaArticuloResponse,
     GastoCreate,
+    GastoPorArticulo,
     GastoPorCategoria,
+    GastoPorProveedor,
     GastoResponse,
     GastosResumenResponse,
     GastoTimeline,
@@ -528,8 +530,15 @@ def list_gastos(
             .distinct()
         )
 
-    # Contar total antes de paginar
+    # Contar y sumar antes de paginar. La suma va por ids: con el join de categoría
+    # un gasto con N líneas de la misma categoría se repetiría N veces.
     total = query.count()
+    ids_filtrados = query.with_entities(Gasto.id).distinct().subquery()
+    suma_total = (
+        db.query(func.coalesce(func.sum(Gasto.total), 0))
+        .filter(Gasto.id.in_(select(ids_filtrados.c.id)))
+        .scalar()
+    )
 
     # Aplicar orden y paginación
     query = (
@@ -548,7 +557,13 @@ def list_gastos(
 
     items = query.all()
 
-    return PaginatedGastosResponse(items=items, total=total, page=page, page_size=page_size)
+    return PaginatedGastosResponse(
+        items=items,
+        total=total,
+        suma_total=float(suma_total or 0),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/analiticas/resumen", response_model=GastosResumenResponse)
@@ -653,6 +668,48 @@ def get_gastos_analiticas(
             id=top_prov.id, nombre=top_prov.nombre, total=float(top_prov.total)
         )
 
+    # 4b. Por proveedor (lista completa; nómina queda fuera por el join)
+    por_proveedor = [
+        GastoPorProveedor(id=r.id, nombre=r.nombre, total=float(r.total or 0), compras=r.compras)
+        for r in base_query.with_entities(
+            Proveedor.id,
+            Proveedor.nombre,
+            func.sum(Gasto.total).label("total"),
+            func.count(Gasto.id).label("compras"),
+        )
+        .join(Proveedor, Gasto.proveedor_id == Proveedor.id)
+        .group_by(Proveedor.id, Proveedor.nombre)
+        .order_by(func.sum(Gasto.total).desc())
+        .all()
+    ]
+
+    # 4c. Por artículo: cantidad y costo (solo gastos con detalle)
+    por_articulo = [
+        GastoPorArticulo(
+            id=r.id,
+            nombre=r.nombre,
+            unidad=r.unidad,
+            categoria=r.categoria,
+            cantidad=float(r.cantidad or 0),
+            total=float(r.total or 0),
+        )
+        for r in db.query(
+            Articulo.id,
+            Articulo.nombre,
+            Articulo.unidad,
+            CategoriaArticulo.nombre.label("categoria"),
+            func.sum(GastoDetalle.cantidad).label("cantidad"),
+            func.sum(GastoDetalle.subtotal_linea).label("total"),
+        )
+        .select_from(GastoDetalle)
+        .join(Articulo, GastoDetalle.articulo_id == Articulo.id)
+        .outerjoin(CategoriaArticulo, Articulo.categoria_id == CategoriaArticulo.id)
+        .filter(GastoDetalle.gasto_id.in_(base_query.with_entities(Gasto.id).scalar_subquery()))
+        .group_by(Articulo.id, Articulo.nombre, Articulo.unidad, CategoriaArticulo.nombre)
+        .order_by(func.sum(GastoDetalle.subtotal_linea).desc())
+        .all()
+    ]
+
     # 5. Timeline por jornada (05:00→05:00 hora México), agrupado en Python para no
     # depender de funciones de zona horaria del dialecto.
     por_dia: dict = {}
@@ -666,6 +723,8 @@ def get_gastos_analiticas(
         gasto_promedio_diario=promedio_diario,
         por_categoria=por_categoria,
         top_proveedor=top_proveedor_obj,
+        por_proveedor=por_proveedor,
+        por_articulo=por_articulo,
         timeline=timeline,
     )
 

@@ -16,9 +16,9 @@
             <Calculator class="w-5 h-5" />
           </div>
           <div>
-            <p class="text-[10px] font-black tracking-widest text-indigo-400 uppercase">Total en vista</p>
+            <p class="text-[10px] font-black tracking-widest text-indigo-400 uppercase">Total del filtro ({{ totalItems }})</p>
             <p class="text-xl font-black text-indigo-900 leading-tight">
-              ${{ formatCurrency(calculateFilteredTotal) }}
+              ${{ formatCurrency(sumaTotal) }}
             </p>
           </div>
         </div>
@@ -37,6 +37,13 @@
 
     <!-- Filter Bar - Modern SaaS Style -->
     <div class="bg-white border-2 border-slate-100 rounded-[2.5rem] p-8 shadow-sm">
+      <div class="flex gap-2 mb-6">
+        <button
+          v-for="r in rapidos" :key="r.id" type="button" @click="aplicarRapido(r.id)"
+          class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+          :class="rapidoActivo === r.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'"
+        >{{ r.label }}</button>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="space-y-2">
           <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1 flex items-center gap-2">
@@ -45,7 +52,7 @@
           <div class="relative group">
             <input 
               type="date" 
-              v-model="filters.fecha_inicio"
+              v-model="filters.fecha_inicio" @input="rapidoActivo = null"
               class="w-full bg-slate-50 border-0 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
             >
           </div>
@@ -58,7 +65,7 @@
           <div class="relative group">
             <input 
               type="date" 
-              v-model="filters.fecha_fin"
+              v-model="filters.fecha_fin" @input="rapidoActivo = null"
               class="w-full bg-slate-50 border-0 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
             >
           </div>
@@ -77,9 +84,36 @@
           </select>
         </div>
 
+        <div class="space-y-2">
+          <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Tipo</label>
+          <select v-model="filters.tipo_gasto" class="w-full bg-slate-50 border-0 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer">
+            <option :value="null">Todos los tipos</option>
+            <option value="directo">Directo</option>
+            <option value="indirecto">Indirecto</option>
+            <option value="nomina">Nómina</option>
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Método</label>
+          <select v-model="filters.metodo_pago" class="w-full bg-slate-50 border-0 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer">
+            <option :value="null">Efectivo y tarjeta</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="tarjeta">Tarjeta</option>
+          </select>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-[10px] font-black tracking-widest text-slate-400 uppercase ml-1">Categoría</label>
+          <select v-model="filters.categoria_id" class="w-full bg-slate-50 border-0 rounded-2xl px-5 py-3.5 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none cursor-pointer">
+            <option :value="null">Todas las categorías</option>
+            <option v-for="c in categorias" :key="c.id" :value="c.id">{{ c.nombre }}</option>
+          </select>
+        </div>
+
         <div class="flex items-end gap-3">
           <button 
-            @click="loadGastos" 
+            @click="aplicarFiltros" 
             class="flex-1 h-[52px] bg-indigo-600 text-white rounded-2xl text-xs font-black tracking-widest uppercase hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
           >
             <Search class="w-4 h-4" /> Aplicar
@@ -133,6 +167,18 @@
               <span class="text-2xl font-black">{{ getDayNum(gasto.fecha_gasto) }}</span>
               <span class="text-[10px] font-black uppercase opacity-70">{{ getMonth(gasto.fecha_gasto) }}</span>
             </div>
+
+            <!-- Miniatura del ticket -->
+            <button
+              v-if="gasto.adjuntos?.length"
+              type="button"
+              @click.stop="gastoConFotos = gasto.id"
+              class="w-20 h-20 shrink-0 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 hover:border-indigo-400 transition-colors"
+              title="Ver foto del ticket"
+            >
+              <img v-if="miniaturas[gasto.id]" :src="miniaturas[gasto.id]" alt="Ticket" class="w-full h-full object-cover" />
+              <Paperclip v-else class="w-5 h-5 mx-auto text-slate-300" />
+            </button>
 
             <!-- Info Content -->
             <div class="flex-1 space-y-3">
@@ -275,9 +321,10 @@
 import { storeToRefs } from "pinia"
 import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
-const { proveedores } = storeToRefs(catalogos)
-import { ref, onMounted, watch, computed } from 'vue'
-import { rangoMes } from '@/utils/fecha'
+const { proveedores, categorias } = storeToRefs(catalogos)
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { hoyJornada, rangoMes, rangoSemana } from '@/utils/fecha'
+import { urlAdjunto } from '@/composables/useAdjuntosGasto'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
 import { 
@@ -312,17 +359,59 @@ const totalItems = ref(0)
 // Fechas por defecto: mes actual
 const mesActual = rangoMes()
 
-const filters = ref({
+const filters = ref<{
+  fecha_inicio: string
+  fecha_fin: string
+  proveedor_id: number | null
+  tipo_gasto: string | null
+  metodo_pago: string | null
+  categoria_id: number | null
+}>({
   fecha_inicio: mesActual.inicio,
   fecha_fin: mesActual.fin,
-  proveedor_id: null
+  proveedor_id: null,
+  tipo_gasto: null,
+  metodo_pago: null,
+  categoria_id: null,
 })
 
-const calculateFilteredTotal = computed(() => {
-  return gastos.value.reduce((acc, g) => acc + (g.total || 0), 0)
-})
+// Total de TODO el filtro, calculado en servidor (no solo la página visible).
+const sumaTotal = ref(0)
 
-const formatCurrency = (val: number) => val.toLocaleString('es-MX', { 
+const rapidos = [
+  { id: 'hoy', label: 'Hoy' },
+  { id: 'semana', label: 'Semana' },
+  { id: 'mes', label: 'Mes' },
+] as const
+const rapidoActivo = ref<string | null>('mes')
+
+const aplicarRapido = (id: string) => {
+  const rango = id === 'hoy' ? { inicio: hoyJornada(), fin: hoyJornada() } : id === 'semana' ? rangoSemana() : rangoMes()
+  filters.value.fecha_inicio = rango.inicio
+  filters.value.fecha_fin = rango.fin
+  rapidoActivo.value = id
+  aplicarFiltros()
+}
+
+const aplicarFiltros = () => {
+  page.value = 1
+  loadGastos()
+}
+
+// Miniaturas: el archivo requiere auth, se baja como blob y se cachea por gasto.
+const miniaturas = ref<Record<number, string>>({})
+const cargarMiniaturas = (lista: any[]) => {
+  for (const g of lista) {
+    const adj = g.adjuntos?.[0]
+    if (!adj || miniaturas.value[g.id]) continue
+    urlAdjunto(g.id, adj.id)
+      .then((url) => { miniaturas.value[g.id] = url })
+      .catch(() => { /* sin miniatura: queda el clip */ })
+  }
+}
+onBeforeUnmount(() => Object.values(miniaturas.value).forEach((u) => URL.revokeObjectURL(u)))
+
+const formatCurrency = (val: number | string) => Number(val || 0).toLocaleString('es-MX', { 
   minimumFractionDigits: 2, 
   maximumFractionDigits: 2 
 })
@@ -370,6 +459,8 @@ const loadGastos = async () => {
     if (res.data.items && typeof res.data.total === 'number') {
       gastos.value = res.data.items
       totalItems.value = res.data.total
+      sumaTotal.value = Number(res.data.suma_total ?? 0)
+      cargarMiniaturas(res.data.items)
     } else if (Array.isArray(res.data)) {
       gastos.value = res.data
       totalItems.value = res.data.length
@@ -392,8 +483,12 @@ const clearFilters = () => {
   filters.value = {
     fecha_inicio: '',
     fecha_fin: '',
-    proveedor_id: null
+    proveedor_id: null,
+    tipo_gasto: null,
+    metodo_pago: null,
+    categoria_id: null,
   }
+  rapidoActivo.value = null
   page.value = 1
   loadGastos()
 }

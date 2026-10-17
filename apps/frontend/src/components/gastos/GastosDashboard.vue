@@ -220,6 +220,47 @@
           </div>
         </div>
       </div>
+
+      <!-- Compras por proveedor y por artículo -->
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div class="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm">
+          <h3 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-6">Por proveedor</h3>
+          <table v-if="stats?.por_proveedor?.length" class="w-full text-sm">
+            <thead><tr class="text-[10px] uppercase tracking-widest text-slate-400 text-left">
+              <th class="pb-3">Proveedor</th><th class="pb-3 text-right">Compras</th><th class="pb-3 text-right">Total</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="p in stats.por_proveedor" :key="p.id" class="border-t border-slate-50">
+                <td class="py-2 font-bold text-slate-700">{{ p.nombre }}</td>
+                <td class="py-2 text-right text-slate-500">{{ p.compras }}</td>
+                <td class="py-2 text-right font-black text-slate-900">${{ formatCurrency(p.total) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="text-slate-300 font-black text-[10px] uppercase tracking-widest text-center py-10">No hay registros</p>
+        </div>
+
+        <div class="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm">
+          <h3 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-6">Por artículo</h3>
+          <div class="max-h-96 overflow-y-auto">
+            <table v-if="stats?.por_articulo?.length" class="w-full text-sm">
+              <thead><tr class="text-[10px] uppercase tracking-widest text-slate-400 text-left">
+                <th class="pb-3">Artículo</th><th class="pb-3 text-right">Cantidad</th><th class="pb-3 text-right">Costo</th>
+              </tr></thead>
+              <tbody>
+                <tr v-for="a in stats.por_articulo" :key="a.id" class="border-t border-slate-50">
+                  <td class="py-2 font-bold text-slate-700">{{ a.nombre }}
+                    <span v-if="a.categoria" class="ml-1 text-[10px] text-slate-400 uppercase">{{ a.categoria }}</span>
+                  </td>
+                  <td class="py-2 text-right text-slate-500">{{ a.cantidad }} {{ a.unidad }}</td>
+                  <td class="py-2 text-right font-black text-slate-900">${{ formatCurrency(a.total) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="text-slate-300 font-black text-[10px] uppercase tracking-widest text-center py-10">No hay registros</p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -265,6 +306,8 @@ interface GastoAnalytics {
   gasto_promedio_diario: number;
   top_proveedor: { nombre: string; total: number } | null;
   por_categoria: Array<{ categoria: string; total: number }>;
+  por_proveedor?: Array<{ id: number; nombre: string; total: number; compras: number }>;
+  por_articulo?: Array<{ id: number; nombre: string; unidad: string; categoria: string | null; cantidad: number; total: number }>;
   timeline: Array<{ fecha: string; total: number }>;
 }
 

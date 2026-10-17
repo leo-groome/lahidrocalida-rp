@@ -78,6 +78,23 @@
     />
 
     <div v-show="vistaDashboard === 'resumen'" class="space-y-8">
+    <!-- Alerta de captura: sin compras registradas -->
+    <div
+      v-if="diasSinCompras !== null && diasSinCompras >= 2"
+      class="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800"
+      role="alert"
+    >
+      <span class="text-lg">⚠️</span>
+      <span>
+        {{ diasSinCompras }} días sin compras registradas
+        <span class="font-normal">(última: {{ analyticsData?.resumen?.ultima_compra }}). La utilidad neta no es confiable hasta capturar los gastos.</span>
+      </span>
+    </div>
+    <div v-else-if="analyticsData && analyticsData.resumen?.dias_sin_compras === null"
+      class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800" role="alert">
+      ⚠️ Aún no hay compras registradas.
+    </div>
+
     <!-- Main KPIs Grid -->
     <div v-if="analyticsData" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <AdminStatCard 
@@ -465,6 +482,10 @@ const setAnalyticsRange = (rangeId: string) => {
   analyticsDates.value.end = rango.fin
   loadAnalytics()
 }
+
+const diasSinCompras = computed<number | null>(
+  () => analyticsData.value?.resumen?.dias_sin_compras ?? null,
+)
 
 const loadAnalytics = async () => {
   loadingAnalytics.value = true

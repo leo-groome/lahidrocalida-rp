@@ -60,11 +60,29 @@ class GastoTopProveedor(BaseModel):
     total: float
 
 
+class GastoPorProveedor(BaseModel):
+    id: int
+    nombre: str
+    total: float
+    compras: int
+
+
+class GastoPorArticulo(BaseModel):
+    id: int
+    nombre: str
+    unidad: str
+    categoria: Optional[str] = None
+    cantidad: float
+    total: float
+
+
 class GastosResumenResponse(BaseModel):
     total_gastado: float
     gasto_promedio_diario: float
     por_categoria: List[GastoPorCategoria]
     top_proveedor: Optional[GastoTopProveedor] = None
+    por_proveedor: List[GastoPorProveedor] = []
+    por_articulo: List[GastoPorArticulo] = []
     timeline: List[GastoTimeline]
 
 
@@ -345,6 +363,7 @@ class AdjuntoResponse(BaseModel):
 class GastoResponse(GastoBase):
     id: int
     num_adjuntos: int = 0
+    adjuntos: List[AdjuntoResponse] = []
     subtotal: Decimal
     total: Decimal
     fecha_gasto: datetime
@@ -359,6 +378,7 @@ class GastoResponse(GastoBase):
 class PaginatedGastosResponse(BaseModel):
     items: List[GastoResponse]
     total: int
+    suma_total: float = 0.0
     page: int
     page_size: int
 
