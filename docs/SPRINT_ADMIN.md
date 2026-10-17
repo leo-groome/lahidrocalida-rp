@@ -170,18 +170,27 @@ El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en ran
 - Los pozoles son platillos distintos ("Pozole Regular Verde Puerco"…), no variantes: no hay agrupación automática por color; el buscador por palabras la resuelve y muestra el total del filtro. Si se quiere un "Pozole verde (todos)" fijo hace falta un campo `familia` en `platillos` (decisión de schema → preguntar).
 - El reporte por producto no filtra por método de pago (el método es del pedido, no del artículo; en un split no hay uno solo).
 
-### PR4 — Gastos rediseñado + fuera Compras del sidebar · ⚪
+### PR4 — Gastos rediseñado + fuera Compras del sidebar · 🟢 código listo y verificado en local (2026-10-17) — falta verificar en prod tras deploy
 
 | Estado | Tarea | Archivos |
 |---|---|---|
-| ⚪ | Quitar "Compras" del sidebar y del `selectTab`. Borrar `components/gastos/GastosSection.vue` y `GastosView.vue`. Unificar entrada del Hub. | `AdminSidebar.vue:34-43`, `AdminView.vue:125-128`, `AdminHub.vue:47` |
-| ⚪ | Arreglar filtro de Catálogo (G1) con `v-model.number` / `Number(v) \|\| null`; guard de `a.categoria` (G5). Mismo fix en `ComprasView.vue`. | `ArticulosView.vue`, `GastosSection.vue`, `ComprasView.vue` |
-| ⚪ | Historial: total del filtro calculado en servidor (`suma_total` en la respuesta paginada), no concatenado (G2). | `gastos.py:485`, `GastosHistorial.vue:322` |
-| ⚪ | Historial como lista de tickets: miniatura del adjunto, proveedor, total, método, tipo; filtros fecha/proveedor/tipo/método/categoría y toggle Hoy/Semana/Mes. | `GastosHistorial.vue` |
-| ⚪ | Refrescar Historial/Resumen al guardar (G3). | `AdminView.vue`, `GastosSection.vue` |
-| ⚪ | Analítica de compras por jornada: por proveedor, categoría y artículo (cantidad y costo). | `gastos.py`, `GastosDashboard.vue` |
-| ⚪ | Alerta "N días sin compras registradas" en dashboard (ataca G6). | `DashboardSection.vue` |
-| ⚪ | Tests: total del filtro, filtro por categoría. | `tests/` |
+| 🟢 | Quitar "Compras" del sidebar y del `selectTab`. Borrar `components/gastos/GastosSection.vue` y `GastosView.vue`. Unificar entrada del Hub. | `AdminSidebar.vue:34-43`, `AdminView.vue:125-128`, `AdminHub.vue:47` |
+| 🟢 | Arreglar filtro de Catálogo (G1) con `v-model.number` / `Number(v) \|\| null`; guard de `a.categoria` (G5). Mismo fix en `ComprasView.vue`. | `ArticulosView.vue`, `GastosSection.vue`, `ComprasView.vue` |
+| 🟢 | Historial: total del filtro calculado en servidor (`suma_total` en la respuesta paginada), no concatenado (G2). | `gastos.py:485`, `GastosHistorial.vue:322` |
+| 🟢 | Historial como lista de tickets: miniatura del adjunto, proveedor, total, método, tipo; filtros fecha/proveedor/tipo/método/categoría y toggle Hoy/Semana/Mes. | `GastosHistorial.vue` |
+| 🟢 | Refrescar Historial/Resumen al guardar (G3). | `AdminView.vue`, `GastosSection.vue` |
+| 🟢 | Analítica de compras por jornada: por proveedor, categoría y artículo (cantidad y costo). | `gastos.py`, `GastosDashboard.vue` |
+| 🟢 | Alerta "N días sin compras registradas" en dashboard (ataca G6). | `DashboardSection.vue` |
+| 🟢 | Tests: total del filtro, filtro por categoría. | `tests/` |
+| ⚪ | Verificar en prod con agent-browser tras deploy (checklist §4 PR4). | — |
+
+**Decisiones de PR4:**
+- `suma_total` se calcula por ids distintos (no suma filas del join) para que el filtro por categoría no infle el total; viene como número, no string.
+- Historial expone `adjuntos` (id/tipo/tamaño) en cada gasto; la miniatura baja el primer adjunto con auth y lo cachea por gasto.
+- Analítica: `por_proveedor` (con # compras) y `por_articulo` (cantidad y costo) en `/gastos/analiticas/resumen`; nómina queda fuera por construcción.
+- Alerta: `dias_sin_compras` / `ultima_compra` en `resumen` de `/admin/analytics` (no en `/admin/dashboard`, que el front no usa). Nómina **no** cuenta como compra. Banner desde 2 días.
+- `/compras` y `ComprasView` se conservan para el rol `compras`; solo se quitó la entrada del sidebar de admin.
+- Backend 223 tests, frontend 78 tests + build OK.
 
 ### PR5 — Turnos útil · ⚪
 
@@ -226,6 +235,7 @@ El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en ran
 | 2026-10-17 | — | Auditoría en prod + código; documento de sprint. | Ver sección 1. |
 | 2026-10-17 | PR1 | Rama `sa/pr1-fechas-dinero`: jornada 05:00→05:00 en todos los reportes de admin, D1, helpers de fecha en frontend. Backend 196 tests, frontend 65 tests + build OK. | Semana Mar→Dom estaba mal por 1 día (ver PR1). |
 | 2026-10-17 | PR2 | Rama `sa/pr2-asistencia-0030` (apilada sobre PR1): salida automática 00:30, guard anti-entrada-fantasma, backfill, RRHH. Backend 206 tests (SQLite) y sin regresiones en Postgres; verificado en local con Agent Browser. | 11 tests ya fallaban en Postgres en `main`. |
+| 2026-10-17 | PR4 | Rama `sa/pr4-gastos`: suma_total en servidor, filtros y miniaturas en Historial, analítica por proveedor/artículo, alerta sin compras, fix G1/G5, G3 refresco, sidebar sin Compras, código muerto borrado. | `FotoTicketInput.vue` tenía cambios ajenos sin commitear. |
 
 ## Notas de cierre
 

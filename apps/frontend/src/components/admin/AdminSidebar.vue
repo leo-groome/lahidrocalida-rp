@@ -9,7 +9,6 @@ import {
   LogOut,
   Clock,
   Users2,
-  ShoppingCart,
   LayoutGrid,
   X,
 } from 'lucide-vue-next'
@@ -34,7 +33,6 @@ const isHovered = ref(false)
 const menuItems = [
   { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
   { id: 'gastos', name: 'Gastos', icon: Wallet },
-  { id: 'compras', name: 'Compras', icon: ShoppingCart },
   { id: 'turnos', name: 'Turnos', icon: Clock },
   { id: 'menu', name: 'Menú', icon: UtensilsCrossed },
   { id: 'usuarios', name: 'Usuarios', icon: Users },

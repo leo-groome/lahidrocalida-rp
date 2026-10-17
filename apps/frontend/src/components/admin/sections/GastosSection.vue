@@ -84,7 +84,6 @@
                :categorias="categoriasArticuloList" 
                v-model="selectedArticuloCategoria"
                @edit="editArticulo"
-               @update:model-value="loadArticulos"
              />
         </div>
         
@@ -124,6 +123,7 @@
 </template>
 
 <script setup lang="ts">
+import { filtrarPorCategoria } from '@/utils/categoria-filtro'
 import { storeToRefs } from "pinia"
 import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
@@ -153,8 +153,8 @@ const gastosHistorialRef = ref(null)
 
 // Assets Lists
 const selectedArticuloCategoria = ref<number | null>(null)
-const articulosList = computed(() => catalogos.articulos.filter(a =>
-  !selectedArticuloCategoria.value || a.categoria_id === selectedArticuloCategoria.value))
+const articulosList = computed(() =>
+  filtrarPorCategoria(catalogos.articulos, selectedArticuloCategoria.value))
 
 // Modals State
 const showProveedorModal = ref(false)

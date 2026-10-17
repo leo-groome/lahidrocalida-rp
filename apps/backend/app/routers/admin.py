@@ -218,8 +218,24 @@ def get_analytics(
     def _metodo(nombre: str) -> Dict[str, float]:
         return por_metodo.get(nombre, {"total": 0.0, "pedidos": 0})
 
+    # Alerta de captura (G6): días desde la última compra real (nómina no cuenta),
+    # contra la jornada actual y sin importar el rango consultado.
+    ultima_compra = (
+        db.query(func.max(Gasto.fecha_gasto))
+        .filter(
+            Gasto.sucursal_id == current_user.sucursal_id,
+            Gasto.tipo_gasto != "nomina",
+        )
+        .scalar()
+    )
+    dias_sin_compras = (
+        (jornada_actual() - jornada_de(ultima_compra)).days if ultima_compra else None
+    )
+
     return {
         "resumen": {
+            "dias_sin_compras": dias_sin_compras,
+            "ultima_compra": jornada_de(ultima_compra).isoformat() if ultima_compra else None,
             "total_ventas": total_ventas,
             "total_gastos": total_gastos,
             "utilidad_neta": total_ventas - total_gastos,

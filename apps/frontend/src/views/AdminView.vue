@@ -33,6 +33,7 @@
           
           <keep-alive>
             <component 
+              ref="seccionActiva"
               :is="currentSectionComponent"
               :key="`${activeTab}-${refreshKey}`"
               @new-gasto="handleNewGasto"
@@ -121,11 +122,6 @@ const refreshKey = ref(0)
 
 const selectTab = (id: string) => {
   menuOpen.value = false
-  // 'compras' es una vista dedicada standalone, no una sección interna.
-  if (id === 'compras') {
-    router.push('/compras')
-    return
-  }
   activeTab.value = id
   router.push({ query: { ...route.query, tab: id } })
 }
@@ -221,9 +217,12 @@ const handleEditGasto = (gasto: any) => {
   showGastoModal.value = true
 }
 
+// Sección activa (keep-alive): GastosSection expone loadAll para recargar Historial/Resumen.
+const seccionActiva = ref<{ loadAll?: () => void } | null>(null)
+
 const handleGastoSaved = () => {
   showGastoModal.value = false
-  // Note: GastosSection will reload itself via onMounted or exposed methods if needed
+  seccionActiva.value?.loadAll?.()
 }
 
 // LOGICA USUARIOS
