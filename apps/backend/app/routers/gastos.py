@@ -310,6 +310,25 @@ def update_articulo(
     return articulo
 
 
+@router.delete("/articulos/{articulo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_articulo(
+    articulo_id: int,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
+    if not articulo:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    en_uso = db.query(GastoDetalle.id).filter(GastoDetalle.articulo_id == articulo_id).first()
+    if en_uso:
+        raise HTTPException(
+            status_code=409,
+            detail="El artículo tiene compras registradas y no se puede eliminar",
+        )
+    db.delete(articulo)
+    db.commit()
+
+
 def _build_gasto_detalles(
     detalles_data: List,
     db: Session,
