@@ -191,7 +191,8 @@ const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import {
-  construirFilas,
+  analizarCompras,
+  dividirLineas,
   filasListas,
   filasToDetalles,
   precioUnitarioFila,
@@ -238,9 +239,7 @@ function localNow() {
   return new Date(d.getTime() - tz).toISOString().slice(0, 16)
 }
 
-const lineasContadas = computed(
-  () => texto.value.split('\n').map((l) => l.trim()).filter(Boolean).length,
-)
+const lineasContadas = computed(() => dividirLineas(texto.value).length)
 const proveedorNombre = computed(
   () => proveedores.value.find((p) => p.id === proveedorId.value)?.nombre ?? '',
 )
@@ -266,7 +265,15 @@ function mostrarToast(msg: string, tipo: 'ok' | 'error' = 'ok') {
 }
 
 function analizar() {
-  filas.value = construirFilas(texto.value, articulos.value)
+  const r = analizarCompras(texto.value, articulos.value, proveedores.value)
+  filas.value = r.filas
+  if (!r.proveedor) return
+  if (r.proveedor.id) {
+    proveedorId.value = r.proveedor.id
+    mostrarToast(`Proveedor: ${r.proveedor.nombre}${r.proveedor.dudoso ? ' (aprox., revisa)' : ''}`)
+  } else {
+    mostrarToast(`Proveedor "${r.proveedor.textoDictado}" no está registrado`, 'error')
+  }
 }
 
 function quitarFila(id: number) {

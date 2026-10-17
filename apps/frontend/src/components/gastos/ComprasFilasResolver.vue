@@ -19,6 +19,10 @@
         />
       </div>
 
+      <p v-if="fila.matchDudoso && fila.articulo_id" class="text-[10px] font-bold text-amber-600 ml-1">
+        Coincidencia aproximada con "{{ fila.matchNombre }}" (dictaste "{{ fila.nombreArticulo }}"). Revísala.
+      </p>
+
       <div class="grid grid-cols-3 gap-2">
         <div class="space-y-1">
           <label class="block text-[8px] font-black text-slate-300 uppercase tracking-widest ml-1">Cantidad</label>
@@ -110,6 +114,7 @@ function opcionesArticulo(fila: FilaCompra) {
 const creandoPara = ref<{ filaId: number; nombreSugerido: string; unidadSugerida: string } | null>(null)
 
 function onSeleccionArticulo(fila: FilaCompra, valor: any) {
+  fila.matchDudoso = false // el usuario ya eligió a mano
   if (typeof valor === 'string' && valor.startsWith('crear:')) {
     creandoPara.value = {
       filaId: fila.id,
