@@ -88,7 +88,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div class="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
           <button
-            v-for="roleFilter in ['todos', 'cocina', 'mesero']"
+            v-for="roleFilter in ['todos', 'cocina', 'mesero', 'cajero', 'compras']"
             :key="roleFilter"
             @click="currentRoleFilter = roleFilter"
             class="px-4 py-1.5 text-xs font-bold rounded-lg transition-colors capitalize"
@@ -96,7 +96,7 @@
               ? 'bg-white text-[#00126D] shadow-sm'
               : 'text-slate-500 hover:text-slate-700'"
           >
-            {{ roleFilter === 'todos' ? 'Todos' : roleFilter === 'mesero' ? 'Meseros' : 'Cocina' }}
+            {{ ROLE_FILTER_LABELS[roleFilter] }}
           </button>
         </div>
         
@@ -302,6 +302,16 @@
                     <td class="px-4 py-3 text-sm font-medium">
                       <span v-if="reg.fecha_salida" class="text-slate-600">
                         {{ formatTime(reg.fecha_salida) }}
+                        <span
+                          v-if="reg.cierre_automatico"
+                          class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200"
+                          title="No registró salida: se asignó automáticamente a las 00:30"
+                        >
+                          Automática
+                        </span>
+                      </span>
+                      <span v-else-if="reg.requiere_revision" class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                        Sin salida · revisar
                       </span>
                       <span v-else class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                         En Turno
@@ -362,6 +372,14 @@ interface RegistroAnomalia {
   fecha_salida_estimada: string | null
   cierre_automatico: boolean
   requiere_revision: boolean
+}
+
+const ROLE_FILTER_LABELS: Record<string, string> = {
+  todos: 'Todos',
+  cocina: 'Cocina',
+  mesero: 'Meseros',
+  cajero: 'Caja',
+  compras: 'Compras',
 }
 
 const COLORS = [
