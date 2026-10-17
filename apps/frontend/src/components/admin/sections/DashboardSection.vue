@@ -26,7 +26,7 @@
         </div>
 
         <!-- Payment Filter -->
-        <div class="flex items-center space-x-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 hover:bg-white transition-colors">
+        <div v-if="vistaDashboard === 'resumen'" class="flex items-center space-x-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 hover:bg-white transition-colors">
           <label class="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Pago:</label>
           <select 
             v-model="selectedPaymentMethodFilter" 
@@ -56,6 +56,28 @@
       </div>
     </div>
 
+    <!-- Vistas: Resumen / Ventas por producto -->
+    <div class="inline-flex p-1 bg-white rounded-xl border border-slate-200 shadow-sm">
+      <button
+        v-for="v in vistasDashboard"
+        :key="v.id"
+        @click="vistaDashboard = v.id"
+        :class="[
+          'px-5 py-2 text-sm font-bold rounded-lg transition-all',
+          vistaDashboard === v.id ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:text-slate-800',
+        ]"
+      >
+        {{ v.label }}
+      </button>
+    </div>
+
+    <VentasProductoSection
+      v-if="vistaDashboard === 'productos'"
+      :inicio="analyticsDates.start"
+      :fin="analyticsDates.end"
+    />
+
+    <div v-show="vistaDashboard === 'resumen'" class="space-y-8">
     <!-- Main KPIs Grid -->
     <div v-if="analyticsData" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <AdminStatCard 
@@ -64,7 +86,8 @@
         :icon="TrendingUp"
         iconColor="text-emerald-600"
         iconBg="bg-emerald-50 border border-emerald-100"
-        subtext="Pedidos pagados del periodo, sin propinas"
+        :trend="variacionVentas ?? undefined"
+        :subtext="variacionVentas === null ? 'Cobrado en Caja, sin propinas' : `vs periodo anterior ($${formatCurrency(analyticsData.anterior.total_ventas)})`"
       />
       <AdminStatCard 
         label="Gastos Totales"
@@ -92,6 +115,23 @@
       />
     </div>
 
+
+    <!-- Dinero cobrado por método -->
+    <div v-if="analyticsData" class="grid grid-cols-2 lg:grid-cols-5 gap-4">
+      <div
+        v-for="m in tarjetasDinero"
+        :key="m.id"
+        class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm"
+      >
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">{{ m.label }}</p>
+          <span v-if="m.porcentaje !== null" class="text-[11px] font-extrabold px-2 py-0.5 rounded-full" :class="m.badge">{{ m.porcentaje }}%</span>
+        </div>
+        <p class="text-2xl font-extrabold text-slate-900 mt-2 tabular-nums">${{ formatCurrency(m.total) }}</p>
+        <p class="text-xs text-slate-400 mt-1">{{ m.detalle }}</p>
+      </div>
+    </div>
+
     <!-- Main Trend Chart -->
     <div v-if="analyticsData" class="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group">
       <div class="absolute top-0 left-0 w-2 h-full bg-blue-600"></div>
@@ -113,6 +153,17 @@
       </div>
       <div class="h-[400px] w-full">
          <Line :data="chartData" :options="chartOptions" />
+      </div>
+    </div>
+
+    <!-- Efectivo vs tarjeta por día -->
+    <div v-if="analyticsData && analyticsData.timeline.length > 1" class="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+      <div class="mb-6">
+        <h3 class="text-xl font-extrabold text-slate-800 tracking-tight mb-1">Cobrado por día y método</h3>
+        <p class="text-sm font-medium text-slate-400">Efectivo, tarjeta y transferencia por jornada.</p>
+      </div>
+      <div class="h-[320px] w-full">
+        <Bar :data="metodosPorDiaData" :options="metodosPorDiaOptions" />
       </div>
     </div>
 
@@ -322,6 +373,7 @@
          </div>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -331,6 +383,8 @@ import { ref, onMounted, onActivated, computed, watch } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
 import AdminStatCard from '@/components/admin/AdminStatCard.vue'
+import VentasProductoSection from '@/components/admin/sections/VentasProductoSection.vue'
+import { variacionPct } from '@/utils/ventas-producto'
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -486,6 +540,79 @@ const chartData = computed(() => {
     ]
   }
 })
+
+
+const vistaDashboard = ref<'resumen' | 'productos'>('resumen')
+const vistasDashboard = [
+  { id: 'resumen' as const, label: 'Resumen' },
+  { id: 'productos' as const, label: 'Ventas por producto' },
+]
+
+/** % de cambio de ventas vs el periodo anterior de igual duración (null si no hay base). */
+const variacionVentas = computed(() => {
+  const d = analyticsData.value
+  return d ? variacionPct(d.resumen.total_ventas, d.anterior?.total_ventas ?? 0) : null
+})
+
+const tarjetasDinero = computed(() => {
+  const r = analyticsData.value?.resumen
+  if (!r) return []
+  const total = Number(r.total_ventas) || 0
+  const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : null)
+  const met = r.por_metodo
+  const pedidos = (n: number) => `${n} ticket${n === 1 ? '' : 's'}`
+  return [
+    { id: 'efectivo', label: 'Efectivo', total: met.efectivo.total, porcentaje: pct(met.efectivo.total), detalle: pedidos(met.efectivo.pedidos), badge: 'bg-emerald-50 text-emerald-600' },
+    { id: 'tarjeta', label: 'Tarjeta', total: met.tarjeta.total, porcentaje: pct(met.tarjeta.total), detalle: pedidos(met.tarjeta.pedidos), badge: 'bg-blue-50 text-blue-600' },
+    { id: 'transferencia', label: 'Transferencia', total: met.transferencia.total, porcentaje: pct(met.transferencia.total), detalle: pedidos(met.transferencia.pedidos), badge: 'bg-violet-50 text-violet-600' },
+    { id: 'uber', label: 'Uber Eats', total: r.uber.total, porcentaje: null, detalle: `${pedidos(r.uber.pedidos)} · fuera de Caja`, badge: '' },
+    { id: 'propinas', label: 'Propinas', total: r.propinas_efectivo + r.propinas_tarjeta, porcentaje: null, detalle: `Efectivo $${formatCurrency(r.propinas_efectivo)} · Tarjeta $${formatCurrency(r.propinas_tarjeta)}`, badge: '' },
+  ]
+})
+
+const metodosPorDiaData = computed(() => {
+  const timeline = analyticsData.value?.timeline ?? []
+  const labels = timeline.map((d: any) => {
+    const date = parseSafeDate(d.fecha)
+    return date ? date.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' }) : ''
+  })
+  const serie = (label: string, key: string, color: string) => ({
+    label,
+    data: timeline.map((d: any) => d[key]),
+    backgroundColor: color,
+    borderRadius: 6,
+    stack: 'cobrado',
+  })
+  return {
+    labels,
+    datasets: [
+      serie('Efectivo', 'efectivo', '#10b981'),
+      serie('Tarjeta', 'tarjeta', '#3b82f6'),
+      serie('Transferencia', 'transferencia', '#8b5cf6'),
+    ],
+  }
+})
+
+const metodosPorDiaOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: true, position: 'bottom' as const, labels: { font: { size: 11, weight: 'bold' as any } } },
+    tooltip: {
+      backgroundColor: '#1e293b',
+      padding: 12,
+      cornerRadius: 12,
+      callbacks: {
+        label: (c: any) => ` ${c.dataset.label}: $${formatCurrency(c.parsed.y)}`,
+        footer: (items: any[]) => `Total: $${formatCurrency(items.reduce((s, i) => s + i.parsed.y, 0))}`,
+      },
+    },
+  },
+  scales: {
+    x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' as any }, color: '#94a3b8' } },
+    y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10, weight: 'bold' as any }, color: '#94a3b8', callback: (v: any) => '$' + v } },
+  },
+}
 
 const chartOptions = {
   responsive: true,
