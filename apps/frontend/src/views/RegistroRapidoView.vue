@@ -188,7 +188,7 @@ import { storeToRefs } from "pinia"
 import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
 const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import {
   analizarCompras,
@@ -294,6 +294,23 @@ function avisarSalida(e: BeforeUnloadEvent) {
 window.addEventListener('beforeunload', avisarSalida)
 onBeforeUnmount(() => window.removeEventListener('beforeunload', avisarSalida))
 onBeforeRouteLeave(() => !cola.escribiendo)
+
+const okProgramados = new Set<string>()
+watch(
+  () => pendientes.value.filter((p) => p.estado === 'ok').map((p) => ({ id: p.id, total: p.total })),
+  (oks) => {
+    for (const { id, total } of oks) {
+      if (okProgramados.has(id)) continue
+      okProgramados.add(id)
+      mostrarToast(`Gasto registrado · $${total.toFixed(2)}`)
+      setTimeout(() => {
+        okProgramados.delete(id)
+        void cola.descartar(id).catch(() => {})
+      }, 3000)
+    }
+  },
+  { immediate: true },
+)
 
 async function descartar(id: string) {
   try {
