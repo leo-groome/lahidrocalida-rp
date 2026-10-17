@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -29,8 +30,8 @@ from app.schemas import (
     UsuarioLogin,
     UsuarioResponse,
 )
-from app.services.jornada import reconciliar_jornada
-from app.utils.timezone import get_mexico_now, jornada_de
+from app.services.jornada import HORA_SALIDA_AUTOMATICA, reconciliar_jornada
+from app.utils.timezone import MEXICO_TZ, get_mexico_now, jornada_de
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
@@ -155,6 +156,10 @@ async def registrar_asistencia(
 
     await clear_login_failures(rl_keys)
 
+    # Antes de decidir entrada/salida: si ya pasaron las 00:30 y el empleado seguía
+    # abierto, su salida automática debe estar registrada (no un "toggle" a medias).
+    reconciliar_jornada(db, user.sucursal_id)
+
     ahora = get_mexico_now()
     jornada_actual = jornada_de(ahora)
 
@@ -175,7 +180,26 @@ async def registrar_asistencia(
         .first()
     )
 
-    if registro_abierto and jornada_de(registro_abierto.fecha_entrada) == jornada_actual:
+    # Madrugada tras el corte (00:30–05:00): el restaurante ya cerró. Si a este
+    # empleado se le registró la salida automática de esta noche, quien checa ahora
+    # estaba intentando salir — no se abre una entrada fantasma, se devuelve esa salida.
+    salida_de_esta_noche = None
+    if registro_abierto is None:
+        corte_hoy = datetime.combine(ahora.date(), HORA_SALIDA_AUTOMATICA, tzinfo=MEXICO_TZ)
+        if ahora >= corte_hoy and jornada_de(ahora) < ahora.date():
+            salida_de_esta_noche = (
+                db.query(RegistroAsistencia)
+                .filter(
+                    RegistroAsistencia.usuario_id == data.usuario_id,
+                    RegistroAsistencia.fecha_salida == corte_hoy,
+                    RegistroAsistencia.cierre_automatico.is_(True),
+                )
+                .first()
+            )
+
+    if salida_de_esta_noche is not None:
+        registro = salida_de_esta_noche
+    elif registro_abierto and jornada_de(registro_abierto.fecha_entrada) == jornada_actual:
         # Clock-Out
         registro_abierto.fecha_salida = ahora
         if data.notas:
@@ -228,6 +252,9 @@ async def registrar_asistencia(
         notas=registro.notas,
         usuario_nombre=user.nombre,
         horas_trabajadas=horas,
+        cierre_automatico=registro.cierre_automatico,
+        requiere_revision=registro.requiere_revision,
+        fecha_salida_estimada=registro.fecha_salida_estimada,
     )
 
 

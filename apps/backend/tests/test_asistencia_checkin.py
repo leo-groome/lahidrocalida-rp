@@ -39,7 +39,9 @@ def test_checkin_checkout_mismo_dia_funciona(client, db_session, seed):
 
 def test_registro_huerfano_de_ayer_no_se_lee_como_salida_de_hoy(client, db_session, seed):
     usuario = _usuario_con_pin(db_session, seed)
-    ayer = get_mexico_now() - timedelta(days=2)
+    # 06:00 de hace 2 días: >16 h antes de las 00:30, así que la salida automática no
+    # aplica y queda como anomalía (con otra hora, la regla de las 00:30 lo cerraría).
+    ayer = (get_mexico_now() - timedelta(days=2)).replace(hour=6, minute=0)
     huerfano = RegistroAsistencia(usuario_id=usuario.id, fecha_entrada=ayer)
     db_session.add(huerfano)
     db_session.commit()

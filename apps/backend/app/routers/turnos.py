@@ -187,8 +187,8 @@ def iniciar_turno(
     """
     _validar_permisos_turnos(current_user)
 
-    # Barre turnos huérfanos de una jornada anterior antes de chequear "ya hay
-    # turno activo" — así un turno de ayer nunca bloquea abrir el de hoy.
+    # Registra salidas automáticas de asistencia pendientes. Los turnos de caja NO se
+    # cierran solos: un turno abierto de ayer sigue bloqueando hasta que el cajero lo cierre.
     reconciliar_jornada(db, current_user.sucursal_id)
 
     # Verificar que no haya turno activo en la sucursal
