@@ -48,7 +48,8 @@ def test_turno_de_jornada_actual_no_se_toca(db_session, seed):
 
 
 def test_asistencia_huerfana_se_marca_para_revision_sin_inventar_salida(db_session, seed):
-    ayer = get_mexico_now() - timedelta(days=2)
+    # 06:00: >16 h antes de las 00:30 → no aplica la salida automática, es anomalía.
+    ayer = (get_mexico_now() - timedelta(days=2)).replace(hour=6, minute=0)
     registro = RegistroAsistencia(usuario_id=seed["usuario"].id, fecha_entrada=ayer)
     db_session.add(registro)
     db_session.commit()
@@ -75,7 +76,7 @@ def test_asistencia_de_jornada_actual_no_se_toca(db_session, seed):
 
 
 def test_reconciliar_es_idempotente(db_session, seed):
-    ayer = get_mexico_now() - timedelta(days=2)
+    ayer = (get_mexico_now() - timedelta(days=2)).replace(hour=6, minute=0)
     turno = Turno(
         sucursal_id=seed["sucursal"].id,
         usuario_id=seed["usuario"].id,
