@@ -143,17 +143,24 @@ Orden de PRs = orden de ejecución. Cada PR: rama `sa/prN-…`, test happy path 
 | ⚪ | RRHH: "Semana pasada" = semana calendario anterior; fechas locales; badge "salida automática 00:30"; filtro de rol incluye cajero/compras. | `RecursosHumanosSection.vue` |
 | ⚪ | Tests: entrada 21:00 sin salida + petición a las 00:31 → salida 00:30 y horas 3.5; petición a las 00:29 → sigue abierto; entrada 00:45 → no se cierra a 00:30. | `tests/test_jornada.py` |
 
-### PR3 — Ventas por producto y por día · ⚪
+### PR3 — Ventas por producto y por día · 🟢 código listo y verificado en local (2026-10-17)
 
 El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en rangos".
 
 | Estado | Tarea | Archivos |
 |---|---|---|
-| ⚪ | `GET /admin/analytics/productos?fecha_inicio&fecha_fin&agrupar=dia\|total&categoria=` → por platillo: categoría, unidades, ingreso, precio promedio, y por jornada. Incluye `pagado` + Uber + hijos de split; excluye padres `dividido` salvo split por montos (sus artículos se atribuyen al padre, D2). Filtra por `sucursal_id` del usuario. | `admin.py` (o `routers/analytics.py`), `schemas.py` |
-| ⚪ | Vista "Ventas por producto": tabla completa con buscador, filtro de categoría, totales por categoría, matriz producto × día, export CSV. | `components/admin/sections/` nuevo |
-| ⚪ | KPIs de dinero arriba del dashboard: Ventas · Efectivo · Tarjeta · Transferencia · Uber · Propinas (ef./tarj.) · # tickets · ticket promedio, con comparación vs periodo anterior equivalente (reemplaza el +12%). | `DashboardSection.vue`, `admin.py` |
-| ⚪ | Timeline diario apilado efectivo/tarjeta/transferencia. | `DashboardSection.vue` |
-| ⚪ | Tests del endpoint (rango con split, Uber y cantidad > 1) + error de `agrupar` inválido. | `tests/` |
+| 🟢 | `GET /admin/analytics/productos?fecha_inicio&fecha_fin[&categoria]` → por platillo: categoría, unidades, ingreso, precio promedio y `por_dia`; más `categorias`, `totales` y `dias`. Reglas (documentadas en el módulo): pagados + Uber `entregado_repartidor`; split **por artículos** cuenta las hijas (el padre no); split **por montos** atribuye los artículos al padre solo cuando todas las hijas vigentes están pagadas, con la fecha del último pago; artículos con cantidad 0 no cuentan; solo la sucursal del admin. *Desviación:* no hay parámetro `agrupar` — `por_dia` va siempre incluido (una sola llamada sirve tabla, matriz y CSV). | `services/ventas_producto.py`, `admin.py` |
+| 🟢 | Pestaña "Ventas por producto" en el Dashboard: tabla completa ordenable, **buscador por palabras** ("pozole verde" exige ambas, sin acentos), chips de categoría, **totales del filtro** (responde "¿cuántos pozoles verdes?" sin calculadora), vista "Por día" (matriz producto × jornada con totales por día e ingreso en el tooltip) y export CSV (UTF-8 con BOM, neutraliza fórmulas). | `VentasProductoSection.vue`, `utils/ventas-producto.ts` |
+| 🟢 | KPIs de dinero en el Resumen: **Efectivo · Tarjeta · Transferencia** (monto, % y # tickets), **Uber Eats** (fuera de Caja) y **Propinas** (efectivo/tarjeta). Variación real vs el **periodo anterior de igual duración** (`anterior` en la respuesta) en lugar del "+12%". | `DashboardSection.vue`, `admin.py` |
+| 🟢 | Gráfico apilado "Cobrado por día y método". | `DashboardSection.vue` |
+| 🟢 | Top Platillos y Categorías del Resumen salen del mismo reporte (sin filtro de pago) para que ambas vistas coincidan; con filtro de pago se usa la consulta directa. | `admin.py` |
+| 🟢 | Tests: 9 backend (`test_ventas_producto.py`: unidades/día, jornada de medianoche, pendientes/cancelados/eliminados, Uber, ambos tipos de split, filtro categoría + aislamiento de sucursal, 422/403, KPIs y periodo anterior, coherencia Resumen↔reporte) + 8 frontend. Verificado en local con Agent Browser con splits, Uber y pozoles verdes sembrados (14 uds / $1,820 con "pozole verde"). | `tests/`, `utils/*.test.ts` |
+| ⚪ | Verificar en prod con agent-browser tras deploy: "Pozole … verde" de la semana contra un conteo manual en SQL. | — |
+
+**Decisiones de PR3:**
+- `Ventas totales` sigue siendo lo **cobrado en Caja**; Uber va aparte (su dinero llega por depósito). El reporte por producto sí incluye Uber.
+- Los pozoles son platillos distintos ("Pozole Regular Verde Puerco"…), no variantes: no hay agrupación automática por color; el buscador por palabras la resuelve y muestra el total del filtro. Si se quiere un "Pozole verde (todos)" fijo hace falta un campo `familia` en `platillos` (decisión de schema → preguntar).
+- El reporte por producto no filtra por método de pago (el método es del pedido, no del artículo; en un split no hay uno solo).
 
 ### PR4 — Gastos rediseñado + fuera Compras del sidebar · ⚪
 

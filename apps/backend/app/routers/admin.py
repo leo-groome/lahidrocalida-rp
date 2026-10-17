@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
 from app.deps import require_roles
+from app.domain.estados import TIPO_ORDEN_UBER, EstadoPedido
 from app.models import (
     Articulo,
     ArticuloPedido,
@@ -21,6 +22,7 @@ from app.models import (
     Turno,
     Usuario,
 )
+from app.services.ventas_producto import VENTA_TS, ventas_por_producto
 from app.utils.timezone import (
     DIAS_ES,
     HORA_CORTE_JORNADA,
@@ -37,7 +39,6 @@ router = APIRouter(prefix="/admin", tags=["administracion"])
 # para pagados históricos sin fecha_pago. "Día" = jornada 05:00→05:00 hora México:
 # se filtra por rango [inicio, fin) y se agrupa en Python con `jornada_de` — sin
 # funciones SQL de zona horaria, para que SQLite (tests) y Postgres (prod) coincidan.
-VENTA_TS = func.coalesce(Pedido.fecha_pago, Pedido.fecha_creacion)
 MAX_DIAS_RANGO = 731
 METODOS_GASTO = ("efectivo", "tarjeta")  # enum de Gasto.metodo_pago
 
@@ -110,7 +111,9 @@ def get_analytics(
         db.query(
             VENTA_TS.label("ts"),
             Pedido.total,
-            Pedido.propina_efectivo + Pedido.propina_tarjeta,
+            Pedido.metodo_pago,
+            Pedido.propina_efectivo,
+            Pedido.propina_tarjeta,
         )
         .filter(and_(*ventas_filters))
         .all()
@@ -119,21 +122,16 @@ def get_analytics(
     # 2. Gastos
     gastos_rows = db.query(Gasto.fecha_gasto, Gasto.total).filter(and_(*gastos_filters)).all()
 
-    # 3. Métodos de pago del periodo
-    metodos_pago_query = (
-        db.query(Pedido.metodo_pago, func.sum(Pedido.total).label("total"))
-        .filter(and_(*ventas_filters))
-        .group_by(Pedido.metodo_pago)
-        .all()
-    )
-
-    # 4. Procesar y Unificar Datos por Fecha
+    # 3. Procesar y unificar por jornada
     data_by_date = {}
     current = start_date
     while current <= end_date:
         data_by_date[current.isoformat()] = {
             "fecha": current.isoformat(),
             "ventas": 0.0,
+            "efectivo": 0.0,
+            "tarjeta": 0.0,
+            "transferencia": 0.0,
             "gastos": 0.0,
             "pedidos": 0,
             "utilidad": 0.0,
@@ -143,21 +141,26 @@ def get_analytics(
     total_ventas = 0.0
     total_gastos = 0.0
     total_pedidos = 0
-    total_propinas = 0.0
+    propinas = {"efectivo": 0.0, "tarjeta": 0.0}
+    por_metodo: Dict[Any, Dict[str, float]] = {}
 
-    # Llenar Ventas
-    for ts, total, propinas in ventas_rows:
+    for ts, total, metodo, p_efectivo, p_tarjeta in ventas_rows:
         dia = data_by_date.get(jornada_de(ts).isoformat())
         if dia is None:
             continue
         val_ventas = float(total or 0)
         dia["ventas"] += val_ventas
         dia["pedidos"] += 1
+        if metodo in ("efectivo", "tarjeta", "transferencia"):
+            dia[metodo] += val_ventas
         total_ventas += val_ventas
         total_pedidos += 1
-        total_propinas += float(propinas or 0)
+        propinas["efectivo"] += float(p_efectivo or 0)
+        propinas["tarjeta"] += float(p_tarjeta or 0)
+        m = por_metodo.setdefault(metodo, {"total": 0.0, "pedidos": 0})
+        m["total"] += val_ventas
+        m["pedidos"] += 1
 
-    # Llenar Gastos
     for ts, total in gastos_rows:
         dia = data_by_date.get(jornada_de(ts).isoformat())
         if dia is None:
@@ -166,22 +169,54 @@ def get_analytics(
         dia["gastos"] += val_gastos
         total_gastos += val_gastos
 
-    # Calcular Utilidad por día
     timeline = []
     for date_key in sorted(data_by_date.keys()):
         day_data = data_by_date[date_key]
         day_data["utilidad"] = day_data["ventas"] - day_data["gastos"]
         timeline.append(day_data)
 
-    # Resumen Métodos de Pago
-    metodos_pago_data = [
-        {"metodo": m.metodo_pago, "total": float(m.total or 0)} for m in metodos_pago_query
-    ]
+    metodos_pago_data = [{"metodo": k, "total": v["total"]} for k, v in por_metodo.items()]
 
-    # === ANALÍTICAS AVANZADAS (Ahora en endpoint separado, pero mantenemos compatibilidad por si acaso) ===
-    # Para optimizar, si el frontend llama al endpoint nuevo, este no devuelve 'avanzado'.
-    # Si el frontend viejo llama a este, calculamos 'avanzado' para no romper, o lo quitamos y obligamos a actualizar frontend.
-    # Decisión: Quitamos 'avanzado' de aquí para aligerar la carga principal.
+    # 4. Uber Eats: venta real que no se cobra en Caja (el dinero llega por depósito),
+    # por eso va aparte y no se suma a `total_ventas`. Solo sin filtro de método.
+    uber = {"total": 0.0, "pedidos": 0}
+    if not metodo_pago or metodo_pago == "todos":
+        uber_total, uber_pedidos = (
+            db.query(func.coalesce(func.sum(Pedido.total), 0), func.count(Pedido.id))
+            .filter(
+                VENTA_TS >= inicio_dt,
+                VENTA_TS < fin_dt,
+                Pedido.sucursal_id == current_user.sucursal_id,
+                Pedido.tipo_orden == TIPO_ORDEN_UBER,
+                Pedido.estado == EstadoPedido.ENTREGADO_REPARTIDOR,
+            )
+            .one()
+        )
+        uber = {"total": float(uber_total or 0), "pedidos": int(uber_pedidos)}
+
+    # 5. Periodo anterior de igual duración, para comparar (mismos filtros).
+    dias_rango = (end_date - start_date).days + 1
+    ant_inicio = start_date - timedelta(days=dias_rango)
+    ant_fin = start_date - timedelta(days=1)
+    ant_ini_dt, ant_fin_dt = rango_jornadas(ant_inicio, ant_fin)
+    ant_filters = [
+        VENTA_TS >= ant_ini_dt,
+        VENTA_TS < ant_fin_dt,
+        Pedido.estado == "pagado",
+        Pedido.sucursal_id == current_user.sucursal_id,
+    ]
+    if metodo_pago and metodo_pago != "todos":
+        ant_filters.append(Pedido.metodo_pago == metodo_pago)
+    ant_ventas, ant_pedidos = (
+        db.query(func.coalesce(func.sum(Pedido.total), 0), func.count(Pedido.id))
+        .filter(and_(*ant_filters))
+        .one()
+    )
+    ant_ventas = float(ant_ventas or 0)
+    ant_pedidos = int(ant_pedidos)
+
+    def _metodo(nombre: str) -> Dict[str, float]:
+        return por_metodo.get(nombre, {"total": 0.0, "pedidos": 0})
 
     return {
         "resumen": {
@@ -190,12 +225,42 @@ def get_analytics(
             "utilidad_neta": total_ventas - total_gastos,
             "total_pedidos": total_pedidos,
             "ticket_promedio": (total_ventas / total_pedidos) if total_pedidos > 0 else 0,
-            "total_propinas": total_propinas,
+            "total_propinas": propinas["efectivo"] + propinas["tarjeta"],
+            "propinas_efectivo": propinas["efectivo"],
+            "propinas_tarjeta": propinas["tarjeta"],
+            "por_metodo": {
+                "efectivo": _metodo("efectivo"),
+                "tarjeta": _metodo("tarjeta"),
+                "transferencia": _metodo("transferencia"),
+            },
+            "uber": uber,
+        },
+        "anterior": {
+            "inicio": ant_inicio.isoformat(),
+            "fin": ant_fin.isoformat(),
+            "total_ventas": ant_ventas,
+            "total_pedidos": ant_pedidos,
+            "ticket_promedio": (ant_ventas / ant_pedidos) if ant_pedidos > 0 else 0,
         },
         "timeline": timeline,
         "metodos_pago": metodos_pago_data,
         "avanzado": None,  # Deprecated here, use /analytics/advanced
     }
+
+
+@router.get("/analytics/productos")
+def get_ventas_por_producto(
+    fecha_inicio: str,  # YYYY-MM-DD
+    fecha_fin: str,  # YYYY-MM-DD
+    categoria: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    """Ventas por producto en un rango de jornadas: unidades e ingreso por platillo, por
+    categoría y por día (matriz producto × día). Incluye pagados, Uber Eats y cuentas
+    divididas sin doble conteo. Ver `services/ventas_producto.py` para las reglas."""
+    inicio, fin = _parse_rango(fecha_inicio, fecha_fin)
+    return ventas_por_producto(db, current_user.sucursal_id, inicio, fin, categoria)
 
 
 @router.get("/analytics/advanced")
@@ -224,34 +289,49 @@ def get_analytics_advanced(
     if metodo_pago and metodo_pago != "todos":
         ventas_filters.append(Pedido.metodo_pago == metodo_pago)
 
-    # Top Platillos (Cantidad y Dinero)
-    top_platillos = (
-        db.query(
-            Platillo.nombre,
-            func.sum(ArticuloPedido.cantidad).label("cantidad"),
-            func.sum(ArticuloPedido.precio_cobrado).label("total_dinero"),
+    # Top platillos y ventas por categoría. Sin filtro de pago salen del mismo reporte que
+    # la pestaña "Ventas por producto" (incluye Uber y cuentas divididas sin doble conteo),
+    # para que ambas vistas siempre coincidan. Con filtro de pago el método vive en el
+    # pedido y el reporte por producto no lo modela: se usa la consulta directa.
+    if not metodo_pago or metodo_pago == "todos":
+        reporte = ventas_por_producto(db, current_user.sucursal_id, start_date, end_date)
+        top_platillos_out = [
+            {"nombre": p["nombre"], "cantidad": p["unidades"], "total": p["ingreso"]}
+            for p in reporte["productos"][:10]
+        ]
+        ventas_categoria_out = [
+            {"categoria": c["categoria"], "total": c["ingreso"]} for c in reporte["categorias"]
+        ]
+    else:
+        top_platillos = (
+            db.query(
+                Platillo.nombre,
+                func.sum(ArticuloPedido.cantidad).label("cantidad"),
+                func.sum(ArticuloPedido.precio_cobrado).label("total_dinero"),
+            )
+            .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
+            .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
+            .filter(and_(*ventas_filters, ArticuloPedido.cantidad > 0))
+            .group_by(Platillo.id, Platillo.nombre)
+            .order_by(func.sum(ArticuloPedido.cantidad).desc())
+            .limit(10)
+            .all()
         )
-        .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
-        .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
-        .filter(and_(*ventas_filters))
-        .group_by(Platillo.id, Platillo.nombre)
-        .order_by(func.sum(ArticuloPedido.cantidad).desc())
-        .limit(10)
-        .all()
-    )
-
-    # Ventas por Categoría (Para gráfico circular)
-    ventas_por_categoria = (
-        db.query(
-            Platillo.categoria,
-            func.sum(ArticuloPedido.precio_cobrado).label("total"),
+        ventas_por_categoria = (
+            db.query(Platillo.categoria, func.sum(ArticuloPedido.precio_cobrado).label("total"))
+            .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
+            .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
+            .filter(and_(*ventas_filters, ArticuloPedido.cantidad > 0))
+            .group_by(Platillo.categoria)
+            .all()
         )
-        .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
-        .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
-        .filter(and_(*ventas_filters))
-        .group_by(Platillo.categoria)
-        .all()
-    )
+        top_platillos_out = [
+            {"nombre": p.nombre, "cantidad": int(p.cantidad), "total": float(p.total_dinero or 0)}
+            for p in top_platillos
+        ]
+        ventas_categoria_out = [
+            {"categoria": c.categoria, "total": float(c.total or 0)} for c in ventas_por_categoria
+        ]
 
     # Top Meseros (Ventas generadas)
     top_meseros = (
@@ -351,13 +431,8 @@ def get_analytics_advanced(
     )
 
     return {
-        "top_platillos": [
-            {"nombre": p.nombre, "cantidad": int(p.cantidad), "total": float(p.total_dinero or 0)}
-            for p in top_platillos
-        ],
-        "ventas_categoria": [
-            {"categoria": c.categoria, "total": float(c.total or 0)} for c in ventas_por_categoria
-        ],
+        "top_platillos": top_platillos_out,
+        "ventas_categoria": ventas_categoria_out,
         "top_meseros": [
             {"nombre": m.nombre, "pedidos": m.pedidos, "total": float(m.total_vendido or 0)}
             for m in top_meseros
