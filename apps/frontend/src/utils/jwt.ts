@@ -26,7 +26,7 @@ export function getTokenExpiration(token: string): number | null {
     : null
 }
 
-function jornadaActual(now: number): string {
+export function jornadaActual(now: number): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Mexico_City',
     year: 'numeric',

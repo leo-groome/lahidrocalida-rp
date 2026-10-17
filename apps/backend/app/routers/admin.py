@@ -21,26 +21,50 @@ from app.models import (
     Turno,
     Usuario,
 )
+from app.utils.timezone import (
+    DIAS_ES,
+    HORA_CORTE_JORNADA,
+    jornada_actual,
+    jornada_de,
+    rango_jornadas,
+    semana_hidrocalida,
+    to_mexico_aware,
+)
 
 router = APIRouter(prefix="/admin", tags=["administracion"])
 
+# Una venta se fecha cuando se cobra (fecha_pago); fecha_creacion es solo respaldo
+# para pagados históricos sin fecha_pago. "Día" = jornada 05:00→05:00 hora México:
+# se filtra por rango [inicio, fin) y se agrupa en Python con `jornada_de` — sin
+# funciones SQL de zona horaria, para que SQLite (tests) y Postgres (prod) coincidan.
+VENTA_TS = func.coalesce(Pedido.fecha_pago, Pedido.fecha_creacion)
+MAX_DIAS_RANGO = 731
+METODOS_GASTO = ("efectivo", "tarjeta")  # enum de Gasto.metodo_pago
+
 
 def _get_week_range(date_input: Optional[date] = None) -> tuple[date, date]:
-    """
-    Obtener el rango de fechas de la semana (Martes a Domingo)
-    Si no se proporciona fecha, usar la semana actual
-    """
-    if date_input is None:
-        date_input = date.today()
+    """Semana operativa Martes→Domingo; por defecto la de la jornada en curso."""
+    return semana_hidrocalida(date_input or jornada_actual())
 
-    # Encontrar el martes de esta semana
-    days_since_tuesday = (date_input.weekday() - 1) % 7
-    tuesday = date_input - timedelta(days=days_since_tuesday)
 
-    # El domingo es 6 días después del martes
-    sunday = tuesday + timedelta(days=6)
+def _parse_rango(fecha_inicio: str, fecha_fin: str) -> tuple[date, date]:
+    try:
+        inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        fin = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
+    if fin < inicio:
+        raise HTTPException(
+            status_code=422, detail="fecha_fin no puede ser anterior a fecha_inicio"
+        )
+    if (fin - inicio).days >= MAX_DIAS_RANGO:
+        raise HTTPException(status_code=422, detail=f"El rango máximo es de {MAX_DIAS_RANGO} días")
+    return inicio, fin
 
-    return tuesday, sunday
+
+def _orden_hora_jornada(hora: int) -> int:
+    """Ordena las horas dentro de la jornada: 05..23 y luego 00..04."""
+    return hora if hora >= HORA_CORTE_JORNADA else hora + 24
 
 
 @router.get("/analytics")
@@ -57,64 +81,45 @@ def get_analytics(
     Incluye métricas avanzadas (top platillos, top meseros, ventas por categoría).
     """
 
-    try:
-        start_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
-        end_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
+    start_date, end_date = _parse_rango(fecha_inicio, fecha_fin)
+    inicio_dt, fin_dt = rango_jornadas(start_date, end_date)
 
     # Filtros base
     ventas_filters = [
-        func.date(Pedido.fecha_creacion) >= start_date,
-        func.date(Pedido.fecha_creacion) <= end_date,
+        VENTA_TS >= inicio_dt,
+        VENTA_TS < fin_dt,
         Pedido.estado == "pagado",
         Pedido.sucursal_id == current_user.sucursal_id,
     ]
 
     gastos_filters = [
-        func.date(Gasto.fecha_gasto) >= start_date,
-        func.date(Gasto.fecha_gasto) <= end_date,
+        Gasto.fecha_gasto >= inicio_dt,
+        Gasto.fecha_gasto < fin_dt,
         Gasto.sucursal_id == current_user.sucursal_id,
     ]
 
-    # Aplicar filtro de método de pago si existe
     if metodo_pago and metodo_pago != "todos":
-        if metodo_pago in ["tarjeta", "transferencia"]:
-            # Para simplificar, a veces tarjeta y transferencia se agrupan, pero aquí seremos estrictos si el frontend lo manda separado
-            # O si el frontend manda 'tarjeta' para ambos, ajustar. Asumimos valor exacto de la DB.
-            ventas_filters.append(Pedido.metodo_pago == metodo_pago)
-            gastos_filters.append(Gasto.metodo_pago == metodo_pago)
-        else:
-            ventas_filters.append(Pedido.metodo_pago == metodo_pago)
+        ventas_filters.append(Pedido.metodo_pago == metodo_pago)
+        # Gasto.metodo_pago es un enum (efectivo|tarjeta): filtrar por "transferencia"
+        # rompería la query. Las ventas por transferencia se comparan contra todos los gastos.
+        if metodo_pago in METODOS_GASTO:
             gastos_filters.append(Gasto.metodo_pago == metodo_pago)
 
-    # 1. Ventas (Pedidos Pagados)
-    ventas_query = (
+    # 1. Ventas (pedidos pagados) — agrupadas por jornada en Python
+    ventas_rows = (
         db.query(
-            func.date(Pedido.fecha_creacion).label("fecha"),
-            func.sum(Pedido.total).label("total_ventas"),
-            func.count(Pedido.id).label("cantidad_pedidos"),
-            func.sum(Pedido.propina_efectivo + Pedido.propina_tarjeta).label("total_propinas"),
+            VENTA_TS.label("ts"),
+            Pedido.total,
+            Pedido.propina_efectivo + Pedido.propina_tarjeta,
         )
         .filter(and_(*ventas_filters))
-        .group_by(func.date(Pedido.fecha_creacion))
         .all()
     )
 
     # 2. Gastos
-    gastos_query = (
-        db.query(
-            func.date(Gasto.fecha_gasto).label("fecha"), func.sum(Gasto.total).label("total_gastos")
-        )
-        .filter(and_(*gastos_filters))
-        .group_by(func.date(Gasto.fecha_gasto))
-        .all()
-    )
+    gastos_rows = db.query(Gasto.fecha_gasto, Gasto.total).filter(and_(*gastos_filters)).all()
 
-    # 3. Métodos de Pago (Resumen del periodo) - Ignora el filtro de metodo_pago para mostrar el panorama completo si no se filtra,
-    # o mostrar solo el seleccionado si se filtra (lo cual es redundante pero consistente).
-    # Mejor: Mostrar siempre el desglose completo para contexto, a menos que sea confuso.
-    # Decisión: Si el usuario filtra por "Efectivo", ver "Tarjeta: 0" es correcto.
+    # 3. Métodos de pago del periodo
     metodos_pago_query = (
         db.query(Pedido.metodo_pago, func.sum(Pedido.total).label("total"))
         .filter(and_(*ventas_filters))
@@ -141,23 +146,25 @@ def get_analytics(
     total_propinas = 0.0
 
     # Llenar Ventas
-    for v in ventas_query:
-        f_str = v.fecha.isoformat()
-        if f_str in data_by_date:
-            val_ventas = float(v.total_ventas or 0)
-            data_by_date[f_str]["ventas"] = val_ventas
-            data_by_date[f_str]["pedidos"] = v.cantidad_pedidos
-            total_ventas += val_ventas
-            total_pedidos += v.cantidad_pedidos
-            total_propinas += float(v.total_propinas or 0)
+    for ts, total, propinas in ventas_rows:
+        dia = data_by_date.get(jornada_de(ts).isoformat())
+        if dia is None:
+            continue
+        val_ventas = float(total or 0)
+        dia["ventas"] += val_ventas
+        dia["pedidos"] += 1
+        total_ventas += val_ventas
+        total_pedidos += 1
+        total_propinas += float(propinas or 0)
 
     # Llenar Gastos
-    for g in gastos_query:
-        f_str = g.fecha.isoformat()
-        if f_str in data_by_date:
-            val_gastos = float(g.total_gastos or 0)
-            data_by_date[f_str]["gastos"] = val_gastos
-            total_gastos += val_gastos
+    for ts, total in gastos_rows:
+        dia = data_by_date.get(jornada_de(ts).isoformat())
+        if dia is None:
+            continue
+        val_gastos = float(total or 0)
+        dia["gastos"] += val_gastos
+        total_gastos += val_gastos
 
     # Calcular Utilidad por día
     timeline = []
@@ -204,15 +211,12 @@ def get_analytics_advanced(
     Top platillos, ventas por categoría, top meseros.
     """
 
-    try:
-        start_date = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
-        end_date = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
+    start_date, end_date = _parse_rango(fecha_inicio, fecha_fin)
+    inicio_dt, fin_dt = rango_jornadas(start_date, end_date)
 
     ventas_filters = [
-        func.date(Pedido.fecha_creacion) >= start_date,
-        func.date(Pedido.fecha_creacion) <= end_date,
+        VENTA_TS >= inicio_dt,
+        VENTA_TS < fin_dt,
         Pedido.estado == "pagado",
         Pedido.sucursal_id == current_user.sucursal_id,
     ]
@@ -225,7 +229,7 @@ def get_analytics_advanced(
         db.query(
             Platillo.nombre,
             func.sum(ArticuloPedido.cantidad).label("cantidad"),
-            func.sum(ArticuloPedido.cantidad * ArticuloPedido.precio_cobrado).label("total_dinero"),
+            func.sum(ArticuloPedido.precio_cobrado).label("total_dinero"),
         )
         .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
         .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
@@ -240,7 +244,7 @@ def get_analytics_advanced(
     ventas_por_categoria = (
         db.query(
             Platillo.categoria,
-            func.sum(ArticuloPedido.cantidad * ArticuloPedido.precio_cobrado).label("total"),
+            func.sum(ArticuloPedido.precio_cobrado).label("total"),
         )
         .join(ArticuloPedido, Platillo.id == ArticuloPedido.platillo_id)
         .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
@@ -263,18 +267,13 @@ def get_analytics_advanced(
         .all()
     )
 
-    # 1. Ventas por Hora (Tendencia intradía)
-    ventas_por_hora = (
-        db.query(
-            extract("hour", Pedido.fecha_creacion).label("hora"),
-            func.count(Pedido.id).label("cantidad"),
-            func.sum(Pedido.total).label("total"),
-        )
-        .filter(and_(*ventas_filters))
-        .group_by(extract("hour", Pedido.fecha_creacion))
-        .order_by(extract("hour", Pedido.fecha_creacion))
-        .all()
-    )
+    # 1. Ventas por hora local (México), ordenadas dentro de la jornada
+    horas: Dict[int, Dict[str, float]] = {}
+    for ts, total in db.query(VENTA_TS, Pedido.total).filter(and_(*ventas_filters)).all():
+        h = horas.setdefault(to_mexico_aware(ts).hour, {"cantidad": 0, "total": 0.0})
+        h["cantidad"] += 1
+        h["total"] += float(total or 0)
+    ventas_por_hora = sorted(horas.items(), key=lambda kv: _orden_hora_jornada(kv[0]))
 
     # 2. Distribución por Tipo de Orden (Canales)
     tipos_orden = (
@@ -314,8 +313,8 @@ def get_analytics_advanced(
 
     # 5. Estructura de Gastos Detallada
     gastos_filters = [
-        func.date(Gasto.fecha_gasto) >= start_date,
-        func.date(Gasto.fecha_gasto) <= end_date,
+        Gasto.fecha_gasto >= inicio_dt,
+        Gasto.fecha_gasto < fin_dt,
         Gasto.sucursal_id == current_user.sucursal_id,
     ]
 
@@ -331,16 +330,16 @@ def get_analytics_advanced(
 
     # 7. Tasa de Cancelaciones
     cancelados_filters = [
-        func.date(Pedido.fecha_creacion) >= start_date,
-        func.date(Pedido.fecha_creacion) <= end_date,
+        Pedido.fecha_creacion >= inicio_dt,
+        Pedido.fecha_creacion < fin_dt,
         Pedido.estado == "cancelado",
         Pedido.sucursal_id == current_user.sucursal_id,
     ]
     total_pedidos = (
         db.query(func.count(Pedido.id))
         .filter(
-            func.date(Pedido.fecha_creacion) >= start_date,
-            func.date(Pedido.fecha_creacion) <= end_date,
+            Pedido.fecha_creacion >= inicio_dt,
+            Pedido.fecha_creacion < fin_dt,
             Pedido.sucursal_id == current_user.sucursal_id,
         )
         .scalar()
@@ -364,8 +363,8 @@ def get_analytics_advanced(
             for m in top_meseros
         ],
         "ventas_por_hora": [
-            {"hora": int(v.hora), "cantidad": int(v.cantidad), "total": float(v.total or 0)}
-            for v in ventas_por_hora
+            {"hora": hora, "cantidad": int(v["cantidad"]), "total": v["total"]}
+            for hora, v in ventas_por_hora
         ],
         "tipos_orden": [
             {"tipo": t.tipo_orden, "cantidad": int(t.cantidad), "total": float(t.total or 0)}
@@ -392,49 +391,51 @@ def get_analytics_advanced(
 
 def _get_predictive_sales(sucursal_id: int, db: Session) -> Dict[str, Any]:
     """
-    Calcula una proyección de ventas para la PRÓXIMA SEMANA HIDROCALIDA (Martes a Domingo)
-    basada en el promedio de los mismos días en las últimas 4 semanas.
+    Proyección de ventas para la PRÓXIMA SEMANA HIDROCALIDA (Martes a Domingo, 6 días
+    de operación) = promedio del mismo día de la semana en las últimas 4 semanas,
+    por jornada (05:00→05:00 hora México).
     """
-    hoy = date.today()
-    # Encontrar el próximo martes (dia 1 de la semana hidrocalida)
-    # weekday(): 0=Mon, 1=Tue, ..., 5=Sat, 6=Sun
-    days_until_tuesday = (1 - hoy.weekday() + 7) % 7
-    if days_until_tuesday == 0:  # Si hoy es martes, proyectar desde el próximo martes
-        days_until_tuesday = 7
-
+    hoy = jornada_actual()
+    # weekday(): 0=Lun, 1=Mar, ..., 6=Dom
+    days_until_tuesday = (1 - hoy.weekday() + 7) % 7 or 7
     proximo_martes = hoy + timedelta(days=days_until_tuesday)
 
+    # Una sola query: desde 4 semanas antes del primer día proyectado hasta hoy.
+    desde = proximo_martes - timedelta(weeks=4)
+    inicio_dt, fin_dt = rango_jornadas(
+        desde, proximo_martes + timedelta(days=5) - timedelta(weeks=1)
+    )
+    ventas_por_jornada: Dict[date, float] = {}
+    for ts, total in (
+        db.query(VENTA_TS, Pedido.total)
+        .filter(
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == sucursal_id,
+        )
+        .all()
+    ):
+        j = jornada_de(ts)
+        ventas_por_jornada[j] = ventas_por_jornada.get(j, 0.0) + float(total or 0)
+
     proyecciones = []
-    # Proyectar de Martes a Domingo (6 días de operación)
     for i in range(6):
         dia_proyectado = proximo_martes + timedelta(days=i)
-
-        # Promedio de los últimos 4 días iguales (ej. últimos 4 martes)
         fechas_pasadas = [dia_proyectado - timedelta(weeks=w) for w in range(1, 5)]
-
-        ventas_pasadas = (
-            db.query(func.sum(Pedido.total))
-            .filter(
-                func.date(Pedido.fecha_creacion).in_(fechas_pasadas),
-                Pedido.estado == "pagado",
-                Pedido.sucursal_id == sucursal_id,
-            )
-            .scalar()
-            or 0
-        )
-
+        esperado = sum(ventas_por_jornada.get(f, 0.0) for f in fechas_pasadas) / 4
         proyecciones.append(
             {
                 "fecha": dia_proyectado.isoformat(),
-                "dia": dia_proyectado.strftime("%A"),
-                "esperado": float(ventas_pasadas / 4) if ventas_pasadas else 0.0,
+                "dia": DIAS_ES[dia_proyectado.weekday()],
+                "esperado": esperado,
             }
         )
 
     total_proyectado = sum(p["esperado"] for p in proyecciones)
 
     return {
-        "proximos_7_dias": proyecciones,
+        "proximos_7_dias": proyecciones,  # clave histórica; son los 6 días Mar→Dom
         "total_semana_esperado": total_proyectado,
         "confianza": "Baja (Datos históricos limitados)"
         if any(p["esperado"] == 0 for p in proyecciones)
@@ -460,14 +461,17 @@ def get_dashboard_metrics(
         )
         tid = turno_activo.id if turno_activo else None
 
+    jornada_hoy = jornada_actual()
+    hoy_ini, hoy_fin = rango_jornadas(jornada_hoy, jornada_hoy)
+
     def _fp(*extra):
-        """Filtro periodo: turno_id o fecha del día + pagado + sucursal."""
+        """Filtro periodo: turno_id o jornada en curso + pagado + sucursal."""
         f = [Pedido.estado == "pagado", Pedido.sucursal_id == current_user.sucursal_id]
         f += list(extra)
         if tid:
             f.append(Pedido.turno_id == tid)
         else:
-            f.append(func.date(Pedido.fecha_creacion) == date.today())
+            f += [VENTA_TS >= hoy_ini, VENTA_TS < hoy_fin]
         return and_(*f)
 
     def _fp_any_estado(*estados, extra=None):
@@ -478,7 +482,7 @@ def get_dashboard_metrics(
         if tid:
             f.append(Pedido.turno_id == tid)
         else:
-            f.append(func.date(Pedido.fecha_creacion) == date.today())
+            f += [Pedido.fecha_creacion >= hoy_ini, Pedido.fecha_creacion < hoy_fin]
         return and_(*f)
 
     # Consulta base
@@ -534,18 +538,16 @@ def get_dashboard_metrics(
     total_ingresos = efectivo_total + tarjeta_total + transferencia_total
     promedio_ticket = float(total_ingresos) / total_pedidos if total_pedidos > 0 else 0
 
-    # Ventas por hora
-    ventas_por_hora = (
-        db.query(
-            extract("hour", Pedido.fecha_creacion).label("hora"),
-            func.count(Pedido.id).label("cantidad"),
-            func.sum(Pedido.total).label("total"),
-        )
-        .filter(_fp())
-        .group_by(extract("hour", Pedido.fecha_creacion))
-        .order_by(extract("hour", Pedido.fecha_creacion))
-        .all()
-    )
+    # Ventas por hora local (México), en orden de jornada
+    horas: Dict[int, list] = {}
+    for ts, total in db.query(VENTA_TS, Pedido.total).filter(_fp()).all():
+        h = horas.setdefault(to_mexico_aware(ts).hour, [0, 0.0])
+        h[0] += 1
+        h[1] += float(total or 0)
+    ventas_por_hora = [
+        (hora, cant, tot)
+        for hora, (cant, tot) in sorted(horas.items(), key=lambda kv: _orden_hora_jornada(kv[0]))
+    ]
 
     # Tipos de orden
     tipos_orden_data = (
@@ -572,7 +574,7 @@ def get_dashboard_metrics(
         .all()
     )
 
-    periodo_label = f"turno_{tid}" if tid else date.today().isoformat()
+    periodo_label = f"turno_{tid}" if tid else jornada_hoy.isoformat()
 
     return {
         "fecha": periodo_label,
@@ -641,7 +643,7 @@ def get_weekly_report(
     """Reporte semanal (Martes a Domingo)"""
 
     # Parsear fecha si se proporciona
-    target_date = date.today()
+    target_date = jornada_actual()
     if fecha:
         try:
             target_date = datetime.strptime(fecha, "%Y-%m-%d").date()
@@ -652,12 +654,13 @@ def get_weekly_report(
 
     # Obtener rango de la semana
     tuesday, sunday = _get_week_range(target_date)
+    inicio_dt, fin_dt = rango_jornadas(tuesday, sunday)
 
     # Consulta base para pedidos de la semana con estado 'pagado'
     base_query = db.query(Pedido).filter(
         and_(
-            func.date(Pedido.fecha_creacion) >= tuesday,
-            func.date(Pedido.fecha_creacion) <= sunday,
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
             Pedido.estado == "pagado",
             Pedido.sucursal_id == current_user.sucursal_id,
         )
@@ -669,8 +672,8 @@ def get_weekly_report(
     # Totales por método de pago
     efectivo_total = db.query(func.sum(Pedido.total)).filter(
         and_(
-            func.date(Pedido.fecha_creacion) >= tuesday,
-            func.date(Pedido.fecha_creacion) <= sunday,
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
             Pedido.estado == "pagado",
             Pedido.metodo_pago == "efectivo",
             Pedido.sucursal_id == current_user.sucursal_id,
@@ -679,8 +682,8 @@ def get_weekly_report(
 
     tarjeta_total = db.query(func.sum(Pedido.total)).filter(
         and_(
-            func.date(Pedido.fecha_creacion) >= tuesday,
-            func.date(Pedido.fecha_creacion) <= sunday,
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
             Pedido.estado == "pagado",
             Pedido.metodo_pago == "tarjeta",
             Pedido.sucursal_id == current_user.sucursal_id,
@@ -689,8 +692,8 @@ def get_weekly_report(
 
     transferencia_total = db.query(func.sum(Pedido.total)).filter(
         and_(
-            func.date(Pedido.fecha_creacion) >= tuesday,
-            func.date(Pedido.fecha_creacion) <= sunday,
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
             Pedido.estado == "pagado",
             Pedido.metodo_pago == "transferencia",
             Pedido.sucursal_id == current_user.sucursal_id,
@@ -704,8 +707,8 @@ def get_weekly_report(
         .join(Pedido, ArticuloPedido.pedido_id == Pedido.id)
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) >= tuesday,
-                func.date(Pedido.fecha_creacion) <= sunday,
+                VENTA_TS >= inicio_dt,
+                VENTA_TS < fin_dt,
                 Pedido.estado == "pagado",
                 Pedido.sucursal_id == current_user.sucursal_id,
             )
@@ -717,30 +720,27 @@ def get_weekly_report(
     )
 
     # Ventas por día de la semana
-    ventas_por_dia = (
-        db.query(
-            func.date(Pedido.fecha_creacion).label("fecha"),
-            func.sum(Pedido.total).label("total_dia"),
-            func.count(Pedido.id).label("pedidos_dia"),
-        )
+    por_dia: Dict[date, list] = {}
+    for ts, total in (
+        db.query(VENTA_TS, Pedido.total)
         .filter(
-            and_(
-                func.date(Pedido.fecha_creacion) >= tuesday,
-                func.date(Pedido.fecha_creacion) <= sunday,
-                Pedido.estado == "pagado",
-                Pedido.sucursal_id == current_user.sucursal_id,
-            )
+            VENTA_TS >= inicio_dt,
+            VENTA_TS < fin_dt,
+            Pedido.estado == "pagado",
+            Pedido.sucursal_id == current_user.sucursal_id,
         )
-        .group_by(func.date(Pedido.fecha_creacion))
-        .order_by(func.date(Pedido.fecha_creacion))
         .all()
-    )
+    ):
+        d = por_dia.setdefault(jornada_de(ts), [0.0, 0])
+        d[0] += float(total or 0)
+        d[1] += 1
+    ventas_por_dia = [(f, t, n) for f, (t, n) in sorted(por_dia.items())]
 
     # Total de gastos de la semana
     gastos_total = db.query(func.sum(Gasto.total)).filter(
         and_(
-            func.date(Gasto.fecha_gasto) >= tuesday,
-            func.date(Gasto.fecha_gasto) <= sunday,
+            Gasto.fecha_gasto >= inicio_dt,
+            Gasto.fecha_gasto < fin_dt,
             Gasto.sucursal_id == current_user.sucursal_id,
         )
     ).scalar() or Decimal("0.00")
@@ -752,8 +752,8 @@ def get_weekly_report(
         db.query(Gasto.tipo_gasto, func.sum(Gasto.total).label("total"))
         .filter(
             and_(
-                func.date(Gasto.fecha_gasto) >= tuesday,
-                func.date(Gasto.fecha_gasto) <= sunday,
+                Gasto.fecha_gasto >= inicio_dt,
+                Gasto.fecha_gasto < fin_dt,
                 Gasto.sucursal_id == current_user.sucursal_id,
             )
         )
@@ -766,8 +766,8 @@ def get_weekly_report(
         .join(Proveedor, Proveedor.id == Gasto.proveedor_id)
         .filter(
             and_(
-                func.date(Gasto.fecha_gasto) >= tuesday,
-                func.date(Gasto.fecha_gasto) <= sunday,
+                Gasto.fecha_gasto >= inicio_dt,
+                Gasto.fecha_gasto < fin_dt,
                 Gasto.sucursal_id == current_user.sucursal_id,
             )
         )
@@ -782,8 +782,8 @@ def get_weekly_report(
         .join(Gasto, Gasto.id == GastoDetalle.gasto_id)
         .filter(
             and_(
-                func.date(Gasto.fecha_gasto) >= tuesday,
-                func.date(Gasto.fecha_gasto) <= sunday,
+                Gasto.fecha_gasto >= inicio_dt,
+                Gasto.fecha_gasto < fin_dt,
                 Gasto.sucursal_id == current_user.sucursal_id,
             )
         )
@@ -800,8 +800,8 @@ def get_weekly_report(
         )
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) >= tuesday,
-                func.date(Pedido.fecha_creacion) <= sunday,
+                VENTA_TS >= inicio_dt,
+                VENTA_TS < fin_dt,
                 Pedido.estado == "pagado",
                 Pedido.sucursal_id == current_user.sucursal_id,
             )
@@ -815,8 +815,8 @@ def get_weekly_report(
         db.query(Pedido)
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) >= tuesday,
-                func.date(Pedido.fecha_creacion) <= sunday,
+                VENTA_TS >= inicio_dt,
+                VENTA_TS < fin_dt,
                 Pedido.sucursal_id == current_user.sucursal_id,
             )
         )
@@ -827,8 +827,8 @@ def get_weekly_report(
         db.query(Pedido)
         .filter(
             and_(
-                func.date(Pedido.fecha_creacion) >= tuesday,
-                func.date(Pedido.fecha_creacion) <= sunday,
+                VENTA_TS >= inicio_dt,
+                VENTA_TS < fin_dt,
                 Pedido.estado == "cancelado",
                 Pedido.sucursal_id == current_user.sucursal_id,
             )
@@ -935,6 +935,8 @@ def get_gastos_summary(
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
 
+    inicio_dt, fin_dt = rango_jornadas(inicio, fin)
+
     # Resumen por tipo de gasto
     gastos_por_tipo = (
         db.query(
@@ -944,8 +946,8 @@ def get_gastos_summary(
         )
         .filter(
             and_(
-                func.date(Gasto.fecha_gasto) >= inicio,
-                func.date(Gasto.fecha_gasto) <= fin,
+                Gasto.fecha_gasto >= inicio_dt,
+                Gasto.fecha_gasto < fin_dt,
                 Gasto.sucursal_id == current_user.sucursal_id,
             )
         )

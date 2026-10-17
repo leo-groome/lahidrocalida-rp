@@ -28,6 +28,7 @@ Estados: ⚪ pendiente · 🔵 en curso · 🟢 cerrado · 🔴 bloqueado · ⏭
 | **S5** | Aprobaciones, visibilidad de métricas, IVA | 4 + 5 + 7 | L | ⚪ | `v2/sprint-5-control` | — |
 | **S6** | Inventario | 3 | XL | ⚪ | `v2/sprint-6-inventario` | — |
 | **S7** | Endurecimiento para producción | resto de 6 | M | ⚪ | `v2/sprint-7-produccion` | — |
+| **SA** | Panel de administración útil (analíticas por jornada, ventas por producto, Gastos, asistencia 00:30) — ver [SPRINT_ADMIN.md](./SPRINT_ADMIN.md) | — | L | 🔵 en curso | `sa/prN-*` | — |
 
 **Grafo de dependencias:**
 
@@ -517,3 +518,5 @@ seguridad de 1.7 — no estaba en la lista original de esa tarea, hay que agrega
 | 2026-08-24 | Se usó el Import Data Assistant de Neon (copia schema+datos en un solo flujo) en vez del `pg_dump`/`restore` manual de 0.3+0.5 | DB de 12-13 MB, muy por debajo del límite de 10 GB del flujo guiado; el riesgo que 0.4 mitigaba (baseline malo) ya estaba cubierto por la verificación byte-a-byte de 0.1/0.2, así que no hacía falta que la instancia nueva construyera su schema desde las migraciones |
 | 2026-08-24 | `alembic/env.py` prioriza `DATABASE_URL` de entorno sobre `alembic.ini` | Necesario para que el `CMD` del Dockerfile (`alembic upgrade head` en cada arranque) no migre por accidente contra la URL vieja hardcodeada en el `.ini`; purga completa del secreto sigue pendiente en 1.2, pero ya no es urgente porque la instancia vieja se apagó (0.8) |
 | 2026-08-24 | `CORS_ORIGINS` pasa a variable de entorno obligatoria, sin default | Los orígenes ya no viven hardcodeados en `main.py` (incluían una IP de LAN quemada); si falta la variable, la app no arranca en vez de arrancar con CORS abierto o mal configurado |
+| 2026-10-17 | Turnos de caja no se auto-cierran; la asistencia sin salida se cierra a las 00:30 hora Ags | El cajero cierra ~00:04 y reabre de inmediato con el fondo contado; las anomalías de asistencia dejaban horas en 0. Detalle en [SPRINT_ADMIN.md](./SPRINT_ADMIN.md) |
+| 2026-10-17 | Toda analítica agrupa por jornada 05:00→05:00 hora Ags y fecha la venta por `fecha_pago` | Los reportes de admin agrupaban por día UTC: "Hoy" mostraba la noche anterior |

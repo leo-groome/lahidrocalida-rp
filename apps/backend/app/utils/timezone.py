@@ -51,3 +51,23 @@ def rango_jornada(fecha_jornada: date) -> tuple[datetime, datetime]:
     inicio = datetime.combine(fecha_jornada, time(HORA_CORTE_JORNADA), tzinfo=MEXICO_TZ)
     fin = inicio + timedelta(days=1)
     return inicio, fin
+
+
+def jornada_actual() -> date:
+    """Jornada operativa en curso (hora México)."""
+    return jornada_de(get_mexico_now())
+
+
+def rango_jornadas(inicio: date, fin: date) -> tuple[datetime, datetime]:
+    """Rango [inicio, fin) que cubre las jornadas `inicio`..`fin` inclusive."""
+    return rango_jornada(inicio)[0], rango_jornada(fin)[1]
+
+
+def semana_hidrocalida(dia: date) -> tuple[date, date]:
+    """Semana operativa Martes→Domingo que contiene `dia` (lunes cae en la anterior)."""
+    desde_martes = (dia.weekday() - 1) % 7
+    martes = dia - timedelta(days=desde_martes)
+    return martes, martes + timedelta(days=5)
+
+
+DIAS_ES = ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")
