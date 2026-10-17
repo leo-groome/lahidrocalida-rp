@@ -381,7 +381,7 @@ junto con 3.5.
 - **Qué quedó funcionando (2026-08-25):**
   - Jornada operativa 05:00→05:00 hora México como eje central del sistema (`jornada_de`, `rango_jornada`, `to_mexico_aware`).
   - Tokens JWT con claim `jornada` y expiración en corte de jornada; revocación selectiva por usuario vía `sesiones_validas_desde` (normalizado a aware con `to_mexico_aware` para paridad UTC/México en CI).
-  - Servicio `reconciliar_jornada` perezoso e idempotente que barre turnos y asistencias huérfanos de jornadas anteriores marcándolos como `cierre_automatico` y `requiere_revision` sin inventar cifras ni horas.
+  - Servicio `reconciliar_jornada` perezoso e idempotente que barre asistencias huérfanas de jornadas anteriores marcándolas como `cierre_automatico` y `requiere_revision` sin inventar horas. *(Corrección 2026-10-17: los turnos de caja ya no se auto-cierran desde `7a3bb52`; la asistencia sin salida recibe salida automática a las 00:30, ver SPRINT_ADMIN.md.)*
   - Check-in de asistencia explícito y protegido contra carreras con `with_for_update()` e índice parcial único.
   - Tab de "Anomalías" en `RecursosHumanosSection.vue` con resolución vía `PATCH /asistencia/{id}/confirmar-salida`.
   - Fix de edición de propinas para `administrador` en pedidos `pagado` (discriminando transiciones de estado vs actualizaciones en el mismo estado con sync WS).

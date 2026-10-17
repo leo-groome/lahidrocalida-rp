@@ -279,7 +279,7 @@ query string de los WS).
 | Secreto de Neon (la instancia vieja, ya apagada) trackeado en el historial de `alembic.ini` | Media | recuperable con `git log -p -- alembic.ini`; sin efecto práctico ya que la credencial está muerta, pero sigue en el historial |
 | Cobertura de tests casi nula | Alta | Todo el proyecto (mitigado: 108 tests en backend) |
 | ~~Check-in por NIP ignora la fecha del registro abierto~~ | — | Resuelto en S3 3.5: check-in explícito con lock `with_for_update()` e índice único parcial |
-| ~~Turno sin cerrar bloquea el siguiente y sigue capturando pedidos~~ | — | Resuelto en S3 3.4/3.8: `reconciliar_jornada` perezosa + cierre automático |
+| Turno de caja sin cerrar bloquea el siguiente | Baja | Por diseño desde `7a3bb52`: los turnos NO se auto-cierran (el cajero cierra y reabre a mano al contar el fondo). `reconciliar_jornada` solo toca asistencia: salida automática a las 00:30 (SA PR2) |
 | Fechas naive comparadas contra `TIMESTAMPTZ` | Media | `asistencia.py:42-50,127-128` |
 | N+1 en `resumen_asistencia` | Media | `asistencia.py:142-151` |
 | `CajaView.vue` 4 093 líneas · `MeseroView.vue` 2 580 | Media | `views/` |

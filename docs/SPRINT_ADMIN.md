@@ -112,7 +112,7 @@ Hora local al auditar: sábado 2026-10-17 12:18 (America/Mexico_City, UTC-6).
 Orden de PRs = orden de ejecución. Cada PR: rama `sa/prN-…`, test happy path + 1 error,
 `pnpm run build` limpio, verificación en prod con agent-browser.
 
-### PR1 — Fechas y dinero correctos · 🟢 código listo (2026-10-17) — falta verificar en prod tras deploy
+### PR1 — Fechas y dinero correctos · 🟢 código listo y verificado en local (2026-10-17) — falta verificar en prod tras deploy
 
 | Estado | Tarea | Archivos |
 |---|---|---|
@@ -132,16 +132,24 @@ Orden de PRs = orden de ejecución. Cada PR: rama `sa/prN-…`, test happy path 
 - El `Pedido.total` sigue sin incluir propinas; el rótulo ahora lo dice.
 - Pendiente de PR3/PR5 (no tocado aquí): Uber no entra a analytics; el dashboard `/admin/dashboard` sigue condicionando propinas por método (D5).
 
-### PR2 — Salida automática de asistencia a las 00:30 · ⚪
+### PR2 — Salida automática de asistencia a las 00:30 · 🟢 código listo y verificado en local (2026-10-17) — falta aplicar backfill en prod
 
 | Estado | Tarea | Archivos |
 |---|---|---|
-| ⚪ | Nueva regla en `reconciliar_jornada`: registro abierto cuya entrada es anterior al corte 00:30 de su noche → `fecha_salida = 00:30` local de esa noche, `cierre_automatico=True`, horas calculadas, sin `requiere_revision`. Entrada posterior a 00:30 (madrugada) conserva la regla actual de anomalía. Turnos no se tocan. | `services/jornada.py` |
-| ⚪ | Llamar `reconciliar_jornada` desde `/auth/asistencia` antes de registrar entrada. | `routers/auth.py:~180` |
-| ⚪ | Corregir comentario de `turnos.py:190` y `ESTADO_ACTUAL.md:282`. | |
-| ⚪ | Script de backfill idempotente para las anomalías existentes, con `--dry-run` por defecto; correr en prod solo con confirmación. | `apps/backend/scripts/` |
-| ⚪ | RRHH: "Semana pasada" = semana calendario anterior; fechas locales; badge "salida automática 00:30"; filtro de rol incluye cajero/compras. | `RecursosHumanosSection.vue` |
-| ⚪ | Tests: entrada 21:00 sin salida + petición a las 00:31 → salida 00:30 y horas 3.5; petición a las 00:29 → sigue abierto; entrada 00:45 → no se cierra a 00:30. | `tests/test_jornada.py` |
+| 🟢 | Regla nueva en `reconciliar_jornada`: registro abierto → `fecha_salida = 00:30` de la madrugada que cierra su jornada, `cierre_automatico=True`, sin `requiere_revision` (cuenta para horas). Función pura `salida_automatica(entrada)`; `ahora` inyectable. Determinista: da igual cuándo corra la reconciliación. Turnos de caja no se tocan. | `services/jornada.py` |
+| 🟢 | Lo que la regla no cubre sigue siendo anomalía (sin inventar hora): entrada con >16 h de turno (p. ej. 06:00), <1 h antes del corte (p. ej. 00:06) o posterior al corte. | `services/jornada.py` |
+| 🟢 | `/auth/asistencia` llama a `reconciliar_jornada` antes de decidir entrada/salida (cierra el `IntegrityError` que devolvía el registro de ayer). | `routers/auth.py` |
+| 🟢 | **Guard extra (no estaba en el plan):** si entre 00:30 y 05:00 el empleado checa y ya tiene la salida automática de esa noche, se le devuelve esa salida en vez de abrir una entrada fantasma que luego sería anomalía. | `routers/auth.py` |
+| 🟢 | Backfill de anomalías existentes: `scripts/backfill_salidas_0030.py` (dry-run por defecto, `--apply` escribe, idempotente). | `scripts/`, `services/jornada.py` |
+| 🟢 | RRHH: etiqueta "Automática" en la salida, "Sin salida · revisar" (rojo) en vez de "En Turno" para anomalías, filtros Caja y Compras. ("Semana pasada" y fechas locales ya salieron en PR1.) | `RecursosHumanosSection.vue` |
+| 🟢 | Comentarios/docs obsoletos corregidos (`turnos.py`, `ESTADO_ACTUAL.md`, `SPRINTS.md`). | |
+| 🟢 | Tests: 10 nuevos (`test_asistencia_salida_automatica.py`) + 3 existentes fijados a 06:00 (dependían de la hora del reloj). | `tests/` |
+| ⚪ | **En prod:** tras el deploy, correr `uv run python scripts/backfill_salidas_0030.py` con `DATABASE_URL` de prod, revisar el dry-run y luego `--apply`. Confirmar con Leo antes. | — |
+
+**Hallazgos durante PR2:**
+- La suite en Postgres tiene **11 fallos preexistentes en `main`** (dividir cuenta, PIN de admin, turno_diferencia, adjuntos): mismos con y sin estos cambios. En SQLite todo pasa. Ver *Limpieza*.
+- En Postgres los datetimes vuelven con tz; en SQLite naive. Los tests deben usar `to_mexico_aware`, no `.replace(tzinfo=…)`.
+- Entradas pegadas a medianoche (p. ej. Monica 00:06 del 4-oct) no se auto-cierran: se dejan a revisión humana por tener <1 h.
 
 ### PR3 — Ventas por producto y por día · ⚪
 
@@ -183,6 +191,7 @@ El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en ran
 
 | Estado | Tarea |
 |---|---|
+| ⚪ | Arreglar los 11 tests que fallan en Postgres desde antes del sprint (`test_dividir_cuenta`×3, `test_pedidos_transiciones`×3, `test_pin_autorizacion`×2, `test_turno_diferencia`×2, `test_gasto_adjuntos`×1) y correr la CI contra Postgres. |
 | ⚪ | Migración de datos: `trim` de nombres de platillos (`"Coca Regular\t"`). |
 | ⚪ | No resetear `fecha_creacion` al agregar artículos (D4) — evaluar si algo depende de ello (KDS). |
 | ⚪ | Actualizar `ESTADO_ACTUAL.md` y fila SA en `SPRINTS.md` al cerrar. |
@@ -209,6 +218,7 @@ El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en ran
 |---|---|---|---|
 | 2026-10-17 | — | Auditoría en prod + código; documento de sprint. | Ver sección 1. |
 | 2026-10-17 | PR1 | Rama `sa/pr1-fechas-dinero`: jornada 05:00→05:00 en todos los reportes de admin, D1, helpers de fecha en frontend. Backend 196 tests, frontend 65 tests + build OK. | Semana Mar→Dom estaba mal por 1 día (ver PR1). |
+| 2026-10-17 | PR2 | Rama `sa/pr2-asistencia-0030` (apilada sobre PR1): salida automática 00:30, guard anti-entrada-fantasma, backfill, RRHH. Backend 206 tests (SQLite) y sin regresiones en Postgres; verificado en local con Agent Browser. | 11 tests ya fallaban en Postgres en `main`. |
 
 ## Notas de cierre
 
