@@ -176,6 +176,7 @@ import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
 const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
 import { useGastoSubmission } from "@/composables/useCrearGasto"
+import { datetimeLocalAhora } from '@/utils/fecha'
 const gastoSubmission = useGastoSubmission()
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import api from '@/api/client'
@@ -203,7 +204,7 @@ const formatCurrency = (val: number) => val.toLocaleString('es-MX', {
 const form = reactive({
   id: null,
   proveedor_id: null,
-  fecha_gasto: new Date().toISOString().slice(0, 16),
+  fecha_gasto: datetimeLocalAhora(),
   tipo_gasto: 'directo',
   metodo_pago: 'efectivo',
   folio: '',

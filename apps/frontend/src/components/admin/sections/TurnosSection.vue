@@ -116,20 +116,16 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { api } from '@/api/client'
 import type { Turno } from '@/types'
+import { rangoUltimosDias } from '@/utils/fecha'
 import { EstadoTurno } from '@/constants/estados'
 import { formatDateTimeShort as formatDateTime } from '@/utils/dateUtils'
 
 const turnos = ref<Turno[]>([])
 const loading = ref(false)
 
-function getDateStr(daysAgo: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().split('T')[0]
-}
-
-const fechaInicio = ref(getDateStr(7))
-const fechaFin = ref(getDateStr(0))
+const rangoInicial = rangoUltimosDias(8)
+const fechaInicio = ref(rangoInicial.inicio)
+const fechaFin = ref(rangoInicial.fin)
 
 function discrepanciaClass(diferencia: number | null): string {
   if (diferencia === null) return 'bg-slate-50'

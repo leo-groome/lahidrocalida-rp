@@ -335,6 +335,7 @@
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { api } from '@/api/client'
 import { formatDate, formatTime, formatDetailedDate } from '@/utils/dateUtils'
+import { hoyJornada, rangoMes, rangoSemana } from '@/utils/fecha'
 
 interface AsistenciaEmpleado {
   usuario_id: number
@@ -377,30 +378,10 @@ function getColor(nombre: string): string {
   return COLORS[hash % COLORS.length]
 }
 
-function getDateStr(daysAgo: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().split('T')[0]
-}
-
-function getMondayStr(): string {
-  const d = new Date()
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
-  return d.toISOString().split('T')[0]
-}
-
-function getFirstOfMonth(): string {
-  const d = new Date()
-  d.setDate(1)
-  return d.toISOString().split('T')[0]
-}
-
 const quickRanges = [
-  { label: 'Esta semana', getInicio: getMondayStr, getFin: () => getDateStr(0) },
-  { label: 'Semana pasada', getInicio: () => getDateStr(13), getFin: () => getDateStr(7) },
-  { label: 'Este mes', getInicio: getFirstOfMonth, getFin: () => getDateStr(0) },
+  { label: 'Esta semana', getInicio: () => rangoSemana().inicio, getFin: () => hoyJornada() },
+  { label: 'Semana pasada', getInicio: () => rangoSemana(Date.now(), -1).inicio, getFin: () => rangoSemana(Date.now(), -1).fin },
+  { label: 'Este mes', getInicio: () => rangoMes().inicio, getFin: () => hoyJornada() },
 ]
 
 const activeTab = ref<'resumen' | 'anomalias'>('resumen')
@@ -437,8 +418,8 @@ async function confirmarSalida(registroId: number) {
 }
 
 const currentRoleFilter = ref('todos')
-const fechaInicio = ref(getMondayStr())
-const fechaFin = ref(getDateStr(0))
+const fechaInicio = ref(rangoSemana().inicio)
+const fechaFin = ref(hoyJornada())
 const activeRange = ref('Esta semana')
 const resumen = ref<AsistenciaResumen | null>(null)
 const loading = ref(false)

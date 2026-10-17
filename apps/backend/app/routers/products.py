@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.deps import require_roles
 from app.models import ArticuloPedido, Pedido, Platillo, Usuario
 from app.schemas import PlatilloCreate, PlatilloResponse
+from app.utils.timezone import jornada_actual, rango_jornada
 
 router = APIRouter(prefix="/platillos", tags=["platillos"])
 
@@ -58,7 +59,7 @@ def get_platillos_ordenados_popularidad(
     Obtener platillos ordenados por popularidad (últimos N días)
     Usa datos de ventas reales para optimizar la experiencia del mesero
     """
-    fecha_limite = date.today() - timedelta(days=dias)
+    limite_dt = rango_jornada(jornada_actual() - timedelta(days=dias))[0]
 
     # Query para obtener platillos con su popularidad
     platillos_con_popularidad = (
@@ -71,7 +72,7 @@ def get_platillos_ordenados_popularidad(
             and_(
                 ArticuloPedido.pedido_id == Pedido.id,
                 Pedido.estado == "pagado",
-                func.date(Pedido.fecha_creacion) >= fecha_limite,
+                func.coalesce(Pedido.fecha_pago, Pedido.fecha_creacion) >= limite_dt,
                 Pedido.sucursal_id == current_user.sucursal_id,
             ),
         )

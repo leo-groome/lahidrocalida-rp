@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
@@ -44,7 +44,7 @@ from app.schemas import (
     UsuarioResponse,
 )
 from app.services.storage_cleanup import programar_borrado
-from app.utils.timezone import MEXICO_TZ
+from app.utils.timezone import jornada_de, rango_jornada
 
 logger = logging.getLogger(__name__)
 
@@ -513,12 +513,10 @@ def list_gastos(
     if metodo_pago is not None:
         query = query.filter(Gasto.metodo_pago == metodo_pago)
     if fecha_inicio_date is not None:
-        start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+        start_dt = rango_jornada(fecha_inicio_date)[0]
         query = query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date is not None:
-        end_dt = datetime.combine(
-            fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
-        )
+        end_dt = rango_jornada(fecha_fin_date)[1]
         query = query.filter(Gasto.fecha_gasto < end_dt)
 
     # Filtro complejo por categoría (requiere join)
@@ -572,12 +570,10 @@ def get_gastos_analiticas(
         base_query = base_query.filter(Gasto.sucursal_id == sucursal_id)
 
     if fecha_inicio_date:
-        start_dt = datetime.combine(fecha_inicio_date, datetime.min.time(), tzinfo=MEXICO_TZ)
+        start_dt = rango_jornada(fecha_inicio_date)[0]
         base_query = base_query.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date:
-        end_dt = datetime.combine(
-            fecha_fin_date + timedelta(days=1), datetime.min.time(), tzinfo=MEXICO_TZ
-        )
+        end_dt = rango_jornada(fecha_fin_date)[1]
         base_query = base_query.filter(Gasto.fecha_gasto < end_dt)
 
     # 1. Total Gastado
@@ -620,10 +616,12 @@ def get_gastos_analiticas(
         )
     elif sucursal_id:
         gastos_con_detalle = gastos_con_detalle.filter(Gasto.sucursal_id == sucursal_id)
+    # Mismo rango que base_query: jornadas inicio..fin (05:00→05:00 hora México).
+    # Antes comparaba timestamptz contra un `date` (medianoche UTC) y descuadraba la categoría.
     if fecha_inicio_date:
-        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto >= fecha_inicio_date)
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto >= start_dt)
     if fecha_fin_date:
-        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto <= fecha_fin_date)
+        gastos_con_detalle = gastos_con_detalle.filter(Gasto.fecha_gasto < end_dt)
 
     res_categorias = gastos_con_detalle.group_by(CategoriaArticulo.nombre).all()
 
@@ -655,18 +653,13 @@ def get_gastos_analiticas(
             id=top_prov.id, nombre=top_prov.nombre, total=float(top_prov.total)
         )
 
-    # 5. Timeline
-    # Agrupar por fecha (día)
-    timeline_res = (
-        base_query.with_entities(
-            func.date(Gasto.fecha_gasto).label("fecha"), func.sum(Gasto.total).label("total")
-        )
-        .group_by(func.date(Gasto.fecha_gasto))
-        .order_by(func.date(Gasto.fecha_gasto))
-        .all()
-    )
-
-    timeline = [GastoTimeline(fecha=str(r.fecha), total=float(r.total)) for r in timeline_res]
+    # 5. Timeline por jornada (05:00→05:00 hora México), agrupado en Python para no
+    # depender de funciones de zona horaria del dialecto.
+    por_dia: dict = {}
+    for ts, total in base_query.with_entities(Gasto.fecha_gasto, Gasto.total).all():
+        dia = jornada_de(ts)
+        por_dia[dia] = por_dia.get(dia, 0.0) + float(total or 0)
+    timeline = [GastoTimeline(fecha=d.isoformat(), total=t) for d, t in sorted(por_dia.items())]
 
     return GastosResumenResponse(
         total_gastado=float(total_gastado),

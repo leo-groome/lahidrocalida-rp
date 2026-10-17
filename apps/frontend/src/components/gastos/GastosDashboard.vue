@@ -228,6 +228,7 @@
 import { ref, onMounted, computed } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
+import { rangoMes } from '@/utils/fecha'
 import { 
   TrendingDown, Calendar, SearchX, DollarSign, Clock, 
   Trophy, Tag, Loader2, PieChart, ListStart
@@ -271,13 +272,11 @@ const loading = ref(false)
 const stats = ref<GastoAnalytics | null>(null)
 
 // Fechas por defecto: mes actual
-const now = new Date()
-const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+const mesActual = rangoMes()
 
 const dates = ref({
-  start: firstDay.toISOString().split('T')[0],
-  end: lastDay.toISOString().split('T')[0]
+  start: mesActual.inicio,
+  end: mesActual.fin
 })
 
 const formatCurrency = (val: number | string) => {

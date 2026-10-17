@@ -277,6 +277,7 @@ import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
 const { proveedores } = storeToRefs(catalogos)
 import { ref, onMounted, watch, computed } from 'vue'
+import { rangoMes } from '@/utils/fecha'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
 import { 
@@ -309,13 +310,11 @@ const pageSize = ref(50)
 const totalItems = ref(0)
 
 // Fechas por defecto: mes actual
-const now = new Date()
-const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+const mesActual = rangoMes()
 
 const filters = ref({
-  fecha_inicio: firstDay.toISOString().split('T')[0],
-  fecha_fin: lastDay.toISOString().split('T')[0],
+  fecha_inicio: mesActual.inicio,
+  fecha_fin: mesActual.fin,
   proveedor_id: null
 })
 

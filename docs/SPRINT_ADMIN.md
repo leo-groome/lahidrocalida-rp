@@ -112,19 +112,25 @@ Hora local al auditar: sábado 2026-10-17 12:18 (America/Mexico_City, UTC-6).
 Orden de PRs = orden de ejecución. Cada PR: rama `sa/prN-…`, test happy path + 1 error,
 `pnpm run build` limpio, verificación en prod con agent-browser.
 
-### PR1 — Fechas y dinero correctos · ⚪
+### PR1 — Fechas y dinero correctos · 🟢 código listo (2026-10-17) — falta verificar en prod tras deploy
 
 | Estado | Tarea | Archivos |
 |---|---|---|
-| ⚪ | Helper SQL `jornada_sql(col)` ≡ `date((col AT TIME ZONE 'America/Mexico_City') - interval '5 hours')` y `hora_local_sql(col)`. | `utils/timezone.py` |
-| ⚪ | Reemplazar `func.date`/`date.today()` por `rango_jornada`/`jornada_sql` en analytics, advanced, dashboard, semanal, gastos/resumen, timeline de gastos y popularidad. Horas en hora local. | `admin.py`, `gastos.py:624-665`, `products.py:61-74` |
-| ⚪ | Ventas filtradas y agrupadas por `fecha_pago`. | `admin.py` |
-| ⚪ | Quitar `cantidad *` (D1). | `admin.py:228, 243` |
-| ⚪ | Filtro de pago no se aplica a gastos cuando es transferencia. | `admin.py:81-89` |
-| ⚪ | `utils/fecha.ts` (`hoyAgs()`, `jornadaActual()`, `rangoSemana()`, `rangoMes()`) y reemplazar todo `toISOString().split('T')` de fechas. | `DashboardSection.vue`, `TurnosSection.vue`, `RecursosHumanosSection.vue` |
-| ⚪ | Default de `fecha_gasto` en hora local (F5). | `GastoFormModal.vue:206` |
-| ⚪ | Quitar "+12%" fijo, corregir rótulo de ventas, proyección 7 días en español, toggle se apaga al editar fechas, `onActivated` recalcula. | `DashboardSection.vue`, `admin.py:393` |
-| ⚪ | Tests: pedido pagado 23:50 y otro 00:20 locales → misma jornada; "hoy" a las 12:00 no incluye anoche; rango inválido → 422. | `tests/test_admin_analytics.py` |
+| 🟢 | ~~Helper SQL `jornada_sql`~~ → **desviación:** se filtra por rango `[inicio, fin)` con `rango_jornadas` y se agrupa en Python con `jornada_de`. Sin funciones SQL de zona horaria, así la suite (SQLite) y prod (Postgres) dan lo mismo. Helpers nuevos: `jornada_actual`, `rango_jornadas`, `semana_hidrocalida`, `DIAS_ES`. | `utils/timezone.py` |
+| 🟢 | Reemplazar `func.date`/`date.today()` en analytics, advanced, proyección, dashboard, semanal, gastos/resumen, timeline y categorías de `/gastos/analiticas/resumen`, y popularidad. Horas en hora local, ordenadas por jornada (05→23, 00→04). Rango de `/gastos/` y `/gastos/analiticas/resumen` ahora también por jornada. | `admin.py`, `gastos.py`, `products.py` |
+| 🟢 | Ventas filtradas y agrupadas por `coalesce(fecha_pago, fecha_creacion)`. | `admin.py` (`VENTA_TS`) |
+| 🟢 | Quitar `cantidad *` (D1). | `admin.py` |
+| 🟢 | Filtro "transferencia" no se aplica a gastos. | `admin.py` |
+| 🟢 | `utils/fecha.ts` (`hoyJornada`, `rangoSemana`, `rangoMes`, `rangoAnio`, `rangoUltimosDias`, `datetimeLocalAhora`) + 11 tests; reemplaza todo `toISOString().split('T')` en Dashboard, Turnos, RRHH, GastosDashboard y GastosHistorial; default de `GastoFormModal` en hora local. | `utils/fecha.ts`, secciones admin |
+| 🟢 | Quitar "+12%" fijo, rótulo de ventas corregido, proyección con días en español, el toggle pasa a "custom" al editar fechas, `onActivated` recalcula, "Semana" = Mar→Dom. | `DashboardSection.vue`, `admin.py` |
+| 🟢 | Tests: 23:50 y 00:20 en la misma jornada; "hoy" no incluye anoche; D1; horas locales; proyección en español; transferencia con gastos; rango inválido 422 / formato 400 / rango > 731 días 422; semana Mar→Dom. | `tests/test_admin_analytics.py` |
+| ⚪ | Verificar en prod con agent-browser tras deploy (checklist de la sección 4). | — |
+
+**Hallazgos durante PR1:**
+- Bug heredado: `_get_week_range` hacía martes+**6** (= lunes) y la llamaba "Mar→Dom". Ahora martes+5. Semanal y `/gastos/resumen` por defecto cubrían un día de más.
+- La proyección sigue siendo de 6 días (Mar→Dom, el lunes no opera); la clave `proximos_7_dias` se conserva por compatibilidad.
+- El `Pedido.total` sigue sin incluir propinas; el rótulo ahora lo dice.
+- Pendiente de PR3/PR5 (no tocado aquí): Uber no entra a analytics; el dashboard `/admin/dashboard` sigue condicionando propinas por método (D5).
 
 ### PR2 — Salida automática de asistencia a las 00:30 · ⚪
 
@@ -202,6 +208,7 @@ El pedido central: "cuántos pozoles verdes, cuántos tamales, por día y en ran
 | Fecha | PR | Qué se hizo | Hallazgos nuevos |
 |---|---|---|---|
 | 2026-10-17 | — | Auditoría en prod + código; documento de sprint. | Ver sección 1. |
+| 2026-10-17 | PR1 | Rama `sa/pr1-fechas-dinero`: jornada 05:00→05:00 en todos los reportes de admin, D1, helpers de fecha en frontend. Backend 196 tests, frontend 65 tests + build OK. | Semana Mar→Dom estaba mal por 1 día (ver PR1). |
 
 ## Notas de cierre
 

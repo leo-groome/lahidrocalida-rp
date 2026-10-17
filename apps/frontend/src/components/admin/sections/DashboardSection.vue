@@ -42,9 +42,9 @@
 
         <!-- Manual Date inputs -->
         <div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-xl p-1.5 transition-all focus-within:ring-2 focus-within:ring-blue-400/20 focus-within:bg-white">
-          <input type="date" v-model="analyticsDates.start" class="bg-transparent text-xs font-bold text-slate-600 focus:outline-none p-1" />
+          <input type="date" v-model="analyticsDates.start" @change="selectedRangeId = 'custom'" class="bg-transparent text-xs font-bold text-slate-600 focus:outline-none p-1" />
           <ArrowRight class="h-3 w-3 text-slate-300" />
-          <input type="date" v-model="analyticsDates.end" class="bg-transparent text-xs font-bold text-slate-600 focus:outline-none p-1" />
+          <input type="date" v-model="analyticsDates.end" @change="selectedRangeId = 'custom'" class="bg-transparent text-xs font-bold text-slate-600 focus:outline-none p-1" />
           <button 
             @click="loadAnalytics"
             :disabled="loadingAnalytics"
@@ -64,8 +64,7 @@
         :icon="TrendingUp"
         iconColor="text-emerald-600"
         iconBg="bg-emerald-50 border border-emerald-100"
-        :trend="12" 
-        subtext="Incluye propinas e impuestos"
+        subtext="Pedidos pagados del periodo, sin propinas"
       />
       <AdminStatCard 
         label="Gastos Totales"
@@ -327,7 +326,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { hoyJornada, rangoAnio, rangoMes, rangoSemana } from '@/utils/fecha'
+import { ref, onMounted, onActivated, computed, watch } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
 import AdminStatCard from '@/components/admin/AdminStatCard.vue'
@@ -381,8 +381,8 @@ const advancedAnalyticsData = ref<any>(null)
 const sideChartTab = ref('channels')
 
 const analyticsDates = ref({
-  start: new Date().toISOString().split('T')[0],
-  end: new Date().toISOString().split('T')[0]
+  start: hoyJornada(),
+  end: hoyJornada()
 })
 const selectedRangeId = ref('today')
 const selectedPaymentMethodFilter = ref('todos')
@@ -401,27 +401,14 @@ const formatCurrency = (val: any) => {
 
 const setAnalyticsRange = (rangeId: string) => {
   selectedRangeId.value = rangeId
-  const today = new Date()
-  let start = new Date()
-  let end = new Date()
+  // Fechas de la jornada (hora México, 05:00→05:00), no la fecha UTC del navegador.
+  let rango = { inicio: hoyJornada(), fin: hoyJornada() }
+  if (rangeId === 'week') rango = rangoSemana()
+  else if (rangeId === 'month') rango = rangoMes()
+  else if (rangeId === 'year') rango = rangoAnio()
 
-  if (rangeId === 'today') {
-    // Current date
-  } else if (rangeId === 'week') {
-    const day = today.getDay()
-    const diff = today.getDate() - day + (day === 0 ? -6 : 1)
-    start = new Date(today.setDate(diff))
-    end = new Date(today.setDate(start.getDate() + 6))
-  } else if (rangeId === 'month') {
-    start = new Date(today.getFullYear(), today.getMonth(), 1)
-    end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-  } else if (rangeId === 'year') {
-    start = new Date(today.getFullYear(), 0, 1)
-    end = new Date(today.getFullYear(), 11, 31)
-  }
-
-  analyticsDates.value.start = start.toISOString().split('T')[0]
-  analyticsDates.value.end = end.toISOString().split('T')[0]
+  analyticsDates.value.start = rango.inicio
+  analyticsDates.value.end = rango.fin
   loadAnalytics()
 }
 
@@ -618,10 +605,8 @@ const expenseStructureChartData = computed(() => {
 const projectionChartData = computed(() => {
   if (!advancedAnalyticsData.value?.proyeccion_ia?.proximos_7_dias) return null
   const data = advancedAnalyticsData.value.proyeccion_ia.proximos_7_dias
-  const labelsMap: any = { 'Monday': 'Lun', 'Tuesday': 'Mar', 'Wednesday': 'Mié', 'Thursday': 'Jue', 'Friday': 'Vie', 'Saturday': 'Sáb', 'Sunday': 'Dom' }
-  
-  return {
-    labels: data.map((d: any) => labelsMap[d.dia] || d.dia),
+    return {
+    labels: data.map((d: any) => String(d.dia).slice(0, 3)),
     datasets: [{
       label: 'Esperado',
       data: data.map((d: any) => d.esperado),
@@ -727,5 +712,10 @@ const doughnutOptionsSmall = {
 
 onMounted(() => {
   setAnalyticsRange('today')
+})
+
+// La sección vive en keep-alive: al volver, "Hoy" debe ser el hoy de ahora, no el del primer montaje.
+onActivated(() => {
+  if (selectedRangeId.value !== 'custom' && analyticsData.value) setAnalyticsRange(selectedRangeId.value)
 })
 </script>
