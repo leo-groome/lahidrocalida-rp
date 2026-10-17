@@ -319,9 +319,7 @@ def delete_articulo(
     articulo = db.query(Articulo).filter(Articulo.id == articulo_id).first()
     if not articulo:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
-    en_uso = (
-        db.query(GastoDetalle.id).filter(GastoDetalle.articulo_id == articulo_id).first()
-    )
+    en_uso = db.query(GastoDetalle.id).filter(GastoDetalle.articulo_id == articulo_id).first()
     if en_uso:
         raise HTTPException(
             status_code=409,
