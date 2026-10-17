@@ -1,11 +1,11 @@
 <template>
-  <div class="min-h-screen bg-[#00126D] flex flex-col">
+  <div class="min-h-dvh bg-[#00126D] flex flex-col">
 
     <!-- ═══════════════════════════════════════════════
          ESTADO A — Selector de rol del dispositivo
     ════════════════════════════════════════════════ -->
-    <div v-if="!deviceRole" class="flex-1 flex flex-col items-center justify-center p-8">
-      <div class="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mb-8">
+    <div v-if="!deviceRole" class="flex-1 flex flex-col items-center justify-center p-8 pb-28">
+      <div class="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mb-6">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
         </svg>
@@ -13,7 +13,7 @@
       <h1 class="text-white text-3xl font-black text-center mb-2">
         ¿Qué rol tiene<br/>esta tablet?
       </h1>
-      <p class="text-white/60 text-sm text-center mb-10">
+      <p class="text-white/60 text-sm text-center mb-6">
         Esta configuración se guarda en el dispositivo.<br/>Solo se hace una vez.
       </p>
 
@@ -22,15 +22,15 @@
           v-for="role in deviceRoles"
           :key="role.id"
           @click="setDeviceRole(role.id)"
-          class="w-full flex items-center gap-4 px-6 py-5 bg-white rounded-2xl text-[#00126D] font-black text-lg hover:bg-white/95 active:scale-[0.97] transition-all shadow-lg"
+          class="w-full flex items-center gap-4 px-6 py-4 bg-white rounded-2xl text-[#00126D] font-black text-lg hover:bg-white/95 active:scale-[0.97] transition-all shadow-lg"
         >
           <span class="text-3xl">{{ role.emoji }}</span>
           <span>{{ role.label }}</span>
         </button>
       </div>
 
-      <div class="mt-10">
-        <router-link to="/admin-login" class="text-white/40 text-xs hover:text-white/60 transition-colors">
+      <div class="mt-4">
+        <router-link to="/admin-login" class="inline-block px-4 py-3 text-white/60 text-sm hover:text-white/80 transition-colors">
           Acceso administrativo →
         </router-link>
       </div>
@@ -148,6 +148,7 @@ const deviceRoles = [
   { id: 'mesero', label: 'Mesero', emoji: '🍽️' },
   { id: 'cajero', label: 'Cajero', emoji: '💰' },
   { id: 'cocina', label: 'Cocina', emoji: '👨‍🍳' },
+  { id: 'compras', label: 'Compras', emoji: '🛒' },
 ]
 
 const auth = useAuthStore()
@@ -201,6 +202,7 @@ function routeByRole() {
     case 'cajero': router.replace({ name: 'caja' }); break
     case 'mesero': router.replace({ name: 'mesero' }); break
     case 'cocina': router.replace({ name: 'kds-manager' }); break
+    case 'compras': router.replace({ name: 'registro-rapido' }); break
     case 'administrador': router.replace({ name: 'admin-hub' }); break
     default: router.replace({ name: 'mesero' })
   }

@@ -1,20 +1,21 @@
 <template>
-  <div class="min-h-screen bg-slate-50 flex flex-col">
+  <div class="min-h-dvh bg-slate-50 flex flex-col">
     <!-- Header -->
-    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
+    <header class="safe-area-top sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
       <div class="max-w-xl mx-auto px-4 py-3 flex items-center gap-3">
         <button
           @click="volver"
-          class="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-900 hover:text-white transition-all flex-shrink-0"
+          class="w-11 h-11 flex items-center justify-center rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-900 hover:text-white transition-all flex-shrink-0"
           title="Volver"
         >
-          <ArrowLeft class="w-4 h-4" />
+          <ArrowLeft class="w-5 h-5" />
         </button>
         <div class="min-w-0">
-          <p class="text-[10px] font-black tracking-widest text-slate-400 uppercase leading-none">Compras</p>
+          <p class="text-xs font-black tracking-widest text-slate-400 uppercase leading-none">Compras</p>
           <h1 class="text-base font-black text-slate-900 tracking-tight">Registro rápido</h1>
         </div>
       </div>
+      <div class="max-w-xl mx-auto px-4 empty:hidden"><InstallPWA class="mb-3" /></div>
     </header>
 
     <!-- Contenido -->
@@ -43,7 +44,7 @@
           </span>
           <template v-if="p.estado !== 'enviando'">
             <button type="button" v-if="p.estado !== 'ok'" class="font-black underline" @click="reintentar(p)">{{ p.gastoId ? 'Reintentar fotos' : 'Reintentar' }}</button>
-            <button type="button" class="p-1" title="Descartar" @click="descartar(p.id)"><X class="w-4 h-4" /></button>
+            <button type="button" class="w-11 h-11 -mr-2 flex items-center justify-center" title="Descartar" aria-label="Descartar" @click="descartar(p.id)"><X class="w-4 h-4" /></button>
           </template>
         </li>
       </ul>
@@ -105,7 +106,7 @@
         <button
           type="button"
           @click="ajustesAbiertos = !ajustesAbiertos"
-          class="w-full flex items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500"
+          class="w-full min-h-12 flex items-center justify-between px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500"
         >
           <span>
             Ajustes
@@ -118,7 +119,7 @@
 
         <div v-show="ajustesAbiertos" class="px-4 pb-4 space-y-4 border-t border-slate-100 pt-4">
           <div class="space-y-1">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
+            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
               Proveedor <span class="normal-case font-bold tracking-normal">(opcional)</span>
             </label>
             <SearchableSelect
@@ -129,14 +130,14 @@
           </div>
 
           <div class="space-y-1">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Método de pago</label>
+            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Método de pago</label>
             <div class="grid grid-cols-2 gap-2">
               <button
                 v-for="m in metodos"
                 :key="m.id"
                 type="button"
                 @click="metodoPago = m.id"
-                class="py-2.5 rounded-xl text-sm font-black transition-all"
+                class="min-h-12 rounded-xl text-sm font-black transition-all"
                 :class="metodoPago === m.id ? 'bg-[#00126D] text-white' : 'bg-slate-100 text-slate-500'"
               >
                 {{ m.emoji }} {{ m.label }}
@@ -145,11 +146,11 @@
           </div>
 
           <div class="space-y-1">
-            <label class="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fecha</label>
+            <label class="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Fecha</label>
             <input
               type="datetime-local"
               v-model="fecha"
-              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-[#00126D]"
+              class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 text-base font-bold text-slate-700 outline-none focus:ring-2 focus:ring-[#00126D]"
             >
           </div>
         </div>
@@ -200,6 +201,7 @@ import { useGastosPendientesStore } from '@/stores/gastos-pendientes'
 import type { GastoPendiente } from '@/utils/gasto-queue-db'
 import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
+import InstallPWA from '@/components/InstallPWA.vue'
 import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
 import { AlertTriangle, ArrowLeft, Check, ChevronDown, Loader2, X } from 'lucide-vue-next'
 

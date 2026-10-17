@@ -1,12 +1,29 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 
 const deferredPrompt = ref<any>(null)
 const showInstallButton = ref(false)
 const showIOSInstructions = ref(false)
 
+const DISMISS_KEY = 'pwa-dismissed'
+const DISMISS_MS = 7 * 24 * 60 * 60 * 1000
+
+function recentlyDismissed() {
+  try {
+    const at = Number(localStorage.getItem(DISMISS_KEY))
+    return Number.isFinite(at) && at > 0 && Date.now() - at < DISMISS_MS
+  } catch { return false }
+}
+
+function takePrompt() {
+  const e = (window as any).__pwaInstallPrompt
+  if (!e) return
+  deferredPrompt.value = e
+  showInstallButton.value = true
+}
+
 onMounted(() => {
-  if (localStorage.getItem('pwa-dismissed')) return
+  if (recentlyDismissed()) return
 
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches
@@ -18,12 +35,11 @@ onMounted(() => {
     return
   }
 
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault()
-    deferredPrompt.value = e
-    showInstallButton.value = true
-  })
+  takePrompt()
+  window.addEventListener('pwa-install-ready', takePrompt)
 })
+
+onBeforeUnmount(() => window.removeEventListener('pwa-install-ready', takePrompt))
 
 async function installApp() {
   if (!deferredPrompt.value) return
@@ -31,12 +47,13 @@ async function installApp() {
   const { outcome } = await deferredPrompt.value.userChoice
   if (outcome === 'accepted') showInstallButton.value = false
   deferredPrompt.value = null
+  ;(window as any).__pwaInstallPrompt = null
 }
 
 function dismiss() {
   showInstallButton.value = false
   showIOSInstructions.value = false
-  localStorage.setItem('pwa-dismissed', '1')
+  try { localStorage.setItem(DISMISS_KEY, String(Date.now())) } catch { /* sin storage */ }
 }
 </script>
 

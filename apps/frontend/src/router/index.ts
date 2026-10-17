@@ -14,7 +14,21 @@ const ComprasView = () => import('../views/ComprasView.vue')
 const RegistroRapidoView = () => import('../views/RegistroRapidoView.vue')
 
 const routes: RouteRecordRaw[] = [
-  { path: '/', redirect: '/login' },
+  {
+    // start_url del PWA: sesión activa → vista de su rol; si no, login.
+    path: '/',
+    name: 'inicio',
+    component: Login,
+    beforeEnter: () => {
+      const auth = useAuthStore()
+      const porRol: Record<string, string> = {
+        cajero: 'caja', mesero: 'mesero', cocina: 'kds-manager',
+        compras: 'registro-rapido', administrador: 'admin-hub',
+      }
+      const name = auth.isAuthenticated && auth.role ? porRol[auth.role] : undefined
+      return { name: name ?? 'login' }
+    },
+  },
   { path: '/login', name: 'login', component: Login, meta: { public: true } },
   { path: '/mesero', name: 'mesero', component: MeseroView, meta: { requiresAuth: true, roles: ['mesero', 'administrador'] } },
   { path: '/caja', name: 'caja', component: CajaView, meta: { requiresAuth: true, roles: ['cajero', 'administrador'] } },

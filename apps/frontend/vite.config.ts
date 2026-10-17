@@ -12,15 +12,15 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['apple-touch-icon.png', 'icons/*.png'],
+      includeAssets: ['icons/*.png'],
       manifest: {
         name: 'La Hidrocálida POS',
         short_name: 'Hidrocálida',
         description: 'Sistema POS - La Hidrocálida',
-        start_url: '/login',
+        start_url: '/',
         display: 'standalone',
         background_color: '#0f172a',
-        theme_color: '#e11d48',
+        theme_color: '#00126D',
         orientation: 'any',
         icons: [
           { src: '/icons/icon-72x72.png', sizes: '72x72', type: 'image/png' },
@@ -46,13 +46,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globIgnores: ['**/bundle-analysis.html'],
         runtimeCaching: [
           {
             // La API nunca se cachea: cualquier origen distinto al de la app
             // (prod: Vercel vs Railway) o rutas de API en dev (mismo host, :8000).
             urlPattern: ({ url, sameOrigin }) =>
               !sameOrigin ||
-              /^\/(auth|gastos|pedidos|admin|reportes|turnos|asistencia|users|products|propinas|health|ws)\b/.test(url.pathname),
+              /^\/(auth|gastos|pedidos|admin|reportes|turnos|asistencia|users|usuarios|platillos|products|propinas|health|ws)\b/.test(url.pathname),
             handler: 'NetworkOnly',
           },
         ],
