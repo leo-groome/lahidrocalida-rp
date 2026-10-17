@@ -54,9 +54,7 @@ def test_venta_de_medianoche_cuenta_en_la_jornada_anterior(como_rol, seed, db_se
     _pagado(db_session, seed, _mx(SIGUIENTE, 0, 20), total=300)  # misma jornada (del 16)
     _pagado(db_session, seed, _mx(SIGUIENTE, 15, 0), total=50)  # jornada del 17
 
-    r = como_rol("administrador").get(
-        f"/admin/analytics?fecha_inicio={DIA}&fecha_fin={SIGUIENTE}"
-    )
+    r = como_rol("administrador").get(f"/admin/analytics?fecha_inicio={DIA}&fecha_fin={SIGUIENTE}")
     assert r.status_code == 200, r.text
     body = r.json()
     assert _dia(body["timeline"], DIA)["ventas"] == 500

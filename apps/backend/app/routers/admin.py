@@ -54,7 +54,9 @@ def _parse_rango(fecha_inicio: str, fecha_fin: str) -> tuple[date, date]:
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usar YYYY-MM-DD")
     if fin < inicio:
-        raise HTTPException(status_code=422, detail="fecha_fin no puede ser anterior a fecha_inicio")
+        raise HTTPException(
+            status_code=422, detail="fecha_fin no puede ser anterior a fecha_inicio"
+        )
     if (fin - inicio).days >= MAX_DIAS_RANGO:
         raise HTTPException(status_code=422, detail=f"El rango máximo es de {MAX_DIAS_RANGO} días")
     return inicio, fin
@@ -115,9 +117,7 @@ def get_analytics(
     )
 
     # 2. Gastos
-    gastos_rows = (
-        db.query(Gasto.fecha_gasto, Gasto.total).filter(and_(*gastos_filters)).all()
-    )
+    gastos_rows = db.query(Gasto.fecha_gasto, Gasto.total).filter(and_(*gastos_filters)).all()
 
     # 3. Métodos de pago del periodo
     metodos_pago_query = (
@@ -402,7 +402,9 @@ def _get_predictive_sales(sucursal_id: int, db: Session) -> Dict[str, Any]:
 
     # Una sola query: desde 4 semanas antes del primer día proyectado hasta hoy.
     desde = proximo_martes - timedelta(weeks=4)
-    inicio_dt, fin_dt = rango_jornadas(desde, proximo_martes + timedelta(days=5) - timedelta(weeks=1))
+    inicio_dt, fin_dt = rango_jornadas(
+        desde, proximo_martes + timedelta(days=5) - timedelta(weeks=1)
+    )
     ventas_por_jornada: Dict[date, float] = {}
     for ts, total in (
         db.query(VENTA_TS, Pedido.total)
