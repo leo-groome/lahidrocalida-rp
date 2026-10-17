@@ -296,8 +296,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', avisarSalida))
 onBeforeRouteLeave(() => !cola.escribiendo)
 
 async function descartar(id: string) {
-  if (!window.confirm('Descartar el pendiente local no borra un gasto ya guardado. ¿Continuar?')) return
-  try { await cola.descartar(id) } catch { mostrarToast('No se pudo descartar el pendiente', 'error') }
+  try {
+    await cola.descartar(id)
+    mostrarToast('Pendiente descartado (el gasto registrado permanece)')
+  } catch {
+    mostrarToast('No se pudo descartar el pendiente', 'error')
+  }
 }
 function reintentar(p: GastoPendiente) {
   void cola.enviar(p).catch(() => mostrarToast('Inicia sesión para reintentar', 'error'))
