@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import List, Optional
 
@@ -47,7 +47,7 @@ from app.schemas import (
     UsuarioResponse,
 )
 from app.services.storage_cleanup import programar_borrado
-from app.utils.timezone import jornada_de, rango_jornada
+from app.utils.timezone import get_mexico_now, jornada_de, rango_jornada
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,10 @@ def _parse_date(value: Optional[str], label: str) -> Optional[date]:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Formato de {label} inválido. Use YYYY-MM-DD")
+
+
+# Ventana tras el cierre en que un cajero/compras aún puede ligar un gasto al turno.
+VENTANA_TURNO_CERRADO = timedelta(hours=24)
 
 
 def _validate_gasto_inputs(data: GastoCreate) -> None:
@@ -445,6 +449,17 @@ def create_gasto(
             .first()
         )
         if turno is None:
+            raise HTTPException(status_code=400, detail="Turno inválido")
+        # Turno cerrado: solo entrega tardía de la cola offline (ventana corta);
+        # el turno es compartido por la sucursal, no se ata a un cajero.
+        if (
+            turno.estado != "abierto"
+            and current_user.rol != "administrador"
+            and (
+                turno.fecha_cierre is None
+                or get_mexico_now() - turno.fecha_cierre > VENTANA_TURNO_CERRADO
+            )
+        ):
             raise HTTPException(status_code=400, detail="Turno inválido")
 
     detalles: list[GastoDetalle] = []
