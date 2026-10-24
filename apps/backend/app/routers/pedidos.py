@@ -490,6 +490,11 @@ async def dividir_cuenta(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
 
+    # Aislamiento por sucursal: un cajero solo divide pedidos de la suya (también
+    # antes del replay idempotente, que devuelve las cuentas hijas).
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
+
     if pedido.estado == "dividido":
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
         cuentas_hijas = db.query(Pedido).filter(Pedido.parent_pedido_id == pedido.id).all()
@@ -751,6 +756,11 @@ async def dividir_por_montos(
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    # Aislamiento por sucursal: un cajero solo divide pedidos de la suya (también
+    # antes del replay idempotente, que devuelve las cuentas hijas).
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
     if pedido.estado == "dividido":
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas

@@ -147,3 +147,15 @@ def test_mesero_no_puede_dividir(como_rol, seed, db_session, admin_pin):
         json={"cuentas": [{"monto": "100"}, {"monto": "100"}], "pin_autorizacion": admin_pin["pin"]},
     )
     assert r.status_code == 403
+
+
+def test_cajero_no_divide_pedido_de_otra_sucursal(como_rol, seed, db_session, admin_pin):
+    pedido, _ = _crear_pedido_entregado(db_session, seed)
+    otra = como_rol("cajero", sucursal_id=seed["sucursal"].id + 999)
+    r = otra.post(
+        f"/pedidos/{pedido.id}/dividir_por_montos",
+        json={"cuentas": [{"monto": "100"}, {"monto": "100"}], "pin_autorizacion": admin_pin["pin"]},
+    )
+    assert r.status_code == 403
+    db_session.refresh(pedido)
+    assert pedido.estado == "entregado"
