@@ -4,7 +4,7 @@
     @click.self="$emit('cancelar')"
   >
     <div
-      class="bg-white sm:rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-100 flex flex-col max-h-[100dvh] sm:max-h-[85vh] overflow-hidden"
+      class="bg-white sm:rounded-2xl w-full max-w-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[100dvh] sm:max-h-[85vh] overflow-hidden"
       role="dialog"
       aria-modal="true"
       :aria-label="tipo === 'inicio' ? 'Iniciar turno' : 'Cerrar turno'"
@@ -29,60 +29,6 @@
       <!-- Contenido (único scroll) -->
       <div class="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-4">
 
-        <!-- 1. Resumen del turno (solo cierre) -->
-        <div v-if="tipo === 'cierre' && reporteTurno" class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div class="px-4 py-3 bg-slate-50 border-b border-slate-100">
-            <h3 class="font-bold text-slate-800 text-sm">Resumen del Turno</h3>
-          </div>
-          <div class="p-4 grid grid-cols-2 gap-3">
-            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 relative overflow-hidden">
-              <div class="absolute inset-y-0 left-0 w-1 bg-emerald-400"></div>
-              <div class="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Ventas Efectivo</div>
-              <div class="font-black text-slate-800 tabular-nums">{{ money(reporteTurno.ventas_hasta_ahora?.ventas_efectivo) }}</div>
-            </div>
-            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 relative overflow-hidden">
-              <div class="absolute inset-y-0 left-0 w-1 bg-blue-400"></div>
-              <div class="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Propinas efectivo</div>
-              <div class="font-black text-slate-800 tabular-nums">{{ money(reporteTurno.ventas_hasta_ahora?.propinas_efectivo) }}</div>
-            </div>
-            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 relative overflow-hidden">
-              <div class="absolute inset-y-0 left-0 w-1 bg-indigo-400"></div>
-              <div class="text-[10px] text-slate-500 font-bold uppercase mb-1 tracking-wider">Fondo Inicial</div>
-              <div class="font-black text-indigo-900 tabular-nums">+ {{ money(reporteTurno.conteo_inicial?.total) }}</div>
-            </div>
-            <div class="bg-rose-50/50 p-3 rounded-xl border border-rose-100 relative overflow-hidden">
-              <div class="absolute inset-y-0 left-0 w-1 bg-rose-400"></div>
-              <div class="text-[10px] text-rose-600 font-bold uppercase mb-1 tracking-wider">Gastos</div>
-              <div class="font-black text-rose-700 tabular-nums">- {{ money(reporteTurno.ventas_hasta_ahora?.gastos ?? reporteTurno.gastos_turno) }}</div>
-            </div>
-          </div>
-
-          <!-- Esperado vs contado vs diferencia (en vivo) -->
-          <div class="border-t border-slate-100 grid grid-cols-3 text-center divide-x divide-slate-100">
-            <div class="px-2 py-3">
-              <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Esperado</div>
-              <div class="text-base sm:text-lg font-black text-slate-800 tabular-nums">{{ money(totalEsperado) }}</div>
-            </div>
-            <div class="px-2 py-3">
-              <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contado</div>
-              <div class="text-base sm:text-lg font-black text-[#00126D] tabular-nums">{{ money(totalCalculado) }}</div>
-            </div>
-            <div class="px-2 py-3" :class="diferenciaClases.bg" aria-live="polite">
-              <div class="text-[10px] font-bold uppercase tracking-wider" :class="diferenciaClases.label">Diferencia</div>
-              <div class="text-base sm:text-lg font-black tabular-nums" :class="diferenciaClases.valor">
-                {{ diferencia > 0.004 ? '+' : '' }}{{ money(diferencia) }}
-              </div>
-              <div class="text-[10px] font-semibold" :class="diferenciaClases.label">{{ diferenciaTexto }}</div>
-            </div>
-          </div>
-
-          <!-- Uber Eats: aparte del efectivo esperado -->
-          <div v-if="(reporteTurno.uber_eats?.pedidos ?? 0) > 0" class="px-4 py-3 border-t border-slate-100 flex justify-between items-center bg-slate-50 gap-3">
-            <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">Uber Eats ({{ reporteTurno.uber_eats.pedidos }}) · no entra a caja</span>
-            <span class="text-base font-black text-slate-800 tabular-nums">{{ money(reporteTurno.uber_eats.total) }}</span>
-          </div>
-        </div>
-
         <!-- Fondo esperado (inicio) -->
         <div v-if="tipo === 'inicio' && fondoAnterior !== undefined && fondoAnterior !== null"
              class="bg-blue-50 border border-blue-100 px-4 py-3 rounded-xl flex items-center justify-between">
@@ -104,18 +50,26 @@
             </button>
           </div>
 
-          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div class="px-3 py-1.5 bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-500">Billetes</div>
-            <DenominacionRow v-for="d in billetes" :key="d" :denominacion="d" :model-value="conteos[d] || 0"
-                             @update:model-value="conteos[d] = $event" />
-            <div class="px-3 py-1.5 bg-slate-100 text-[11px] font-black uppercase tracking-widest text-slate-500 border-t border-slate-200">Monedas</div>
-            <DenominacionRow v-for="d in monedas" :key="d" :denominacion="d" :model-value="conteos[d] || 0"
-                             @update:model-value="conteos[d] = $event" />
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-3">
+            <div>
+              <div class="mb-1.5 text-[11px] font-black uppercase tracking-widest text-slate-500">Billetes</div>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <DenominacionRow v-for="d in billetes" :key="d" :denominacion="d" :model-value="conteos[d] || 0"
+                                 @update:model-value="conteos[d] = $event" />
+              </div>
+            </div>
+            <div>
+              <div class="mb-1.5 text-[11px] font-black uppercase tracking-widest text-slate-500">Monedas</div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <DenominacionRow v-for="d in monedas" :key="d" :denominacion="d" :model-value="conteos[d] || 0"
+                                 @update:model-value="conteos[d] = $event" />
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- 3. Fondo en caja / retiro (cierre) -->
-        <div v-if="tipo === 'cierre'" class="bg-white border border-blue-100 rounded-2xl shadow-sm p-4 space-y-3">
+        <div v-if="tipo === 'cierre'" class="bg-white border border-blue-100 rounded-2xl shadow-sm p-4 grid sm:grid-cols-2 gap-3 items-end">
           <div>
             <label for="monto-restante" class="block text-sm font-bold text-blue-900 mb-2">¿Cuánto dinero dejarás de fondo en caja?</label>
             <div class="relative">
@@ -125,9 +79,9 @@
                      placeholder="0.00" />
             </div>
           </div>
-          <div class="bg-slate-50 rounded-xl p-3 flex justify-between items-center border border-slate-200">
+          <div class="bg-slate-50 rounded-xl p-3 h-12 flex justify-between items-center border border-slate-200 gap-2">
             <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a retirar (Dueños)</div>
-            <div class="text-2xl font-black text-slate-800 tabular-nums">{{ money(montoARetirar) }}</div>
+            <div class="text-xl font-black text-slate-800 tabular-nums">{{ money(montoARetirar) }}</div>
           </div>
         </div>
 
@@ -149,9 +103,6 @@
           </div>
           <div class="text-right space-y-1">
             <div class="bg-white/10 px-3 py-1 rounded-full border border-white/20 text-blue-100 text-xs font-medium inline-block">{{ totalItems }} piezas</div>
-            <div v-if="tipo === 'cierre' && reporteTurno" class="text-xs font-bold" :class="diferenciaFooterClase">
-              {{ diferenciaTexto }}
-            </div>
           </div>
         </div>
         <button type="button" @click="onConfirmClick"
@@ -339,25 +290,7 @@ const limpiarTodo = () => {
   })
 }
 
-// Resumen en vivo (solo cierre). Campos opcionales: un reporte con comandas
-// no efectivo (metodo_pago) o sin propina_efectivo no rompe nada, solo usamos totales.
-const totalEsperado = computed(() => Number(props.reporteTurno?.ventas_hasta_ahora?.total_esperado ?? 0))
-const diferencia = computed(() => Math.round((totalCalculado.value - totalEsperado.value) * 100) / 100)
 const montoARetirar = computed(() => Math.max(0, totalCalculado.value - (montoRestante.value || 0)))
-
-const diferenciaTexto = computed(() => {
-  if (Math.abs(diferencia.value) < 0.005) return 'Cuadra'
-  return diferencia.value < 0 ? 'Faltante' : 'Sobrante'
-})
-const diferenciaClases = computed(() => {
-  if (Math.abs(diferencia.value) < 0.005) return { bg: 'bg-emerald-50', label: 'text-emerald-700', valor: 'text-emerald-800' }
-  if (diferencia.value < 0) return { bg: 'bg-rose-50', label: 'text-rose-700', valor: 'text-rose-700' }
-  return { bg: 'bg-amber-50', label: 'text-amber-700', valor: 'text-amber-700' }
-})
-const diferenciaFooterClase = computed(() => {
-  if (Math.abs(diferencia.value) < 0.005) return 'text-emerald-300'
-  return diferencia.value < 0 ? 'text-rose-300' : 'text-amber-300'
-})
 
 const onConfirmClick = () => {
   if (totalItems.value === 0) {
