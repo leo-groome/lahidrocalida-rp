@@ -593,10 +593,10 @@ def get_dashboard_metrics(
 
     # Propinas
     propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(
-        _fp(Pedido.metodo_pago == "efectivo")
+        _fp()
     ).scalar() or Decimal("0.00")
     propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(
-        _fp(Pedido.metodo_pago.in_(["tarjeta", "transferencia"]))
+        _fp()
     ).scalar() or Decimal("0.00")
     propina_total = propina_efectivo_total + propina_tarjeta_total
 

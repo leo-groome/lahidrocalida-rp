@@ -31,7 +31,9 @@ def _crear_pedido_entregado(db_session, seed, precios=(100, 100)):
     return pedido, articulos
 
 
-def test_dividir_por_articulos_crea_cuentas_hijas_atomicamente(como_rol, seed, db_session):
+def test_dividir_por_articulos_crea_cuentas_hijas_atomicamente(
+    como_rol, seed, db_session, admin_pin
+):
     pedido, articulos = _crear_pedido_entregado(db_session, seed)
 
     r = como_rol("administrador").post(
@@ -40,7 +42,8 @@ def test_dividir_por_articulos_crea_cuentas_hijas_atomicamente(como_rol, seed, d
             "cuentas": [
                 {"items": [{"articulo_id": articulos[0].id, "cantidad": 1}]},
                 {"items": [{"articulo_id": articulos[1].id, "cantidad": 1}]},
-            ]
+            ],
+            "pin_autorizacion": admin_pin["pin"],
         },
     )
     assert r.status_code == 200
@@ -51,13 +54,14 @@ def test_dividir_por_articulos_crea_cuentas_hijas_atomicamente(como_rol, seed, d
     assert pedido.estado == "dividido"
 
 
-def test_dividir_por_articulos_replay_idempotente(como_rol, seed, db_session):
+def test_dividir_por_articulos_replay_idempotente(como_rol, seed, db_session, admin_pin):
     pedido, articulos = _crear_pedido_entregado(db_session, seed)
     payload = {
         "cuentas": [
             {"items": [{"articulo_id": articulos[0].id, "cantidad": 1}]},
             {"items": [{"articulo_id": articulos[1].id, "cantidad": 1}]},
         ],
+        "pin_autorizacion": admin_pin["pin"],
         "client_request_id": "retry-abc",
     }
     admin = como_rol("administrador")
@@ -72,12 +76,15 @@ def test_dividir_por_articulos_replay_idempotente(como_rol, seed, db_session):
     assert cuentas_ids_1 == cuentas_ids_2
 
 
-def test_dividir_por_montos_crea_cuentas_hijas(como_rol, seed, db_session):
+def test_dividir_por_montos_crea_cuentas_hijas(como_rol, seed, db_session, admin_pin):
     pedido, articulos = _crear_pedido_entregado(db_session, seed)
 
     r = como_rol("administrador").post(
         f"/pedidos/{pedido.id}/dividir_por_montos",
-        json={"cuentas": [{"monto": "100"}, {"monto": "100"}]},
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
     )
     assert r.status_code == 200
     assert len(r.json()["cuentas"]) == 2
@@ -97,3 +104,62 @@ def test_dividir_pedido_ya_dividido_sin_cuentas_hijas_es_error(como_rol, seed, d
         json={"cuentas": [{"items": []}]},
     )
     assert r.status_code == 400
+
+
+def test_cajero_divide_por_montos_con_pin_de_admin(como_rol, seed, db_session, admin_pin):
+    from app.models import AutorizacionPin
+
+    pedido, _ = _crear_pedido_entregado(db_session, seed)
+    r = como_rol("cajero").post(
+        f"/pedidos/{pedido.id}/dividir_por_montos",
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    auth = db_session.query(AutorizacionPin).filter_by(pedido_id=pedido.id).one()
+    assert auth.accion == "dividir_cuenta"
+
+
+def test_cajero_dividir_sin_pin_o_con_pin_malo_es_rechazado(como_rol, seed, db_session, admin_pin):
+    pedido, articulos = _crear_pedido_entregado(db_session, seed)
+    cajero = como_rol("cajero")
+    cuerpo = {
+        "cuentas": [
+            {"items": [{"articulo_id": articulos[0].id, "cantidad": 1}]},
+            {"items": [{"articulo_id": articulos[1].id, "cantidad": 1}]},
+        ]
+    }
+    assert cajero.post(f"/pedidos/{pedido.id}/dividir", json=cuerpo).status_code == 400
+    r = cajero.post(f"/pedidos/{pedido.id}/dividir", json={**cuerpo, "pin_autorizacion": "0000"})
+    assert r.status_code == 403
+    db_session.refresh(pedido)
+    assert pedido.estado == "entregado"
+
+
+def test_mesero_no_puede_dividir(como_rol, seed, db_session, admin_pin):
+    pedido, _ = _crear_pedido_entregado(db_session, seed)
+    r = como_rol("mesero").post(
+        f"/pedidos/{pedido.id}/dividir_por_montos",
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
+    )
+    assert r.status_code == 403
+
+
+def test_cajero_no_divide_pedido_de_otra_sucursal(como_rol, seed, db_session, admin_pin):
+    pedido, _ = _crear_pedido_entregado(db_session, seed)
+    otra = como_rol("cajero", sucursal_id=seed["sucursal"].id + 999)
+    r = otra.post(
+        f"/pedidos/{pedido.id}/dividir_por_montos",
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
+    )
+    assert r.status_code == 403
+    db_session.refresh(pedido)
+    assert pedido.estado == "entregado"

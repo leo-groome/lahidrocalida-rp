@@ -476,10 +476,11 @@ def get_pedido(
 async def dividir_cuenta(
     pedido_id: int,
     data: DividirCuentaRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles("administrador")),
+    current_user: Usuario = Depends(require_roles("administrador", "cajero")),
 ):
-    """Dividir una cuenta por articulos (solo administrador)."""
+    """Dividir una cuenta por articulos (administrador o cajero con PIN de administrador)."""
 
     # with_for_update(): serializa contra otra división concurrente del MISMO
     # pedido (doble tap, dos cajeros). Sin el lock, dos requests podían pasar
@@ -488,6 +489,11 @@ async def dividir_cuenta(
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    # Aislamiento por sucursal: un cajero solo divide pedidos de la suya (también
+    # antes del replay idempotente, que devuelve las cuentas hijas).
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
     if pedido.estado == "dividido":
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
@@ -516,6 +522,18 @@ async def dividir_cuenta(
             status_code=400,
             detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
         )
+
+    # Dividir exige PIN de un administrador activo, sin importar el rol de la
+    # sesión (el replay idempotente de arriba no lo necesita: no muta nada).
+    admin_autorizador = await verificar_pin_admin(db, data.pin_autorizacion, request, current_user)
+    db.add(
+        AutorizacionPin(
+            accion="dividir_cuenta",
+            ejecutado_por_id=current_user.id,
+            autorizado_por_id=admin_autorizador.id,
+            pedido_id=pedido.id,
+        )
+    )
 
     if not data.cuentas or len(data.cuentas) < 2:
         raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
@@ -727,16 +745,22 @@ async def dividir_cuenta(
 async def dividir_por_montos(
     pedido_id: int,
     data: DividirPorMontoRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles("administrador")),
+    current_user: Usuario = Depends(require_roles("administrador", "cajero")),
 ):
-    """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
+    """Dividir una cuenta por montos arbitrarios (administrador o cajero con PIN de administrador)."""
 
     # with_for_update(): serializa contra otra división concurrente del mismo
     # pedido, igual que en /dividir.
     pedido = db.query(Pedido).filter(Pedido.id == pedido_id).with_for_update().first()
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+    # Aislamiento por sucursal: un cajero solo divide pedidos de la suya (también
+    # antes del replay idempotente, que devuelve las cuentas hijas).
+    if current_user.rol != "administrador" and pedido.sucursal_id != current_user.sucursal_id:
+        raise HTTPException(status_code=403, detail="No tienes permisos para modificar este pedido")
 
     if pedido.estado == "dividido":
         # Idempotencia: si ya está dividido, buscar las cuentas hijas y retornarlas
@@ -765,6 +789,18 @@ async def dividir_por_montos(
             status_code=400,
             detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
         )
+
+    # Dividir exige PIN de un administrador activo, sin importar el rol de la
+    # sesión (el replay idempotente de arriba no lo necesita: no muta nada).
+    admin_autorizador = await verificar_pin_admin(db, data.pin_autorizacion, request, current_user)
+    db.add(
+        AutorizacionPin(
+            accion="dividir_cuenta",
+            ejecutado_por_id=current_user.id,
+            autorizado_por_id=admin_autorizador.id,
+            pedido_id=pedido.id,
+        )
+    )
 
     if not data.cuentas or len(data.cuentas) < 2:
         raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
@@ -938,8 +974,21 @@ async def update_pedido(
         # (data.estado) según el rol, no solo el destino como antes de S2. Un
         # pedido en estado terminal (pagado/cancelado/dividido) no admite
         # ninguna transición, sin importar el rol.
+        # Override manual (menú de estatus de Caja): cualquier rol puede pedirlo
+        # pero solo procede con PIN de admin; entonces la transición se evalúa
+        # como administrador (terminales y reglas Uber se siguen respetando).
+        if data.cambio_manual:
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
+            accion_autorizada = (
+                "cancelar_cuenta"
+                if data.estado == EstadoPedido.CANCELADO
+                else "cambio_estatus_manual"
+            )
+        rol_transicion = "administrador" if data.cambio_manual else current_user.rol
         if not transicion_permitida(
-            pedido.estado, data.estado, current_user.rol, tipo_orden=pedido.tipo_orden
+            pedido.estado, data.estado, rol_transicion, tipo_orden=pedido.tipo_orden
         ):
             raise HTTPException(
                 status_code=403,
@@ -948,7 +997,7 @@ async def update_pedido(
                     f"'{pedido.estado}' a '{data.estado}'"
                 ),
             )
-        if data.estado == EstadoPedido.CANCELADO:
+        if data.estado == EstadoPedido.CANCELADO and admin_autorizador is None:
             admin_autorizador = await verificar_pin_admin(
                 db, data.pin_autorizacion, request, current_user
             )

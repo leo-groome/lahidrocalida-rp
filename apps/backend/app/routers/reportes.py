@@ -200,12 +200,14 @@ def analytics_del_dia(
     ).scalar() or Decimal("0.00")
 
     # Propinas por metodo
+    # Cada columna se suma sin condicionar por `metodo_pago`: la propina en
+    # efectivo de una cuenta pagada con tarjeta (y al revés) es dinero real.
     propina_efectivo_total = db.query(func.sum(Pedido.propina_efectivo)).filter(
-        _filtro_periodo([Pedido.metodo_pago == "efectivo"])
+        _filtro_periodo()
     ).scalar() or Decimal("0.00")
 
     propina_tarjeta_total = db.query(func.sum(Pedido.propina_tarjeta)).filter(
-        _filtro_periodo([Pedido.metodo_pago.in_(["tarjeta", "transferencia"])])
+        _filtro_periodo()
     ).scalar() or Decimal("0.00")
 
     propina_total = propina_efectivo_total + propina_tarjeta_total

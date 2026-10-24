@@ -178,6 +178,8 @@ class PedidoUpdate(BaseModel):
     propina_efectivo: Optional[Decimal] = None
     propina_tarjeta: Optional[Decimal] = None
     pin_autorizacion: Optional[str] = None
+    # Override manual de estatus desde Caja (cualquier rol): exige PIN de admin.
+    cambio_manual: bool = False
 
 
 class PinVerifyRequest(BaseModel):
@@ -215,6 +217,7 @@ class DividirCuentaCuenta(BaseModel):
 class DividirCuentaRequest(BaseModel):
     cuentas: List[DividirCuentaCuenta]
     client_request_id: Optional[str] = Field(default=None, max_length=36)
+    pin_autorizacion: Optional[str] = None
 
 
 class DividirCuentaResponse(BaseModel):
@@ -229,6 +232,7 @@ class DividirPorMontoCuenta(BaseModel):
 class DividirPorMontoRequest(BaseModel):
     cuentas: List[DividirPorMontoCuenta]
     client_request_id: Optional[str] = Field(default=None, max_length=36)
+    pin_autorizacion: Optional[str] = None
 
 
 # ===== SCHEMAS PARA GASTOS =====

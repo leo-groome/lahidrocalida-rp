@@ -400,7 +400,7 @@ export const usePedidosStore = defineStore('pedidos', () => {
     metodoPago?: string,
     propinaEfectivo?: number,
     propinaTarjeta?: number,
-    opts?: { pinAutorizacion?: string; throwOnError?: boolean }
+    opts?: { pinAutorizacion?: string; throwOnError?: boolean; cambioManual?: boolean }
   ): Promise<boolean> {
     // NO poner loading = true para updates individuales
     error.value = null
@@ -418,6 +418,9 @@ export const usePedidosStore = defineStore('pedidos', () => {
       }
       if (opts?.pinAutorizacion !== undefined) {
         updateData.pin_autorizacion = opts.pinAutorizacion
+      }
+      if (opts?.cambioManual) {
+        updateData.cambio_manual = true
       }
 
       const { data } = await api.put<PedidoResponse>(`/pedidos/${pedidoId}`, updateData)

@@ -188,7 +188,9 @@ async def verificar_pin_admin(
     turno) cuando no hay un cajero fijo: la sesión de caja la comparte
     cualquier mesero, así que el control real vive en este PIN, no en el rol
     de la sesión activa. Devuelve el `Usuario` admin cuyo hash hizo match
-    (para auditoría de quién autorizó), o lanza 401/400/429.
+    (para auditoría de quién autorizó), o lanza 400/403/429. El PIN inválido es
+    403 y NO 401: el interceptor del frontend trata todo 401 fuera de las rutas
+    de credenciales como sesión expirada y cerraría la sesión del cajero.
 
     Rate-limitado igual que los logins: un PIN de 4 dígitos sin límite de
     intentos es fuerza-bruta trivial (10 000 combinaciones) para cualquiera
@@ -214,4 +216,4 @@ async def verificar_pin_admin(
         current_user.rol,
         client_ip(request),
     )
-    raise HTTPException(status_code=401, detail="PIN de administrador inválido")
+    raise HTTPException(status_code=403, detail="PIN de administrador inválido")
