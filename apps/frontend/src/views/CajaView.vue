@@ -611,6 +611,59 @@ function handleGlobalKeyDown(e: KeyboardEvent) {
     return
   }
 
+  // 1c. Modal de detalles del pedido: Enter = acción primaria, P imprimir,
+  // D dividir, X editar, C cancelar pedido, Esc/R regresar.
+  if (
+    showDetailsModal.value &&
+    selectedPedidoDetails.value &&
+    !showCancelConfirmModal.value &&
+    !showEditPedidoModal.value &&
+    !showSplitModal.value
+  ) {
+    const pedido = selectedPedidoDetails.value
+    const k = e.key.toLowerCase()
+    const abierto = !['pagado', 'cancelado', 'dividido'].includes(pedido.estado)
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+    if (e.key === 'Escape' || k === 'r') {
+      e.preventDefault()
+      closeDetailsModal()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+      e.preventDefault()
+      if (pedido.estado === 'entregado') {
+        solicitarCuenta(pedido)
+        closeDetailsModal()
+      } else if (pedido.estado === 'cuenta_solicitada') {
+        selectedPedido.value = pedido
+        closeDetailsModal()
+      }
+      return
+    }
+    if (k === 'p' && abierto && !isPrintingTicket.value) {
+      e.preventDefault()
+      imprimirTicketSeparado(pedido)
+      return
+    }
+    if (k === 'd' && canSplitDetailsPedido.value) {
+      e.preventDefault()
+      openSplitModalForPedido(pedido)
+      closeDetailsModal()
+      return
+    }
+    if (k === 'x' && abierto) {
+      e.preventDefault()
+      openEditPedido(pedido)
+      return
+    }
+    if (k === 'c' && abierto) {
+      e.preventDefault()
+      mostrarConfirmacionCancelacion(pedido)
+      return
+    }
+    return
+  }
+
   // 2. Si la calculadora de efectivo está abierta
   if (showEfectivoCalculator.value && selectedPedido.value) {
     if (e.key === 'Escape') {
@@ -3785,7 +3838,7 @@ const cerrarGastoModal = async () => {
                 class="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-2xl border border-slate-200 transition-all active:scale-95 group"
               >
                 <Scissors class="w-5 h-5 mb-1 group-hover:rotate-12 transition-transform" />
-                <span class="text-[10px] font-black uppercase tracking-widest">Dividir</span>
+                <span class="text-[10px] font-black uppercase tracking-widest">Dividir <kbd class="ml-1 px-1.5 py-0.5 rounded bg-slate-200 text-[10px] font-black">D</kbd></span>
               </button>
 
               <button
@@ -3796,7 +3849,7 @@ const cerrarGastoModal = async () => {
               >
                 <Printer class="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" />
                 <span class="text-[10px] font-black uppercase tracking-widest">
-                  {{ isPrintingTicket ? 'Espere...' : 'Imprimir' }}
+                  {{ isPrintingTicket ? 'Espere...' : 'Imprimir' }} <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">P</kbd>
                 </span>
               </button>
             </div>
@@ -3808,7 +3861,7 @@ const cerrarGastoModal = async () => {
               class="w-full py-3 bg-[#00126D] hover:bg-[#000E5A] text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
               <CreditCard class="w-5 h-5" />
-              SOLICITAR CUENTA
+              SOLICITAR CUENTA <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">Enter</kbd>
             </button>
 
             <button
@@ -3817,7 +3870,7 @@ const cerrarGastoModal = async () => {
               class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest rounded-xl shadow-lg shadow-emerald-200 flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
             >
               <Wallet class="w-5 h-5" />
-              COBRAR AHORA
+              COBRAR AHORA <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">Enter</kbd>
             </button>
 
             <!-- Dangerous Action -->
@@ -3827,7 +3880,7 @@ const cerrarGastoModal = async () => {
               class="group flex items-center justify-center gap-2 py-3 text-red-400 hover:text-red-500 font-bold text-xs transition-colors"
             >
               <Trash2 class="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
-              CANCELAR PEDIDO
+              CANCELAR PEDIDO <kbd class="ml-1 px-1.5 py-0.5 rounded bg-red-100 text-[10px] font-black">C</kbd>
             </button>
           </div>
 
@@ -3835,7 +3888,7 @@ const cerrarGastoModal = async () => {
             @click="closeDetailsModal"
             class="w-full mt-6 py-2 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors"
           >
-            Regresar
+            Regresar <kbd class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-black">Esc</kbd>
           </button>
         </div>
       </div>
