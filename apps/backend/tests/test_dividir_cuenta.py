@@ -122,9 +122,7 @@ def test_cajero_divide_por_montos_con_pin_de_admin(como_rol, seed, db_session, a
     assert auth.accion == "dividir_cuenta"
 
 
-def test_cajero_dividir_sin_pin_o_con_pin_malo_es_rechazado(
-    como_rol, seed, db_session, admin_pin
-):
+def test_cajero_dividir_sin_pin_o_con_pin_malo_es_rechazado(como_rol, seed, db_session, admin_pin):
     pedido, articulos = _crear_pedido_entregado(db_session, seed)
     cajero = como_rol("cajero")
     cuerpo = {
@@ -144,7 +142,10 @@ def test_mesero_no_puede_dividir(como_rol, seed, db_session, admin_pin):
     pedido, _ = _crear_pedido_entregado(db_session, seed)
     r = como_rol("mesero").post(
         f"/pedidos/{pedido.id}/dividir_por_montos",
-        json={"cuentas": [{"monto": "100"}, {"monto": "100"}], "pin_autorizacion": admin_pin["pin"]},
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
     )
     assert r.status_code == 403
 
@@ -154,7 +155,10 @@ def test_cajero_no_divide_pedido_de_otra_sucursal(como_rol, seed, db_session, ad
     otra = como_rol("cajero", sucursal_id=seed["sucursal"].id + 999)
     r = otra.post(
         f"/pedidos/{pedido.id}/dividir_por_montos",
-        json={"cuentas": [{"monto": "100"}, {"monto": "100"}], "pin_autorizacion": admin_pin["pin"]},
+        json={
+            "cuentas": [{"monto": "100"}, {"monto": "100"}],
+            "pin_autorizacion": admin_pin["pin"],
+        },
     )
     assert r.status_code == 403
     db_session.refresh(pedido)

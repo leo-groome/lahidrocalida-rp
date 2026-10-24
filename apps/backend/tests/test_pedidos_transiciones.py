@@ -151,9 +151,7 @@ def test_pedido_cancelado_o_dividido_no_admite_modificaciones(como_rol, seed, db
     assert r.status_code == 403
 
 
-def test_cambio_manual_cajero_con_pin_admin_cambia_estatus(
-    como_rol, seed, db_session, admin_pin
-):
+def test_cambio_manual_cajero_con_pin_admin_cambia_estatus(como_rol, seed, db_session, admin_pin):
     from app.models import AutorizacionPin
 
     pedido = _crear_pedido_pendiente(db_session, seed)
@@ -171,9 +169,7 @@ def test_cambio_manual_cajero_con_pin_admin_cambia_estatus(
     assert auth.accion == "cambio_estatus_manual"
 
 
-def test_cambio_manual_sin_pin_o_pin_malo_es_rechazado(
-    como_rol, seed, db_session, admin_pin
-):
+def test_cambio_manual_sin_pin_o_pin_malo_es_rechazado(como_rol, seed, db_session, admin_pin):
     pedido = _crear_pedido_pendiente(db_session, seed)
     cliente = como_rol("cajero")
     r = cliente.put(f"/pedidos/{pedido.id}", json={"estado": "listo", "cambio_manual": True})
