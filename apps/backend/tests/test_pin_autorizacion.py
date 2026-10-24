@@ -123,7 +123,7 @@ def test_cajero_borrar_articulo_con_pin_incorrecto_es_rechazado(
             "pin_autorizacion": "0000",
         },
     )
-    assert r.status_code == 401
+    assert r.status_code == 403
 
 
 def test_verify_admin_pin_con_pin_correcto(client, admin_pin):
@@ -134,12 +134,12 @@ def test_verify_admin_pin_con_pin_correcto(client, admin_pin):
 
 def test_verify_admin_pin_con_pin_incorrecto(client, admin_pin):
     r = client.post("/auth/verify-admin-pin", json={"pin": "0000"})
-    assert r.status_code == 401
+    assert r.status_code == 403
 
 
 def test_verify_admin_pin_sin_administradores_activos(client):
     r = client.post("/auth/verify-admin-pin", json={"pin": "1234"})
-    assert r.status_code == 401
+    assert r.status_code == 403
 
 
 def test_pin_incorrecto_repetido_dispara_rate_limit(client, admin_pin):
@@ -148,7 +148,7 @@ def test_pin_incorrecto_repetido_dispara_rate_limit(client, admin_pin):
     válido — debe cortar igual que el rate limit de login."""
     for _ in range(8):
         r = client.post("/auth/verify-admin-pin", json={"pin": "0000"})
-        assert r.status_code == 401
+        assert r.status_code == 403
 
     r = client.post("/auth/verify-admin-pin", json={"pin": "0000"})
     assert r.status_code == 429

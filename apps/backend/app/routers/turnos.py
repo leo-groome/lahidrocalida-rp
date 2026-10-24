@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import get_current_active_user
@@ -113,12 +113,16 @@ def _calcular_movimientos_efectivo(
     )
 
     # Consultar pedidos pagados en efectivo — por turno_id si está disponible
+    # La propina en efectivo es efectivo físico en caja aunque la cuenta se haya
+    # pagado con tarjeta/transferencia, así que no se filtra por `metodo_pago`;
+    # la venta sí cuenta solo si se cobró en efectivo.
     ventas_query = db.query(
-        func.sum(Pedido.total).label("total_ventas"),
+        func.sum(case((Pedido.metodo_pago == "efectivo", Pedido.total), else_=0)).label(
+            "total_ventas"
+        ),
         func.sum(Pedido.propina_efectivo).label("total_propinas"),
     ).filter(
         Pedido.sucursal_id == sucursal_id,
-        Pedido.metodo_pago == "efectivo",
         Pedido.estado == "pagado",
     )
 
@@ -928,7 +932,7 @@ def obtener_resumen_turno(
         .filter(
             Pedido.sucursal_id == turno.sucursal_id,
             Pedido.estado == "pagado",
-            Pedido.metodo_pago == "efectivo",
+            or_(Pedido.metodo_pago == "efectivo", Pedido.propina_efectivo > 0),
             Pedido.fecha_pago.isnot(None),
             Pedido.turno_id == turno_id,
         )
@@ -943,6 +947,7 @@ def obtener_resumen_turno(
             "mesa": p.mesa,
             "nombre_cliente": p.nombre_cliente,
             "total": float(p.total),
+            "metodo_pago": p.metodo_pago,
             "propina_efectivo": float(p.propina_efectivo or 0),
             "fecha_pago": p.fecha_pago.isoformat() if p.fecha_pago else None,
             "usuario_nombre": p.usuario.nombre if p.usuario else None,
