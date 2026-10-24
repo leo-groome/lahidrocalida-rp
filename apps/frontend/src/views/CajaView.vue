@@ -486,10 +486,6 @@ const pedidoConFoco = computed(
   () => listaConFoco.value.find((p) => p.id === pedidoFocoId.value) ?? null
 )
 
-watch([activeTab, listaConFoco], () => {
-  if (pedidoFocoId.value !== null && !pedidoConFoco.value) pedidoFocoId.value = null
-})
-
 const hayModalAbiertoParaLista = () =>
   showEstadoMenuPedidoId.value !== null ||
   showEditarPropinaModal.value ||
@@ -1131,6 +1127,11 @@ const pedidosPendientes = computed(() => {
   return pedidos.sort((a, b) =>
     new Date(a.fecha_creacion).getTime() - new Date(b.fecha_creacion).getTime()
   )
+})
+
+// El foco por teclado se descarta si la tarjeta ya no está en la lista
+watch([activeTab, listaConFoco], () => {
+  if (pedidoFocoId.value !== null && !pedidoConFoco.value) pedidoFocoId.value = null
 })
 
 // Layout de mesas para el mapa (igual que en mesero)
@@ -2467,7 +2468,7 @@ const cerrarGastoModal = async () => {
 
         <div v-if="pedidosPendientes.length === 0" class="flex flex-col items-center justify-center py-20 bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 shadow-sm">
           <div class="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mb-6">
-            <CheckCircle class="w-10 h-10 text-green-400" />
+            <CheckCircle2 class="w-10 h-10 text-green-400" />
           </div>
           <h4 class="text-xl font-black text-slate-400">Todo Pagado</h4>
           <p class="text-slate-400 text-sm font-medium">No hay cuentas pendientes en este momento</p>

@@ -292,6 +292,10 @@ Funciona en login, asistencia, turnos y autorizaciones de administrador en Caja.
   - **`1`**: 5% | **`2`**: 10% | **`3`**: 15% | **`0`**: 0% (Sin propina).
   - **`Enter`**: Confirmar pago con propina.
   - **`Esc`**: Cancelar modal.
+- **Lista de cuentas (Overview / Cuentas)**:
+  - **`↑`/`↓`/`←`/`→`/`J`/`K`**: mover el foco entre tarjetas.
+  - **`Enter`**: acción primaria (entregado → solicitar cuenta; cuenta solicitada → abrir cobro). **`P`** imprimir, **`X`** editar artículos, **`M`** menú de estatus (pide PIN de admin), **`Esc`** quitar foco.
+- **Modal Editar Propina**: **`E`** efectivo, **`T`** tarjeta, **`Enter`** guardar (pide PIN), **`Esc`** cancelar.
 - **Navegación General**:
   - **`F2` / `Ctrl + F`**: Enfocar buscador de pedidos.
   - **`Esc`**: Desseleccionar pedido activo.
