@@ -130,13 +130,13 @@ const splitMontoInput = ref<string>('')
 const MAX_SPLIT_CUENTAS = 5
 
 const canSplitSelectedPedido = computed(() => {
-  if (auth.user?.rol !== 'administrador') return false
+  if (!['administrador', 'cajero'].includes(auth.user?.rol ?? '')) return false
   if (!selectedPedido.value) return false
   return ['entregado', 'cuenta_solicitada'].includes(selectedPedido.value.estado)
 })
 
 const canSplitDetailsPedido = computed(() => {
-  if (auth.user?.rol !== 'administrador') return false
+  if (!['administrador', 'cajero'].includes(auth.user?.rol ?? '')) return false
   if (!selectedPedidoDetails.value) return false
   return ['entregado', 'cuenta_solicitada'].includes(selectedPedidoDetails.value.estado)
 })
@@ -494,6 +494,7 @@ const hayModalAbiertoParaLista = () =>
   cancelarPin.isOpen.value ||
   borrarArticuloPin.isOpen.value ||
   estadoPin.isOpen.value ||
+  dividirPin.isOpen.value ||
   propinaPin.isOpen.value ||
   analyticsPin.isOpen.value
 
@@ -571,6 +572,7 @@ function handleGlobalKeyDown(e: KeyboardEvent) {
     borrarArticuloPin.isOpen.value ||
     propinaPin.isOpen.value ||
     estadoPin.isOpen.value ||
+    dividirPin.isOpen.value ||
     showTurnoModal.value ||
     showGastoModal.value
   ) {
@@ -961,6 +963,7 @@ const analyticsPin = useAdminPin('Ver analíticas', 'Ingresa el PIN de un admini
 const analyticsUnlocked = ref(false)
 const cancelarPin = useAdminPin('Cancelar cuenta', 'Ingresa el PIN de un administrador para cancelar')
 const propinaPin = useAdminPin('Editar propina', 'Ingresa el PIN de un administrador para autorizar')
+const dividirPin = useAdminPin('Dividir cuenta', 'Ingresa el PIN de un administrador para dividir la cuenta')
 const estadoPin = useAdminPin('Cambiar estatus', 'Ingresa el PIN de un administrador para cambiar el estatus')
 
 const desbloquearAnalytics = async () => {
@@ -1788,7 +1791,10 @@ const dividirPorMontosAPI = async (cuentas: { monto: number }[]) => {
   splitPrintError.value = null
 
   try {
-    const res = await api.post(`/pedidos/${splitPedido.value.id}/dividir_por_montos`, { cuentas })
+    const pedidoId = splitPedido.value.id
+    const res = await dividirPin.requestPinVerificado((pin) =>
+      api.post(`/pedidos/${pedidoId}/dividir_por_montos`, { cuentas, pin_autorizacion: pin })
+    )
     const nuevasCuentas: PedidoResponse[] = res.data?.cuentas || []
 
     if (!nuevasCuentas.length) throw new Error('No se recibieron cuentas nuevas')
@@ -1803,8 +1809,11 @@ const dividirPorMontosAPI = async (cuentas: { monto: number }[]) => {
       await pedidosStore.refreshPedidos()
     }
   } catch (e: any) {
-    console.error('Error dividiendo cuenta por montos:', e)
-    showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+    // `e` indefinido = el usuario canceló el PIN
+    if (e) {
+      console.error('Error dividiendo cuenta por montos:', e)
+      showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+    }
   } finally {
     splitProcessing.value = false
   }
@@ -1849,7 +1858,9 @@ const dividirCuentaConfirmar = async () => {
   }
 
   try {
-    const res = await api.post(`/pedidos/${pedido.id}/dividir`, payload)
+    const res = await dividirPin.requestPinVerificado((pin) =>
+      api.post(`/pedidos/${pedido.id}/dividir`, { ...payload, pin_autorizacion: pin })
+    )
     const cuentas: PedidoResponse[] = res.data?.cuentas || []
 
     if (!cuentas.length) {
@@ -1872,8 +1883,10 @@ const dividirCuentaConfirmar = async () => {
     }
 
   } catch (e: any) {
-    console.error('Error dividiendo cuenta:', e)
-    showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+    if (e) {
+      console.error('Error dividiendo cuenta:', e)
+      showErrorNotification(e?.response?.data?.detail || 'Error al dividir cuenta')
+    }
   } finally {
     splitProcessing.value = false
   }
@@ -4452,6 +4465,17 @@ const cerrarGastoModal = async () => {
       :cooldown-seconds="borrarArticuloPin.cooldownSeconds.value"
       @confirm="borrarArticuloPin.onConfirm"
       @cancel="borrarArticuloPin.onCancel"
+    />
+
+    <!-- PIN de administrador: dividir cuenta -->
+    <NipKeypad
+      v-if="dividirPin.isOpen.value"
+      :titulo="dividirPin.titulo"
+      :mensaje="dividirPin.mensaje"
+      :error="dividirPin.error.value"
+      :cooldown-seconds="dividirPin.cooldownSeconds.value"
+      @confirm="dividirPin.onConfirm"
+      @cancel="dividirPin.onCancel"
     />
 
     <!-- PIN de administrador: cambio manual de estatus -->

@@ -476,10 +476,11 @@ def get_pedido(
 async def dividir_cuenta(
     pedido_id: int,
     data: DividirCuentaRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles("administrador")),
+    current_user: Usuario = Depends(require_roles("administrador", "cajero")),
 ):
-    """Dividir una cuenta por articulos (solo administrador)."""
+    """Dividir una cuenta por articulos (administrador o cajero con PIN de administrador)."""
 
     # with_for_update(): serializa contra otra división concurrente del MISMO
     # pedido (doble tap, dos cajeros). Sin el lock, dos requests podían pasar
@@ -516,6 +517,18 @@ async def dividir_cuenta(
             status_code=400,
             detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
         )
+
+    # Dividir exige PIN de un administrador activo, sin importar el rol de la
+    # sesión (el replay idempotente de arriba no lo necesita: no muta nada).
+    admin_autorizador = await verificar_pin_admin(db, data.pin_autorizacion, request, current_user)
+    db.add(
+        AutorizacionPin(
+            accion="dividir_cuenta",
+            ejecutado_por_id=current_user.id,
+            autorizado_por_id=admin_autorizador.id,
+            pedido_id=pedido.id,
+        )
+    )
 
     if not data.cuentas or len(data.cuentas) < 2:
         raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
@@ -727,10 +740,11 @@ async def dividir_cuenta(
 async def dividir_por_montos(
     pedido_id: int,
     data: DividirPorMontoRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_roles("administrador")),
+    current_user: Usuario = Depends(require_roles("administrador", "cajero")),
 ):
-    """Dividir una cuenta por montos arbitrarios sin asignar articulos (solo administrador)."""
+    """Dividir una cuenta por montos arbitrarios (administrador o cajero con PIN de administrador)."""
 
     # with_for_update(): serializa contra otra división concurrente del mismo
     # pedido, igual que en /dividir.
@@ -765,6 +779,18 @@ async def dividir_por_montos(
             status_code=400,
             detail="Solo se puede dividir un pedido en estado 'entregado' o 'cuenta_solicitada'",
         )
+
+    # Dividir exige PIN de un administrador activo, sin importar el rol de la
+    # sesión (el replay idempotente de arriba no lo necesita: no muta nada).
+    admin_autorizador = await verificar_pin_admin(db, data.pin_autorizacion, request, current_user)
+    db.add(
+        AutorizacionPin(
+            accion="dividir_cuenta",
+            ejecutado_por_id=current_user.id,
+            autorizado_por_id=admin_autorizador.id,
+            pedido_id=pedido.id,
+        )
+    )
 
     if not data.cuentas or len(data.cuentas) < 2:
         raise HTTPException(status_code=400, detail="Debe especificar al menos 2 cuentas")
