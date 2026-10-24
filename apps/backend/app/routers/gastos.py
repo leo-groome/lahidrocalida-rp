@@ -22,6 +22,7 @@ from app.models import (
     NominaDetalle,
     OperacionGasto,
     Proveedor,
+    Turno,
     Usuario,
     get_local_datetime,
 )
@@ -434,6 +435,17 @@ def create_gasto(
             )
             return _replay_gasto(db, existing, fingerprint, current_user)
     _validate_gasto_inputs(data)
+    # El turno viene del cliente: debe existir y ser de la sucursal del usuario.
+    # No se exige que siga abierto: la cola offline puede entregar el gasto
+    # después del cierre y el turno_id sigue siendo el correcto.
+    if data.turno_id is not None and data.tipo_gasto != "nomina":
+        turno = (
+            db.query(Turno)
+            .filter(Turno.id == data.turno_id, Turno.sucursal_id == current_user.sucursal_id)
+            .first()
+        )
+        if turno is None:
+            raise HTTPException(status_code=400, detail="Turno inválido")
 
     detalles: list[GastoDetalle] = []
     nomina_detalles: list[NominaDetalle] = []

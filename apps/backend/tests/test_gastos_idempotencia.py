@@ -86,3 +86,16 @@ def test_idempotencia_nomina_y_gasto_con_lineas(como_rol, seed, db_session):
         assert replay.status_code == 201 and replay.json()["id"] == first.json()["id"]
         assert float(replay.json()["total"]) == total
     assert db_session.query(Gasto).count() == 2
+
+
+def test_gasto_con_turno_de_caja_se_vincula_y_turno_ajeno_es_rechazado(como_rol, seed):
+    client = como_rol("cajero", id=seed["usuario"].id)
+    conteo = {"denominaciones": [{"denominacion": 100, "cantidad": 5}]}
+    turno_id = client.post("/turnos/iniciar", json={"conteo_inicial": conteo}).json()["id"]
+
+    ok = client.post("/gastos/", json={**payload(), "turno_id": turno_id})
+    assert ok.status_code == 201, ok.text
+    assert ok.json()["turno_id"] == turno_id
+
+    malo = client.post("/gastos/", json={**payload(), "turno_id": 999999})
+    assert malo.status_code == 400
