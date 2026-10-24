@@ -141,10 +141,6 @@ const canSplitDetailsPedido = computed(() => {
   return ['entregado', 'cuenta_solicitada'].includes(selectedPedidoDetails.value.estado)
 })
 
-const totalVentasDia = computed(() => {
-  return analyticsDia.value?.ingresos.total || 0
-})
-
 const getEstadoAccentColor = (estado: string) => {
   const colors: Record<string, string> = {
     pendiente: 'bg-slate-200',
@@ -1070,8 +1066,9 @@ const guardarPropinaManual = async () => {
 }
 
 // Computadas para estadísticas
+// Suma de TODOS los pedidos abiertos (no solo cuentas solicitadas): lo que falta por cobrar.
 const totalPendientesPago = computed(() => {
-  return pedidosStore.pedidosPendientesPago.reduce((sum, pedido) => sum + Number(pedido.total), 0)
+  return pedidosStore.pedidosCaja.reduce((sum, pedido) => sum + Number(pedido.total), 0)
 })
 
 const estadisticasOverview = computed(() => {
@@ -2261,28 +2258,10 @@ const cerrarGastoModal = async () => {
         <div class="flex items-center gap-3">
           <div class="hidden sm:flex items-center gap-4 mr-2 py-1 px-4 bg-blue-50 border border-blue-100 rounded-2xl">
             <div class="flex flex-col">
-              <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest">Pendiente</span>
+              <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest" title="Suma de todos los pedidos abiertos (no solo cuentas solicitadas)">Pendiente</span>
               <span class="text-sm font-black text-blue-700">${{ totalPendientesPago.toFixed(2) }}</span>
             </div>
-            <div class="w-px h-6 bg-blue-200"></div>
-            <div class="flex flex-col text-right">
-              <span class="text-[10px] font-black text-blue-400 uppercase tracking-widest">Hoy</span>
-              <span class="text-sm font-black text-blue-700">${{ totalVentasDia.toFixed(2) }}</span>
-            </div>
           </div>
-          
-          <button 
-            @click="manejarClickTurno"
-            :class="[
-              'px-4 py-2.5 rounded-xl text-sm font-black transition-all shadow-lg flex items-center gap-2',
-              tieneTurnoActivo 
-                ? 'bg-red-50 text-red-600 hover:bg-red-100 shadow-red-200/50 border border-red-200' 
-                : 'bg-green-600 text-white hover:bg-green-700 shadow-green-900/40'
-            ]"
-          >
-            <Clock class="w-4 h-4" />
-            {{ tieneTurnoActivo ? 'Cerrar Turno' : 'Abrir Turno' }}
-          </button>
         </div>
       </div>
     </div>
