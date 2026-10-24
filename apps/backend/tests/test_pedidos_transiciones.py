@@ -121,7 +121,7 @@ def test_cajero_con_pin_incorrecto_no_puede_editar_propina_de_pedido_pagado(
             "pin_autorizacion": "0000",
         },
     )
-    assert r.status_code == 401
+    assert r.status_code == 403
 
 
 def test_cancelar_cuenta_requiere_pin_de_admin(como_rol, seed, db_session, admin_pin):
@@ -147,5 +147,52 @@ def test_pedido_cancelado_o_dividido_no_admite_modificaciones(como_rol, seed, db
     r = como_rol("administrador").put(
         f"/pedidos/{pedido.id}",
         json={"estado": "cancelado", "propina_tarjeta": 20.0},
+    )
+    assert r.status_code == 403
+
+
+def test_cambio_manual_cajero_con_pin_admin_cambia_estatus(
+    como_rol, seed, db_session, admin_pin
+):
+    from app.models import AutorizacionPin
+
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    r = como_rol("cajero").put(
+        f"/pedidos/{pedido.id}",
+        json={
+            "estado": "preparando",  # un cajero no podría sin override
+            "cambio_manual": True,
+            "pin_autorizacion": admin_pin["pin"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["estado"] == "preparando"
+    auth = db_session.query(AutorizacionPin).filter_by(pedido_id=pedido.id).one()
+    assert auth.accion == "cambio_estatus_manual"
+
+
+def test_cambio_manual_sin_pin_o_pin_malo_es_rechazado(
+    como_rol, seed, db_session, admin_pin
+):
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    cliente = como_rol("cajero")
+    r = cliente.put(f"/pedidos/{pedido.id}", json={"estado": "listo", "cambio_manual": True})
+    assert r.status_code == 400
+    r = cliente.put(
+        f"/pedidos/{pedido.id}",
+        json={"estado": "listo", "cambio_manual": True, "pin_autorizacion": "0000"},
+    )
+    assert r.status_code == 403
+    db_session.refresh(pedido)
+    assert pedido.estado == "pendiente"
+
+
+def test_cambio_manual_no_reabre_pedido_terminal(como_rol, seed, db_session, admin_pin):
+    pedido = _crear_pedido_pendiente(db_session, seed)
+    pedido.estado = "pagado"
+    db_session.commit()
+    r = como_rol("cajero").put(
+        f"/pedidos/{pedido.id}",
+        json={"estado": "pendiente", "cambio_manual": True, "pin_autorizacion": admin_pin["pin"]},
     )
     assert r.status_code == 403

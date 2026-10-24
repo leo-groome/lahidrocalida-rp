@@ -178,6 +178,8 @@ class PedidoUpdate(BaseModel):
     propina_efectivo: Optional[Decimal] = None
     propina_tarjeta: Optional[Decimal] = None
     pin_autorizacion: Optional[str] = None
+    # Override manual de estatus desde Caja (cualquier rol): exige PIN de admin.
+    cambio_manual: bool = False
 
 
 class PinVerifyRequest(BaseModel):

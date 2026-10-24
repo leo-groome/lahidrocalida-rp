@@ -938,8 +938,21 @@ async def update_pedido(
         # (data.estado) según el rol, no solo el destino como antes de S2. Un
         # pedido en estado terminal (pagado/cancelado/dividido) no admite
         # ninguna transición, sin importar el rol.
+        # Override manual (menú de estatus de Caja): cualquier rol puede pedirlo
+        # pero solo procede con PIN de admin; entonces la transición se evalúa
+        # como administrador (terminales y reglas Uber se siguen respetando).
+        if data.cambio_manual:
+            admin_autorizador = await verificar_pin_admin(
+                db, data.pin_autorizacion, request, current_user
+            )
+            accion_autorizada = (
+                "cancelar_cuenta"
+                if data.estado == EstadoPedido.CANCELADO
+                else "cambio_estatus_manual"
+            )
+        rol_transicion = "administrador" if data.cambio_manual else current_user.rol
         if not transicion_permitida(
-            pedido.estado, data.estado, current_user.rol, tipo_orden=pedido.tipo_orden
+            pedido.estado, data.estado, rol_transicion, tipo_orden=pedido.tipo_orden
         ):
             raise HTTPException(
                 status_code=403,
@@ -948,7 +961,7 @@ async def update_pedido(
                     f"'{pedido.estado}' a '{data.estado}'"
                 ),
             )
-        if data.estado == EstadoPedido.CANCELADO:
+        if data.estado == EstadoPedido.CANCELADO and admin_autorizador is None:
             admin_autorizador = await verificar_pin_admin(
                 db, data.pin_autorizacion, request, current_user
             )
