@@ -7,7 +7,7 @@ import { websocketService } from '@/services/websocket'
 import type { PedidoResponse, ReporteDiaAnalytics, ReporteDiaTicket, Turno } from '../types'
 import AppHeader from '@/components/AppHeader.vue'
 import TurnoModal from '@/components/TurnoModal.vue'
-import GastoRapidoModal from '@/components/gastos/GastoRapidoModal.vue'
+import RegistroRapidoModal from '@/components/gastos/RegistroRapidoModal.vue'
 import api from '@/api/client'
 import printService from '@/services/printService'
 import { useAdminPin } from '@/composables/useAdminPin'
@@ -68,7 +68,7 @@ const activeTab = ref<'overview' | 'pendientes' | 'propinas'>('overview')
 const selectedPedido = ref<PedidoResponse | null>(null)
 const processingPayment = ref(false)
 
-// Cambio manual de estado (admin-only) desde cards
+// Cambio manual de estado desde cards: cualquier rol de Caja, con PIN de administrador
 const showEstadoMenuPedidoId = ref<number | null>(null)
 const estadoMenuTarget = ref<HTMLElement | null>(null)
 const estadoMenuPos = ref<{ top: number; left: number } | null>(null)
@@ -85,7 +85,7 @@ const estadoOptions: Array<{ value: PedidoResponse['estado']; label: string }> =
   { value: 'dividido', label: 'Dividido' }
 ]
 
-const canManualChangeEstado = computed(() => auth.user?.rol === 'administrador')
+const canManualChangeEstado = computed(() => ['administrador', 'cajero'].includes(auth.user?.rol ?? ''))
 
 const getArticuloEstadoLabel = (estadoItem: string) => {
   const labels: Record<string, string> = {
@@ -240,6 +240,7 @@ const printingTicketId = ref<number | null>(null)
 
 // Modal: editar propina (solo pagados)
 const showEditarPropinaModal = ref(false)
+const propinaMontoInput = ref<HTMLInputElement | null>(null)
 const ticketParaPropina = ref<ReporteDiaTicket | null>(null)
 const propinaMontoManual = ref<string>('')
 const tipTypeOptions = ['efectivo', 'tarjeta'] as const
@@ -441,11 +442,19 @@ const applyManualEstado = async (pedido: PedidoResponse | null | undefined, nuev
 
   estadoMenuLoading.value = true
   try {
-    const ok = await pedidosStore.updatePedidoEstado(pedido.id, nuevoEstado)
-    if (ok) {
-      showSuccessNotification(`Estado actualizado: #${pedido.numero_display} → ${getEstadoTexto(nuevoEstado)}`)
-      closeEstadoMenu()
-    }
+    // Se cierra el popover para que el teclado numérico del PIN no quede tapado.
+    closeEstadoMenu()
+    await estadoPin.requestPinVerificado((pin) =>
+      pedidosStore.updatePedidoEstado(pedido.id, nuevoEstado, undefined, undefined, undefined, {
+        pinAutorizacion: pin,
+        cambioManual: true,
+        throwOnError: true
+      })
+    )
+    showSuccessNotification(`Estado actualizado: #${pedido.numero_display} → ${getEstadoTexto(nuevoEstado)}`)
+  } catch (e: any) {
+    // undefined = el usuario canceló el PIN
+    if (e) showErrorNotification(e?.response?.data?.detail || 'No se pudo cambiar el estado')
   } finally {
     estadoMenuLoading.value = false
   }
@@ -464,6 +473,101 @@ const onGlobalClick = (ev: MouseEvent) => {
   closeEstadoMenu()
 }
 
+// --- Foco por teclado en las listas de cuentas ---------------------------
+const pedidoFocoId = ref<number | null>(null)
+
+const listaConFoco = computed<PedidoResponse[]>(() => {
+  if (activeTab.value === 'overview') return pedidosActivos.value
+  if (activeTab.value === 'pendientes') return pedidosPendientes.value
+  return []
+})
+
+const pedidoConFoco = computed(
+  () => listaConFoco.value.find((p) => p.id === pedidoFocoId.value) ?? null
+)
+
+watch([activeTab, listaConFoco], () => {
+  if (pedidoFocoId.value !== null && !pedidoConFoco.value) pedidoFocoId.value = null
+})
+
+const hayModalAbiertoParaLista = () =>
+  showEstadoMenuPedidoId.value !== null ||
+  showEditarPropinaModal.value ||
+  showEditPedidoModal.value ||
+  showDetailsModal.value ||
+  showCancelConfirmModal.value ||
+  showSplitModal.value ||
+  showEfectivoCalculator.value ||
+  showPropinaTarjetaModal.value ||
+  cancelarPin.isOpen.value ||
+  borrarArticuloPin.isOpen.value ||
+  estadoPin.isOpen.value ||
+  propinaPin.isOpen.value ||
+  analyticsPin.isOpen.value
+
+const moverFocoLista = (delta: number) => {
+  const lista = listaConFoco.value
+  if (!lista.length) return
+  const actual = lista.findIndex((p) => p.id === pedidoFocoId.value)
+  const siguiente =
+    actual === -1 ? (delta > 0 ? 0 : lista.length - 1) : Math.min(lista.length - 1, Math.max(0, actual + delta))
+  pedidoFocoId.value = lista[siguiente].id
+  nextTick(() =>
+    document
+      .querySelector(`[data-pedido-id="${pedidoFocoId.value}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  )
+}
+
+/** Devuelve true si la tecla se consumió. */
+function handleListaKeyDown(e: KeyboardEvent): boolean {
+  if (activeTab.value !== 'overview' && activeTab.value !== 'pendientes') return false
+  const k = e.key.toLowerCase()
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || k === 'j') {
+    e.preventDefault()
+    moverFocoLista(1)
+    return true
+  }
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || k === 'k') {
+    e.preventDefault()
+    moverFocoLista(-1)
+    return true
+  }
+
+  const pedido = pedidoConFoco.value
+  if (!pedido) return false
+
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    pedidoFocoId.value = null
+    return true
+  }
+  if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+    e.preventDefault()
+    // Pedidos Activos: "Cobrar" pide la cuenta; Cuentas Pendientes: "Cobrar Cuenta" abre el cobro
+    if (pedido.estado === 'entregado') solicitarCuenta(pedido)
+    else if (pedido.estado === 'cuenta_solicitada') selectPedido(pedido)
+    return true
+  }
+  if (k === 'p') {
+    e.preventDefault()
+    imprimirTicketSeparado(pedido)
+    return true
+  }
+  if (k === 'x' && !['pagado', 'cancelado', 'dividido'].includes(pedido.estado)) {
+    e.preventDefault()
+    openEditPedido(pedido)
+    return true
+  }
+  if (k === 'm' && canManualChangeEstado.value) {
+    e.preventDefault()
+    ;(document.querySelector(`[data-estado-btn="${pedido.id}"]`) as HTMLElement | null)?.click()
+    return true
+  }
+  return false
+}
+
 function handleGlobalKeyDown(e: KeyboardEvent) {
   const activeEl = document.activeElement as HTMLElement
   const isInputOrTextarea = activeEl && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)
@@ -474,9 +578,44 @@ function handleGlobalKeyDown(e: KeyboardEvent) {
     cancelarPin.isOpen.value ||
     borrarArticuloPin.isOpen.value ||
     propinaPin.isOpen.value ||
+    estadoPin.isOpen.value ||
     showTurnoModal.value ||
     showGastoModal.value
   ) {
+    return
+  }
+
+  // 1b. Modal "Editar propina" (ticket ya pagado): Enter guarda, Esc cancela,
+  // E/T eligen el tipo (incluso con el foco en el monto).
+  if (showEditarPropinaModal.value && ticketParaPropina.value) {
+    const k = e.key.toLowerCase()
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (!savingPropinaManual.value) cerrarEditarPropina()
+      return
+    }
+    if (e.key === 'Enter' || e.key === 'NumpadEnter') {
+      e.preventDefault()
+      guardarPropinaManual()
+      return
+    }
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (k === 'e') {
+        e.preventDefault()
+        propinaTipoManual.value = 'efectivo'
+        return
+      }
+      if (k === 't') {
+        e.preventDefault()
+        propinaTipoManual.value = 'tarjeta'
+        return
+      }
+      if (!isInputOrTextarea && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault()
+        propinaTipoManual.value = propinaTipoManual.value === 'efectivo' ? 'tarjeta' : 'efectivo'
+        return
+      }
+    }
     return
   }
 
@@ -572,6 +711,19 @@ function handleGlobalKeyDown(e: KeyboardEvent) {
         return
       }
     }
+  }
+
+  // 4b. Navegación por las tarjetas de la lista (Pedidos Activos / Cuentas Pendientes)
+  if (
+    !isInputOrTextarea &&
+    !selectedPedido.value &&
+    !hayModalAbiertoParaLista() &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey &&
+    handleListaKeyDown(e)
+  ) {
+    return
   }
 
   // 5. Atajos generales de Caja
@@ -764,6 +916,7 @@ const analyticsPin = useAdminPin('Ver analíticas', 'Ingresa el PIN de un admini
 const analyticsUnlocked = ref(false)
 const cancelarPin = useAdminPin('Cancelar cuenta', 'Ingresa el PIN de un administrador para cancelar')
 const propinaPin = useAdminPin('Editar propina', 'Ingresa el PIN de un administrador para autorizar')
+const estadoPin = useAdminPin('Cambiar estatus', 'Ingresa el PIN de un administrador para cambiar el estatus')
 
 const desbloquearAnalytics = async () => {
   try {
@@ -869,6 +1022,10 @@ const abrirEditarPropina = (t: ReporteDiaTicket) => {
   propinaMontoManual.value = montoInicial ? montoInicial.toFixed(2) : ''
 
   showEditarPropinaModal.value = true
+  nextTick(() => {
+    propinaMontoInput.value?.focus()
+    propinaMontoInput.value?.select()
+  })
 }
 
 const cerrarEditarPropina = () => {
@@ -2035,9 +2192,15 @@ const obtenerReporteTurno = async () => {
   }
 }
 
+// El modal sigue abierto para cargar varios gastos seguidos; el resumen del
+// turno se refresca en cada confirmación y al cerrar.
 const handleGastoSaved = async () => {
-  showGastoModal.value = false
   showSuccessNotification('Gasto registrado y descontado de caja')
+  await cargarTurnoActivo()
+}
+
+const cerrarGastoModal = async () => {
+  showGastoModal.value = false
   await cargarTurnoActivo()
 }
 </script>
@@ -2217,7 +2380,9 @@ const handleGastoSaved = async () => {
           <div
             v-for="pedido in pedidosActivos"
             :key="pedido.id"
+            :data-pedido-id="pedido.id"
             @click="showPedidoDetails(pedido)"
+            :class="pedidoFocoId === pedido.id ? 'ring-4 ring-amber-400 border-amber-400' : ''"
             class="group bg-white rounded-[2rem] p-5 shadow-xl shadow-slate-200/40 border border-slate-100 hover:border-blue-400 transition-all duration-500 cursor-pointer flex flex-col relative overflow-hidden"
           >
             <!-- Decorative Accent -->
@@ -2241,6 +2406,7 @@ const handleGastoSaved = async () => {
               <!-- Status Dropdown Trigger -->
               <button
                 v-if="canManualChangeEstado"
+                :data-estado-btn="pedido.id"
                 @click.stop="toggleEstadoMenu(pedido, $event)"
                 :disabled="estadoMenuLoading && showEstadoMenuPedidoId === pedido.id"
                 :class="[
@@ -2275,7 +2441,8 @@ const handleGastoSaved = async () => {
                 class="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all shadow-md shadow-blue-200"
               >
                 Cobrar
-                <ArrowRight class="w-3 h-3" />
+                <kbd v-if="pedidoFocoId === pedido.id" class="px-1.5 py-0.5 rounded bg-white/25 text-[9px] font-black">↵</kbd>
+                <ArrowRight v-else class="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -2310,7 +2477,9 @@ const handleGastoSaved = async () => {
           <div
             v-for="pedido in pedidosPendientes"
             :key="pedido.id"
+            :data-pedido-id="pedido.id"
             @click="selectPedido(pedido)"
+            :class="pedidoFocoId === pedido.id ? 'ring-4 ring-amber-400 border-amber-400' : ''"
             class="group bg-white rounded-[2.2rem] p-6 shadow-xl shadow-slate-200/40 border border-slate-100 hover:border-blue-400 transition-all duration-500 cursor-pointer flex flex-col relative overflow-hidden"
           >
             <!-- Decorative Accent -->
@@ -2347,6 +2516,7 @@ const handleGastoSaved = async () => {
               >
                 <Printer class="w-4 h-4" />
                 Imprimir Ticket
+                <kbd v-if="pedidoFocoId === pedido.id" class="px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">P</kbd>
               </button>
 
               <button
@@ -2355,6 +2525,7 @@ const handleGastoSaved = async () => {
               >
                 <Banknote class="w-4 h-4" />
                 Cobrar Cuenta
+                <kbd v-if="pedidoFocoId === pedido.id" class="px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">Enter</kbd>
               </button>
             </div>
 
@@ -3025,20 +3196,24 @@ const handleGastoSaved = async () => {
             <label class="block text-xs font-black text-gray-400 uppercase tracking-widest mb-3">
               Tipo de propina
             </label>
-            <div class="flex p-1 bg-gray-100 rounded-xl">
-              <button 
-                v-for="tipo in tipTypeOptions" 
+            <div class="grid grid-cols-2 gap-3">
+              <button
+                v-for="tipo in tipTypeOptions"
                 :key="tipo"
+                type="button"
                 @click="propinaTipoManual = tipo"
                 :class="[
-                  'flex-1 py-2.5 text-sm font-bold rounded-lg transition-all capitalize flex items-center justify-center gap-2',
-                  propinaTipoManual === tipo 
-                    ? 'bg-white shadow-sm text-[#00126D] scale-[1.02]' 
-                    : 'text-gray-500 hover:text-gray-700'
+                  'py-4 rounded-2xl border-4 font-black text-base transition-all flex flex-col items-center gap-1',
+                  propinaTipoManual === tipo
+                    ? (tipo === 'efectivo'
+                        ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg scale-[1.03]'
+                        : 'bg-[#00126D] border-blue-900 text-white shadow-lg scale-[1.03]')
+                    : 'bg-white border-gray-200 text-gray-400 hover:border-gray-300'
                 ]"
               >
-                <span>{{ tipo === 'efectivo' ? '💵' : '💳' }}</span>
-                {{ tipo === 'tarjeta' ? 'Tarjeta' : tipo }}
+                <span class="text-2xl">{{ tipo === 'efectivo' ? '💵' : '💳' }}</span>
+                <span class="uppercase tracking-wide">{{ tipo === 'tarjeta' ? 'Tarjeta' : 'Efectivo' }}</span>
+                <kbd class="px-1.5 py-0.5 rounded bg-black/20 text-[10px] font-black">{{ tipo === 'efectivo' ? 'E' : 'T' }}</kbd>
               </button>
             </div>
           </div>
@@ -3051,6 +3226,7 @@ const handleGastoSaved = async () => {
             <div class="relative group">
               <div class="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-gray-400 group-focus-within:text-[#00126D] transition-colors">$</div>
               <input
+                ref="propinaMontoInput"
                 v-model="propinaMontoManual"
                 type="number"
                 min="0"
@@ -3078,7 +3254,7 @@ const handleGastoSaved = async () => {
             class="flex-1 py-3 border-2 border-gray-200 rounded-xl text-gray-600 font-bold hover:bg-white hover:border-gray-300 transition-all active:scale-95"
             :disabled="savingPropinaManual"
           >
-            Cancelar
+            Cancelar <kbd class="ml-1 px-1.5 py-0.5 rounded bg-gray-200 text-[10px] font-black">Esc</kbd>
           </button>
           <button
             @click="guardarPropinaManual"
@@ -3089,7 +3265,10 @@ const handleGastoSaved = async () => {
               <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
               Guardando...
             </span>
-            <span v-else>Confirmar Cambios</span>
+            <span v-else>
+              Guardar propina en {{ propinaTipoManual === 'efectivo' ? 'EFECTIVO' : 'TARJETA' }}
+              <kbd class="ml-1 px-1.5 py-0.5 rounded bg-white/25 text-[10px] font-black">Enter</kbd>
+            </span>
           </button>
         </div>
       </div>
@@ -4051,7 +4230,7 @@ const handleGastoSaved = async () => {
       <div class="w-60 bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden">
         <div class="px-3 py-2 bg-gray-50 border-b border-gray-200">
           <div class="text-xs font-bold text-gray-700">Cambiar estado</div>
-          <div class="text-[11px] text-gray-500">Solo administrador (casos especiales)</div>
+          <div class="text-[11px] text-gray-500">Pide PIN de administrador (casos especiales)</div>
         </div>
 
         <div class="p-2 max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
@@ -4202,11 +4381,11 @@ const handleGastoSaved = async () => {
       @confirmar="modalTipo === 'inicio' ? iniciarTurno($event) : cerrarTurno($event)"
     />
 
-    <GastoRapidoModal
+    <RegistroRapidoModal
       v-if="showGastoModal"
       :turno-id="turnoActivo?.id"
-      @save="handleGastoSaved"
-      @cancel="showGastoModal = false"
+      @saved="handleGastoSaved"
+      @close="cerrarGastoModal"
     />
 
     <!-- PIN de administrador: gate de analíticas del turno -->
@@ -4240,6 +4419,17 @@ const handleGastoSaved = async () => {
       :cooldown-seconds="borrarArticuloPin.cooldownSeconds.value"
       @confirm="borrarArticuloPin.onConfirm"
       @cancel="borrarArticuloPin.onCancel"
+    />
+
+    <!-- PIN de administrador: cambio manual de estatus -->
+    <NipKeypad
+      v-if="estadoPin.isOpen.value"
+      :titulo="estadoPin.titulo"
+      :mensaje="estadoPin.mensaje"
+      :error="estadoPin.error.value"
+      :cooldown-seconds="estadoPin.cooldownSeconds.value"
+      @confirm="estadoPin.onConfirm"
+      @cancel="estadoPin.onCancel"
     />
 
     <!-- PIN de administrador: editar propina de ticket pagado -->

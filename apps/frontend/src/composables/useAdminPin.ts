@@ -74,7 +74,11 @@ export function useAdminPin(titulo: string, mensaje?: string) {
         return result
       } catch (e: any) {
         const status = e?.response?.status
-        if (status === 401 || status === 400 || status === 403) {
+        const detail: string = e?.response?.data?.detail ?? ''
+        // 403 también lo usa el backend para reglas de rol/estado: solo es un
+        // PIN fallido si el mensaje habla del PIN.
+        const esPinFallido = status === 401 || status === 400 || (status === 403 && /PIN/i.test(detail))
+        if (esPinFallido) {
           failedAttempts.value += 1
           const msg = e?.response?.data?.detail || 'PIN de administrador incorrecto'
           if (failedAttempts.value >= 3) {
