@@ -186,7 +186,9 @@
                 <h3 class="text-xl font-black text-slate-900 tracking-tight">
                   {{ gasto.tipo_gasto === 'nomina'
                     ? 'Pago de Nómina'
-                    : (gasto.proveedor?.nombre || (gasto.detalles?.length ? 'Proveedor Desconocido' : 'Compra rápida')) }}
+                    : gasto.tipo_gasto === 'indirecto' && !gasto.proveedor
+                      ? (gasto.concepto?.nombre || 'Gasto indirecto')
+                      : (gasto.proveedor?.nombre || (gasto.detalles?.length ? 'Proveedor Desconocido' : 'Compra rápida')) }}
                 </h3>
                 <div class="flex gap-2">
                   <span :class="[

@@ -29,10 +29,85 @@
     </li>
   </ul>
 
+  <!-- Insumos (compras) vs Servicios (luz, gas, renta...) -->
+  <div class="grid grid-cols-2 gap-2" role="tablist" aria-label="Tipo de gasto">
+    <button
+      v-for="m in modos"
+      :key="m.id"
+      type="button"
+      role="tab"
+      :aria-selected="modo === m.id"
+      @click="modo = m.id"
+      class="min-h-12 rounded-xl text-sm font-black transition-all"
+      :class="modo === m.id ? 'bg-[#00126D] text-white' : 'bg-slate-100 text-slate-500'"
+    >
+      {{ m.emoji }} {{ m.label }}
+    </button>
+  </div>
+
+  <!-- Conceptos de servicios: recurrentes (pendientes primero) e imprevistos -->
+  <div v-if="modo === 'servicio'" class="bg-white border border-slate-200 rounded-2xl p-4 space-y-4">
+    <p v-if="!conceptos.length" class="text-sm font-bold text-slate-400">
+      No hay conceptos. Un administrador debe crearlos en Egresos → Conceptos.
+    </p>
+    <div v-if="recurrentes.length" class="space-y-2">
+      <label class="text-xs font-black text-slate-400 uppercase tracking-widest">Pagos recurrentes</label>
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="c in recurrentesVisibles"
+          :key="c.concepto.id"
+          type="button"
+          @click="elegirConcepto(c.concepto)"
+          class="min-h-12 px-4 rounded-xl text-sm font-black border transition-all"
+          :class="conceptoId === c.concepto.id
+            ? 'bg-[#00126D] text-white border-[#00126D]'
+            : c.estado === 'vencido' ? 'bg-rose-50 text-rose-700 border-rose-200'
+            : c.estado === 'pendiente' ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : 'bg-slate-50 text-slate-600 border-slate-200'"
+        >
+          {{ c.concepto.nombre }}
+          <span v-if="c.estado !== 'al_corriente'" class="text-[10px] uppercase tracking-wide ml-1">· {{ c.estado }}</span>
+        </button>
+      </div>
+    </div>
+    <button
+      v-if="ocultos > 0 || (verTodos && recurrentes.length > LIMITE_VISIBLES)"
+      type="button"
+      @click="verTodos = !verTodos"
+      class="min-h-11 text-sm font-black text-blue-600"
+    >
+      {{ verTodos ? 'Ver solo los que requieren pago' : `Ver todos (${ocultos} más al corriente)` }}
+    </button>
+    <div v-if="imprevistos.length" class="space-y-2">
+      <label class="text-xs font-black text-slate-400 uppercase tracking-widest">Imprevistos</label>
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="c in imprevistos"
+          :key="c.concepto.id"
+          type="button"
+          @click="elegirConcepto(c.concepto)"
+          class="min-h-12 px-4 rounded-xl text-sm font-black border transition-all"
+          :class="conceptoId === c.concepto.id ? 'bg-[#00126D] text-white border-[#00126D]' : 'bg-slate-50 text-slate-600 border-slate-200'"
+        >
+          {{ c.concepto.nombre }}
+        </button>
+      </div>
+    </div>
+    <div v-if="conceptoEventual" class="space-y-1">
+      <label class="block text-xs font-black text-slate-400 uppercase tracking-widest">¿Qué pasó?</label>
+      <input
+        v-model="descripcion"
+        maxlength="255"
+        placeholder="Ej. Tubería rota en cocina, plomero"
+        class="w-full border border-slate-200 rounded-xl px-3 py-3 text-base font-bold focus:outline-none focus:ring-2 focus:ring-[#00126D]/20"
+      >
+    </div>
+  </div>
+
   <!-- Captura rápida: monto + foto del ticket -->
   <div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
     <label class="text-xs font-black text-slate-400 uppercase tracking-widest">
-      Monto total <span class="normal-case font-bold tracking-normal">(si no vas a listar artículos)</span>
+      Monto total <span v-if="modo === 'insumo'" class="normal-case font-bold tracking-normal">(si no vas a listar artículos)</span>
     </label>
     <div class="relative">
       <span class="absolute inset-y-0 left-4 flex items-center text-slate-400 font-black text-xl">$</span>
@@ -50,7 +125,7 @@
   </div>
 
   <!-- Dictado / pegado -->
-  <div class="space-y-2">
+  <div v-if="modo === 'insumo'" class="space-y-2">
     <label class="text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
       O escribe / dicta tus compras, una por línea
     </label>
@@ -73,7 +148,7 @@
 
   <!-- Filas resueltas -->
   <ComprasFilasResolver
-    v-if="filas.length"
+    v-if="modo === 'insumo' && filas.length"
     :filas="filas"
     :articulos="articulos"
     :categorias="categorias"
@@ -82,7 +157,7 @@
   />
 
   <!-- Artículos manuales (conviven con las filas del texto dictado) -->
-  <div class="space-y-3">
+  <div v-if="modo === 'insumo'" class="space-y-3">
     <button
       v-if="!manualAbierto"
       type="button"
@@ -96,6 +171,20 @@
       v-model:detalles="detallesManuales"
       :articulos="articulos"
     />
+  </div>
+
+  <!-- Método de pago a la vista en servicios (suelen pagarse por tarjeta/transferencia) -->
+  <div v-if="modo === 'servicio' && !forzarEfectivo" class="grid grid-cols-2 gap-2">
+    <button
+      v-for="m in metodos"
+      :key="m.id"
+      type="button"
+      @click="metodoPago = m.id"
+      class="min-h-12 rounded-xl text-sm font-black transition-all"
+      :class="metodoPago === m.id ? 'bg-[#00126D] text-white' : 'bg-white border border-slate-200 text-slate-500'"
+    >
+      {{ m.emoji }} {{ m.label }}
+    </button>
   </div>
 
   <!-- Ajustes del gasto -->
@@ -115,7 +204,7 @@
     </button>
 
     <div v-show="ajustesAbiertos" class="px-4 pb-4 space-y-4 border-t border-slate-100 pt-4">
-      <div class="space-y-1">
+      <div v-if="modo === 'insumo'" class="space-y-1">
         <label class="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">
           Proveedor <span class="normal-case font-bold tracking-normal">(opcional)</span>
         </label>
@@ -126,7 +215,7 @@
         />
       </div>
 
-      <div class="space-y-1">
+      <div v-if="modo === 'insumo' || forzarEfectivo" class="space-y-1">
         <label class="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Método de pago</label>
         <p
           v-if="forzarEfectivo"
@@ -187,7 +276,7 @@
 import { storeToRefs } from "pinia"
 import { useCatalogosGastosStore } from "@/stores/catalogos-gastos"
 const catalogos = useCatalogosGastosStore()
-const { proveedores, articulos, categorias, empleados } = storeToRefs(catalogos)
+const { proveedores, articulos, categorias, empleados, conceptos } = storeToRefs(catalogos)
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import {
@@ -204,6 +293,7 @@ import ComprasFilasResolver from '@/components/gastos/ComprasFilasResolver.vue'
 import SearchableSelect from '@/components/gastos/SearchableSelect.vue'
 import FotoTicketInput from '@/components/gastos/FotoTicketInput.vue'
 import GastoDetallesEditor from '@/components/gastos/GastoDetallesEditor.vue'
+import type { ConceptoGasto } from '@/stores/catalogos-gastos'
 import { AlertTriangle, Check, ChevronDown, Loader2, Plus, X } from 'lucide-vue-next'
 
 const props = withDefaults(defineProps<{
@@ -211,7 +301,11 @@ const props = withDefaults(defineProps<{
   forzarEfectivo?: boolean
   /** Bloquea el registro (p. ej. modal de caja sin turno activo). */
   bloqueado?: boolean
-}>(), { turnoId: null, forzarEfectivo: false, bloqueado: false })
+  /** Abre directo en Servicios o Insumos; si no, recuerda el último modo usado. */
+  modoInicial?: 'insumo' | 'servicio'
+  /** Concepto preseleccionado (abre en Servicios con el monto típico precargado). */
+  conceptoInicialId?: number | null
+}>(), { turnoId: null, forzarEfectivo: false, bloqueado: false, modoInicial: undefined, conceptoInicialId: null })
 
 const emit = defineEmits<{
   /** El gasto quedó en la cola local (el envío sigue en segundo plano). */
@@ -229,6 +323,43 @@ const metodos = [
   { id: 'tarjeta' as const, label: 'Tarjeta', emoji: '💳' },
 ]
 
+const modos = [
+  { id: 'insumo' as const, label: 'Insumos', emoji: '🛒' },
+  { id: 'servicio' as const, label: 'Servicios', emoji: '💡' },
+]
+const MODO_LS_KEY = 'rapido:modo'
+const METODO_SERVICIO_LS_KEY = 'rapido:metodoServicio'
+const modoGuardado = localStorage.getItem(MODO_LS_KEY)
+const modo = ref<'insumo' | 'servicio'>(
+  props.conceptoInicialId ? 'servicio' : props.modoInicial ?? (modoGuardado === 'servicio' ? 'servicio' : 'insumo'),
+)
+watch(modo, (m) => { try { localStorage.setItem(MODO_LS_KEY, m) } catch { /* modo privado */ } })
+const conceptoId = ref<number | null>(null)
+const descripcion = ref('')
+const recurrentes = computed(() => conceptos.value.filter((c) => c.concepto.frecuencia !== 'eventual'))
+const imprevistos = computed(() => conceptos.value.filter((c) => c.concepto.frecuencia === 'eventual'))
+const conceptoEventual = computed(
+  () => conceptos.value.find((c) => c.concepto.id === conceptoId.value)?.concepto.frecuencia === 'eventual',
+)
+function elegirConcepto(c: ConceptoGasto) {
+  conceptoId.value = c.id
+  if (c.monto_tipico && !montoNum.value) montoTotal.value = String(c.monto_tipico)
+}
+watch(modo, () => { conceptoId.value = null; descripcion.value = '' })
+// Con muchos recurrentes solo se muestran los que requieren acción (más el elegido).
+const verTodos = ref(false)
+const LIMITE_VISIBLES = 6
+const recurrentesVisibles = computed(() =>
+  verTodos.value || recurrentes.value.length <= LIMITE_VISIBLES
+    ? recurrentes.value
+    : recurrentes.value.filter((c) => c.estado !== 'al_corriente' || c.concepto.id === conceptoId.value),
+)
+const ocultos = computed(() => recurrentes.value.length - recurrentesVisibles.value.length)
+function aplicarConceptoInicial() {
+  const c = conceptos.value.find((x) => x.concepto.id === props.conceptoInicialId)
+  if (c && conceptoId.value !== c.concepto.id) elegirConcepto(c.concepto)
+}
+
 const texto = ref('')
 const filas = ref<FilaCompra[]>([])
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -236,7 +367,9 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const ultimoProveedor = Number(localStorage.getItem(PROVEEDOR_LS_KEY))
 const proveedorId = ref<number | null>(Number.isFinite(ultimoProveedor) && ultimoProveedor > 0 ? ultimoProveedor : null)
-const metodoPago = ref<'efectivo' | 'tarjeta'>('efectivo')
+const metodoGuardado = localStorage.getItem(METODO_SERVICIO_LS_KEY)
+const metodoPago = ref<'efectivo' | 'tarjeta'>(metodoGuardado === 'tarjeta' ? 'tarjeta' : 'efectivo')
+watch(metodoPago, (m) => { if (modo.value === 'servicio') { try { localStorage.setItem(METODO_SERVICIO_LS_KEY, m) } catch { /* modo privado */ } } })
 watch(() => props.forzarEfectivo, (f) => { if (f) { metodoPago.value = 'efectivo'; ajustesAbiertos.value = true } })
 const fecha = ref(localNow())
 const ajustesAbiertos = ref(props.forzarEfectivo)
@@ -276,9 +409,11 @@ const totalManuales = computed(() =>
   manualesElegidos.value.reduce((s, d) => s + (Number(d.subtotal_linea) || 0), 0),
 )
 // Con artículos (dictados y/o manuales): todos válidos. Sin artículos: basta un monto > 0.
-const modoLista = computed(() => filas.value.length > 0 || manualesElegidos.value.length > 0)
+const modoLista = computed(() => modo.value === 'insumo' && (filas.value.length > 0 || manualesElegidos.value.length > 0))
 const puedeRegistrar = computed(() =>
-  modoLista.value
+  modo.value === 'servicio'
+    ? conceptoId.value !== null && montoNum.value > 0 && (!conceptoEventual.value || descripcion.value.trim().length > 0)
+    : modoLista.value
     ? (filas.value.length === 0 || filasListas(filas.value)) && manualesValidos.value
     : montoNum.value > 0,
 )
@@ -338,6 +473,7 @@ watch(
       okProgramados.add(id)
       mostrarToast(`Gasto registrado · $${total.toFixed(2)}`)
       if (propios.delete(id)) emit('saved', id)
+      window.dispatchEvent(new Event('catalogos-gastos-cambiados'))
       setTimeout(() => {
         okProgramados.delete(id)
         void cola.descartar(id).catch(() => {})
@@ -364,7 +500,10 @@ async function registrar() {
   let p: GastoPendiente
   try {
     p = await cola.agregar({
-      proveedor_id: proveedorId.value, tipo_gasto: 'directo', metodo_pago: props.forzarEfectivo ? 'efectivo' : metodoPago.value,
+      proveedor_id: modo.value === 'insumo' ? proveedorId.value : null,
+      tipo_gasto: modo.value === 'servicio' ? 'indirecto' : 'directo',
+      concepto_id: modo.value === 'servicio' ? conceptoId.value : null,
+      descripcion: modo.value === 'servicio' && conceptoEventual.value ? descripcion.value.trim() : null, metodo_pago: props.forzarEfectivo ? 'efectivo' : metodoPago.value,
       detalles: modoLista.value
         ? [
             ...filasToDetalles(filas.value),
@@ -381,12 +520,14 @@ async function registrar() {
       total_manual: modoLista.value ? null : montoNum.value,
       fecha_gasto: new Date(fecha.value).toISOString(),
     }, [...fotos.value], totalGasto.value,
-    modoLista.value ? `${filas.value.length + manualesElegidos.value.length} artículo(s)` : 'compra rápida')
+    modo.value === 'servicio'
+      ? (conceptos.value.find((c) => c.concepto.id === conceptoId.value)?.concepto.nombre ?? 'servicio')
+      : modoLista.value ? `${filas.value.length + manualesElegidos.value.length} artículo(s)` : 'compra rápida')
   } catch {
     mostrarToast('No se pudo conservar el gasto. La captura sigue en el formulario.', 'error')
     return
   }
-  if (proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
+  if (modo.value === 'insumo' && proveedorId.value) localStorage.setItem(PROVEEDOR_LS_KEY, String(proveedorId.value))
   propios.add(p.id)
   emit('submitted', p.id)
   texto.value = ''
@@ -394,6 +535,8 @@ async function registrar() {
   detallesManuales.value = []
   manualAbierto.value = false
   montoTotal.value = ''
+  conceptoId.value = null
+  descripcion.value = ''
   fotos.value = []
   fecha.value = localNow()
   void cola.enviar(p).catch(() => mostrarToast("Inicia sesión para enviar el pendiente", "error"))
@@ -406,6 +549,7 @@ onMounted(async () => {
   try { await cola.cargar() } catch { mostrarToast("No se pudieron recuperar los pendientes", "error") }
   try {
     await catalogos.cargar()
+    if (props.conceptoInicialId) aplicarConceptoInicial()
   } catch {
     mostrarToast('No se pudieron cargar los catálogos', 'error')
   }
