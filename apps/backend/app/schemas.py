@@ -1,9 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime, time
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ===== SCHEMAS PARA USUARIOS =====
@@ -76,6 +76,13 @@ class GastoPorArticulo(BaseModel):
     total: float
 
 
+class GastoPorConcepto(BaseModel):
+    id: int
+    nombre: str
+    total: float
+    pagos: int
+
+
 class GastosResumenResponse(BaseModel):
     total_gastado: float
     gasto_promedio_diario: float
@@ -83,6 +90,7 @@ class GastosResumenResponse(BaseModel):
     top_proveedor: Optional[GastoTopProveedor] = None
     por_proveedor: List[GastoPorProveedor] = []
     por_articulo: List[GastoPorArticulo] = []
+    por_concepto: List[GastoPorConcepto] = []
     timeline: List[GastoTimeline]
 
 
@@ -335,6 +343,41 @@ class NominaDetalleResponse(NominaDetalleBase):
         from_attributes = True
 
 
+FRECUENCIAS_CONCEPTO = Literal[
+    "semanal", "mensual", "bimestral", "anual", "cada_n_dias", "eventual"
+]
+
+
+class ConceptoGastoCreate(BaseModel):
+    nombre: str = Field(min_length=1, max_length=100)
+    monto_tipico: Optional[Decimal] = Field(None, gt=0, max_digits=10, decimal_places=2)
+    frecuencia: FRECUENCIAS_CONCEPTO = "mensual"
+    dia_vencimiento: Optional[int] = Field(None, ge=1, le=31)
+    intervalo_dias: Optional[int] = Field(None, ge=1, le=365)
+    activo: bool = True
+
+    @model_validator(mode="after")
+    def _validar_intervalo(self):
+        if self.frecuencia == "cada_n_dias" and self.intervalo_dias is None:
+            raise ValueError("Indica cada cuántos días se paga")
+        if self.frecuencia != "cada_n_dias":
+            self.intervalo_dias = None
+        return self
+
+
+class ConceptoGastoResponse(ConceptoGastoCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class ConceptoPendiente(BaseModel):
+    concepto: ConceptoGastoResponse
+    ultimo_gasto: Optional[datetime] = None
+    estado: Literal["al_corriente", "pendiente", "vencido"]
+
+
 class GastoBase(BaseModel):
     # Opcional: la nómina no lleva proveedor.
     proveedor_id: Optional[int] = None
@@ -345,6 +388,8 @@ class GastoBase(BaseModel):
     total_manual: Optional[Decimal] = Field(None, ge=0)
     notas: Optional[str] = None
     turno_id: Optional[int] = None
+    # Solo para tipo indirecto: concepto del catálogo (luz, gas, renta...).
+    concepto_id: Optional[int] = None
 
 
 class GastoCreate(GastoBase):
@@ -372,6 +417,7 @@ class GastoResponse(GastoBase):
     total: Decimal
     fecha_gasto: datetime
     proveedor: Optional[ProveedorResponse] = None
+    concepto: Optional[ConceptoGastoResponse] = None
     detalles: List[GastoDetalleResponse]
     nomina_detalles: List[NominaDetalleResponse] = []
 
@@ -512,3 +558,125 @@ class AsistenciaAnomaliasResumen(BaseModel):
 
     sucursal_id: int
     pendientes: int
+
+
+# ===== SCHEMAS PARA PAGO Y HORARIOS DE EMPLEADOS =====
+class EmpleadoPagoUpdate(BaseModel):
+    tarifa_hora: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+    tarifa_hora_extra: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+    # Horas por día a partir de las cuales cada hora se paga como extra.
+    horas_jornada: Decimal = Field(
+        default=Decimal("8"), gt=0, le=16, max_digits=4, decimal_places=2
+    )
+
+
+class EmpleadoPagoResponse(EmpleadoPagoUpdate):
+    class Config:
+        from_attributes = True
+
+
+class HorarioDia(BaseModel):
+    dia_semana: int = Field(ge=0, le=6)
+    hora_entrada: time
+    hora_salida: time
+
+    @model_validator(mode="after")
+    def _validar_horas(self):
+        if self.hora_entrada == self.hora_salida:
+            raise ValueError("La entrada y la salida no pueden ser iguales")
+        return self
+
+    class Config:
+        from_attributes = True
+
+
+class HorarioUpdate(BaseModel):
+    dias: List[HorarioDia] = Field(max_length=7)
+
+    @model_validator(mode="after")
+    def _sin_dias_repetidos(self):
+        if len({d.dia_semana for d in self.dias}) != len(self.dias):
+            raise ValueError("Día de la semana repetido")
+        return self
+
+
+class EmpleadoNominaResponse(BaseModel):
+    usuario_id: int
+    nombre: str
+    rol: str
+    pago: Optional[EmpleadoPagoResponse] = None
+    horario: List[HorarioDia] = []
+
+
+# ===== SCHEMAS PARA NÓMINA SEMANAL =====
+class PeriodoNominaCreate(BaseModel):
+    # Cualquier fecha de la semana: el servidor la normaliza al martes que inicia el periodo.
+    fecha_inicio: date
+
+
+class LineaNominaUpdate(BaseModel):
+    horas_trabajadas: Optional[Decimal] = Field(None, ge=0, le=200, max_digits=6, decimal_places=2)
+    horas_extra: Optional[Decimal] = Field(None, ge=0, le=60, max_digits=5, decimal_places=2)
+    bonos: Optional[Decimal] = Field(None, ge=0, max_digits=10, decimal_places=2)
+    descuentos: Optional[Decimal] = Field(None, ge=0, max_digits=10, decimal_places=2)
+    metodo_pago: Optional[Literal["efectivo", "tarjeta"]] = None
+    sale_de_caja: Optional[bool] = None
+    notas: Optional[str] = Field(None, max_length=255)
+
+
+class PagarNominaRequest(BaseModel):
+    pin_autorizacion: str = Field(min_length=1, max_length=64)
+    # Empleados a pagar; vacío = todos los que ya se pueden pagar.
+    usuario_ids: Optional[List[int]] = Field(None, max_length=200)
+
+
+class DiaNomina(BaseModel):
+    """Una checada de la semana, para ver qué días y cuántas horas se están pagando."""
+
+    fecha: date  # jornada operativa
+    entrada: datetime
+    salida: Optional[datetime] = None
+    horas: Decimal
+    automatica: bool = False
+    abierta: bool = False
+
+
+class LineaNominaResponse(BaseModel):
+    usuario_id: int
+    nombre: str
+    dias_esperados: int
+    dias_trabajados: int
+    faltas: int
+    horas_trabajadas: Decimal
+    horas_extra: Decimal
+    base: Decimal
+    extra_monto: Decimal
+    bonos: Decimal
+    descuentos: Decimal
+    total: Decimal
+    metodo_pago: str
+    sale_de_caja: bool
+    notas: Optional[str] = None
+    pagada: bool = False
+    # Último día de la semana que le toca trabajar (se le paga ese día o después).
+    ultimo_dia: date
+    dias: List[DiaNomina] = []
+    # None = se puede pagar ya; si no, por qué todavía no.
+    bloqueo: Optional[str] = None
+    # Registros que el sistema cerró solo a las 00:30: el empleado no checó salida y
+    # sus horas (y extras) pueden estar infladas. Conviene revisarlos antes de pagar.
+    salidas_automaticas: int = 0
+
+
+class PeriodoNominaResponse(BaseModel):
+    id: int
+    fecha_inicio: date
+    fecha_fin: date
+    estado: str
+    pagado_en: Optional[datetime] = None
+    total: Decimal
+    # Registros de asistencia sin salida dentro del periodo (cada uno bloquea el pago de su dueño).
+    pendientes_asistencia: int
+    # Empleados activos sin reglas de pago: no entran al cálculo.
+    sin_configurar: List[str]
+    lineas: List[LineaNominaResponse]

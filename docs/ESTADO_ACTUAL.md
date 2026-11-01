@@ -113,6 +113,10 @@ Tamaño de los routers: `pedidos.py` 1 464 · `turnos.py` 965 · `admin.py` 880 
 | `gastos` | Cabecera de compra | `tipo_gasto`, `metodo_pago`, `turno_id` |
 | `gasto_detalles` | Líneas de compra | |
 | `nomina_detalles` | Pago de nómina por empleado | Gasto tipo `nomina`, sin proveedor |
+| `conceptos_gasto` | Servicios y fijos (luz, renta, gas…) e imprevistos | `frecuencia`, `intervalo_dias`; `gastos.concepto_id` solo en `indirecto` |
+| `empleados_pago` | Tarifa por hora y por hora extra | Se edita en Usuarios → Pago; `horas_jornada` = tope diario antes de extras |
+| `horarios_empleado` | Horario semanal esperado | Define el último día de la semana en que se le paga |
+| `nomina_periodos` / `nomina_lineas` | Nómina semanal (mar→lun) por empleado | Se crean al abrir la semana; pago por persona con PIN admin, un gasto `nomina` por método/origen |
 | `turnos` | Turno de caja | Índice único parcial: 1 turno `abierto` por sucursal |
 | `turno_denominaciones` | Conteo de efectivo | Tipo inicial/final |
 | `registros_asistencia` | Check-in/out | **Sin `sucursal_id`, `turno_id` ni snapshot de rol** |

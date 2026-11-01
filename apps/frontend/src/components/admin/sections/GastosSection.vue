@@ -29,7 +29,7 @@
           Artículo
         </button>
         <button 
-          @click="$emit('new-gasto')" 
+          @click="pedirTipo" 
           class="inline-flex items-center px-5 sm:px-6 py-3 min-h-11 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-xl shadow-slate-200 hover:bg-slate-800 hover:-translate-y-0.5 active:translate-y-0 transition-all"
         >
           <Plus class="h-5 w-5 mr-2" />
@@ -60,13 +60,13 @@
       <!-- Content Sections -->
       <div class="min-h-[60vh]">
         <div v-if="gastosSubTab === 'dashboard'" class="animate-in slide-in-from-bottom-4 duration-500">
-           <GastosDashboard @new-gasto="$emit('new-gasto')" />
+           <GastosDashboard @new-gasto="pedirTipo" />
         </div>
 
         <div v-if="gastosSubTab === 'historial'" class="animate-in slide-in-from-bottom-4 duration-500">
            <GastosHistorial 
              ref="gastosHistorialRef"
-             @new-gasto="$emit('new-gasto')"
+             @new-gasto="pedirTipo"
              @edit-gasto="$emit('edit-gasto', $event)"
            />
         </div>
@@ -87,6 +87,10 @@
              />
         </div>
         
+        <div v-if="gastosSubTab === 'conceptos'" class="animate-in slide-in-from-bottom-4 duration-500">
+             <ConceptosGastoView ref="conceptosRef" @registrar="abrirServicio" />
+        </div>
+
         <div v-if="gastosSubTab === 'categorias'" class="animate-in slide-in-from-bottom-4 duration-500">
              <CategoriasView 
                :categorias="categoriasArticuloList" 
@@ -96,6 +100,39 @@
         </div>
       </div>
     </div>
+
+    <!-- ¿Qué vas a registrar? -->
+    <Teleport to="body">
+      <div
+        v-if="mostrarTipo"
+        class="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-sm sm:p-4"
+        role="dialog" aria-modal="true" aria-label="¿Qué vas a registrar?"
+        @click.self="mostrarTipo = false"
+        @keydown.esc="mostrarTipo = false"
+      >
+        <div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 shadow-2xl">
+          <h3 class="text-lg font-black text-slate-900">¿Qué vas a registrar?</h3>
+          <button type="button" @click="elegirCompra" class="w-full min-h-16 text-left px-4 py-3 rounded-2xl border border-slate-200 hover:border-blue-400 active:scale-[0.99] transition-all">
+            <span class="block font-black text-slate-800">🛒 Compra o nómina</span>
+            <span class="block text-xs font-bold text-slate-400">Insumos con proveedor y artículos, o pago de nómina</span>
+          </button>
+          <button type="button" @click="elegirServicio" class="w-full min-h-16 text-left px-4 py-3 rounded-2xl border border-slate-200 hover:border-blue-400 active:scale-[0.99] transition-all">
+            <span class="block font-black text-slate-800">💡 Servicio o imprevisto</span>
+            <span class="block text-xs font-bold text-slate-400">Renta, luz, gas, agua · desazolve, reparaciones, herramientas</span>
+          </button>
+          <button type="button" @click="mostrarTipo = false" class="w-full min-h-11 text-sm font-black text-slate-400">Cancelar</button>
+        </div>
+      </div>
+    </Teleport>
+
+    <RegistroRapidoModal
+      v-if="servicioModal"
+      :caja="false"
+      modo-inicial="servicio"
+      :concepto-inicial-id="servicioConceptoId"
+      @close="servicioModal = false"
+      @saved="onServicioGuardado"
+    />
 
     <!-- MODALES LOCALES -->
     <ProveedorFormModal 
@@ -133,6 +170,8 @@ import GastosDashboard from '@/components/gastos/GastosDashboard.vue'
 import GastosHistorial from '@/components/gastos/GastosHistorial.vue'
 import ProveedoresView from '@/components/gastos/ProveedoresView.vue'
 import ArticulosView from '@/components/gastos/ArticulosView.vue'
+import RegistroRapidoModal from '@/components/gastos/RegistroRapidoModal.vue'
+import ConceptosGastoView from '@/components/gastos/ConceptosGastoView.vue'
 import CategoriasView from '@/components/gastos/CategoriasView.vue'
 import ProveedorFormModal from '@/components/gastos/ProveedorFormModal.vue'
 import ArticuloFormModal from '@/components/gastos/ArticuloFormModal.vue'
@@ -144,12 +183,31 @@ const emit = defineEmits(['new-gasto', 'edit-gasto'])
 const gastosTabs = [
   { id: 'dashboard', name: 'Resumen' },
   { id: 'historial', name: 'Historial' },
+  { id: 'conceptos', name: 'Servicios y fijos' },
   { id: 'proveedores', name: 'Proveedores' },
   { id: 'articulos', name: 'Catálogo' },
   { id: 'categorias', name: 'Familias' }
 ]
 const gastosSubTab = ref('dashboard')
 const gastosHistorialRef = ref(null)
+const conceptosRef = ref<{ cargar: () => void } | null>(null)
+
+// "Nuevo Gasto": primero se pregunta qué es, para no obligar a conocer cada pantalla.
+const mostrarTipo = ref(false)
+const servicioModal = ref(false)
+const servicioConceptoId = ref<number | null>(null)
+const pedirTipo = () => { mostrarTipo.value = true }
+const elegirCompra = () => { mostrarTipo.value = false; emit('new-gasto') }
+const elegirServicio = () => { mostrarTipo.value = false; abrirServicio(null) }
+function abrirServicio(conceptoId: number | null) {
+  servicioConceptoId.value = conceptoId
+  servicioModal.value = true
+}
+function onServicioGuardado() {
+  servicioModal.value = false
+  conceptosRef.value?.cargar()
+  if (gastosHistorialRef.value) (gastosHistorialRef.value as any).loadGastos()
+}
 
 // Assets Lists
 const selectedArticuloCategoria = ref<number | null>(null)
