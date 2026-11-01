@@ -51,15 +51,20 @@
 
     <!-- MODALES GLOBALES (Mantenidos desde original con leve ajuste visual) -->
     <AdminModals
-      v-if="showPlatilloModal || showUsuarioModal"
+      v-if="showPlatilloModal"
       :show-platillo-modal="showPlatilloModal"
-      :show-usuario-modal="showUsuarioModal"
       :editing-platillo="editingPlatillo"
-      :editing-usuario="editingUsuario"
       @close-platillo-modal="closePlatilloModal"
-      @close-usuario-modal="closeUsuarioModal"
       @save-platillo="savePlatillo"
-      @save-usuario="saveUsuario"
+    />
+
+    <UsuarioModal
+      v-if="showUsuarioModal"
+      :key="editingUsuario?.id ?? 'nuevo'"
+      ref="usuarioModal"
+      :usuario="editingUsuario"
+      @close="closeUsuarioModal"
+      @save="saveUsuario"
     />
 
     <!-- Modal Gasto NUEVO -->
@@ -87,6 +92,7 @@ import AdminTopbar from '@/components/admin/AdminTopbar.vue'
 import DashboardSection from '@/components/admin/sections/DashboardSection.vue'
 import GastosSection from '@/components/admin/sections/GastosSection.vue'
 import PlatillosSection from '@/components/admin/sections/PlatillosSection.vue'
+import UsuarioModal from '@/components/admin/UsuarioModal.vue'
 import UsuariosSection from '@/components/admin/sections/UsuariosSection.vue'
 import ConfiguracionSection from '@/components/admin/sections/ConfiguracionSection.vue'
 import TurnosSection from '@/components/admin/sections/TurnosSection.vue'
@@ -241,17 +247,24 @@ const closeUsuarioModal = () => {
   editingUsuario.value = null
 }
 
-const saveUsuario = async (data: any) => {
+const usuarioModal = ref<{ fallo: (msg: string) => void } | null>(null)
+
+const saveUsuario = async ({ data, pago, horario }: { data: any; pago: any; horario: any[] | null }) => {
   try {
+    let usuarioId: number
     if (editingUsuario.value) {
-      await api.put(`/usuarios/${editingUsuario.value.id}`, data)
+      usuarioId = editingUsuario.value.id
+      if (Object.keys(data).length) await api.put(`/usuarios/${usuarioId}`, data)
     } else {
-      await api.post('/usuarios/', data)
+      usuarioId = (await api.post('/usuarios/', data)).data.id
     }
+    if (pago) await api.put(`/nomina/empleados/${usuarioId}/pago`, pago)
+    if (horario) await api.put(`/nomina/empleados/${usuarioId}/horario`, { dias: horario })
     closeUsuarioModal()
     refreshKey.value++
-  } catch (error) {
-    alert('Error al guardar usuario')
+  } catch (e: any) {
+    const d = e?.response?.data?.detail
+    usuarioModal.value?.fallo(typeof d === 'string' ? d : 'No se pudo guardar el usuario')
   }
 }
 </script>

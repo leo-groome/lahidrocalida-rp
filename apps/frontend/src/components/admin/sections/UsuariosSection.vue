@@ -1,97 +1,151 @@
 <template>
-  <div class="space-y-8 animate-in fade-in duration-500">
-    <!-- Header -->
-    <div class="flex flex-wrap items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
-      <div class="space-y-1">
-        <h2 class="text-2xl font-extrabold text-slate-900 tracking-tight">Gestión de Usuarios</h2>
-        <p class="text-sm font-medium text-slate-500">Administra los accesos y roles de tu equipo.</p>
+  <div class="space-y-6">
+    <header class="flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 class="text-2xl font-black text-slate-900 tracking-tight">Usuarios</h2>
+        <p class="text-sm font-medium text-slate-500">{{ filtrados.length }} de {{ usuarios.length }} · accesos, pago y horario del equipo</p>
       </div>
-      
-      <button 
-        @click="$emit('new-user')" 
-        class="inline-flex items-center px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-700 hover:scale-105 active:scale-95 transition-all"
-      >
-        <UserPlus class="h-4 w-4 mr-2" />
-        Nuevo Usuario
+      <button @click="$emit('new-user')" class="inline-flex items-center gap-2 min-h-11 px-5 bg-emerald-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all">
+        <UserPlus class="h-4 w-4" /> Nuevo usuario
       </button>
+    </header>
+
+    <!-- Filtros -->
+    <div class="bg-white rounded-2xl border border-slate-100 p-3 space-y-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="relative flex-1 min-w-52">
+          <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input v-model="busqueda" type="search" placeholder="Buscar por nombre…" aria-label="Buscar usuario" class="w-full min-h-11 pl-10 pr-3 rounded-xl border border-slate-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-[#00126D]/20 focus:border-[#00126D]">
+        </label>
+        <label class="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+          Orden
+          <select v-model="orden" class="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case tracking-normal text-slate-700">
+            <option value="nombre">Nombre (A-Z)</option>
+            <option value="rol">Rol</option>
+            <option value="tarifa">Pago por hora (mayor)</option>
+            <option value="reciente">Más recientes</option>
+          </select>
+        </label>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button v-for="r in filtrosRol" :key="r.id" type="button" @click="rol = r.id" class="min-h-10 px-3 rounded-xl text-xs font-black transition-colors" :class="rol === r.id ? 'bg-[#00126D] text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
+          {{ r.label }} <span class="opacity-60">{{ cuenta(r.id) }}</span>
+        </button>
+        <span class="mx-1 h-5 w-px bg-slate-200" aria-hidden="true"></span>
+        <button v-for="e in filtrosEstado" :key="e.id" type="button" @click="estado = e.id" class="min-h-10 px-3 rounded-xl text-xs font-black transition-colors" :class="estado === e.id ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'">
+          {{ e.label }}
+        </button>
+        <label v-if="hayEmpleadosSinTarifa" class="ml-auto inline-flex items-center gap-2 min-h-10 px-3 text-xs font-black text-amber-700 cursor-pointer">
+          <input v-model="soloSinTarifa" type="checkbox" class="h-4 w-4"> Solo sin tarifa de pago
+        </label>
+      </div>
     </div>
 
-    <!-- User List as Modern Table -->
-    <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-x-auto animate-in slide-in-from-bottom-2 duration-300">
-      <table class="min-w-full">
-        <thead class="bg-slate-50/50">
-          <tr>
-            <th class="px-8 py-5 text-left text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Colaborador</th>
-            <th class="px-8 py-5 text-left text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Rol</th>
-            <th class="px-8 py-5 text-left text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Estado</th>
-            <th class="px-8 py-5 text-right text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Acción</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-50">
-          <tr v-for="user in usuariosList" :key="user.id" class="group hover:bg-slate-50/30 transition-all cursor-default">
-            <td class="px-8 py-5">
-              <div class="flex items-center space-x-4">
-                <div class="h-10 w-10 border-2 border-white rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center text-blue-600 font-black text-sm shadow-sm group-hover:scale-110 transition-transform">
-                  {{ user.nombre.charAt(0).toUpperCase() }}
-                </div>
-                <div class="space-y-0.5">
-                  <p class="text-sm font-extrabold text-slate-800 transition-colors group-hover:text-blue-600">{{ user.nombre }}</p>
-                  <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID #{{ user.id }} · PIN configurado</p>
-                </div>
-              </div>
-            </td>
-            <td class="px-8 py-5">
-              <span class="inline-flex items-center px-4 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border border-slate-100" 
-                :class="user.rol === 'administrador' ? 'bg-blue-50 text-blue-600 border-blue-200/50' : 'bg-slate-50 text-slate-500 border-slate-200/50'">
-                {{ user.rol }}
-              </span>
-            </td>
-            <td class="px-8 py-5">
-              <div class="flex items-center">
-                <div class="h-2 w-2 rounded-full mr-3 animate-pulse" :class="user.activo ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-400'"></div>
-                <span class="text-xs font-bold" :class="user.activo ? 'text-emerald-700' : 'text-red-500'">{{ user.activo ? 'Activo' : 'Suspendido' }}</span>
-              </div>
-            </td>
-            <td class="px-8 py-5 text-right">
-              <button 
-                @click="$emit('edit-user', user)" 
-                class="inline-flex items-center px-4 py-2 bg-slate-50 text-slate-500 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 hover:text-white hover:shadow-lg hover:shadow-blue-200 transition-all hover:scale-105"
-              >
-                <Settings class="h-3.5 w-3.5 mr-2" />
-                Configurar
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Lista -->
+    <div v-if="!filtrados.length" class="text-center py-16 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+      <p class="font-bold text-slate-400">{{ usuarios.length ? 'Ningún usuario coincide con los filtros' : 'Aún no hay usuarios' }}</p>
     </div>
-
-    <!-- Empty State if needed later -->
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <article v-for="u in filtrados" :key="u.id" class="bg-white rounded-2xl border border-slate-100 p-4 space-y-3 hover:border-slate-300 transition-colors" :class="{ 'opacity-60': !u.activo }">
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 text-blue-600 flex items-center justify-center text-base font-black shrink-0">
+            {{ u.nombre.charAt(0).toUpperCase() }}
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="font-black text-slate-800 truncate">{{ u.nombre }}</p>
+            <p class="text-[10px] font-black uppercase tracking-widest text-slate-400">{{ u.rol }}<template v-if="!u.activo"> · suspendido</template></p>
+          </div>
+          <button @click="$emit('edit-user', u)" class="min-h-10 px-3 rounded-xl bg-slate-100 text-slate-600 text-xs font-black hover:bg-[#00126D] hover:text-white transition-colors inline-flex items-center gap-1.5" :aria-label="`Configurar ${u.nombre}`">
+            <Settings class="h-3.5 w-3.5" /> Configurar
+          </button>
+        </div>
+        <div v-if="u.rol !== 'administrador'" class="text-xs font-bold space-y-1">
+          <p v-if="u.pago" class="text-slate-600 tabular-nums">${{ pesos(u.pago.tarifa_hora) }}/h · extra ${{ pesos(u.pago.tarifa_hora_extra) }}/h</p>
+          <p v-else class="text-amber-600">Sin tarifa de pago</p>
+          <p class="text-slate-400">{{ u.horario?.length ? `${u.horario.length} días · ${horasSemana(u)} h por semana` : 'Sin horario' }}</p>
+        </div>
+      </article>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { Search, Settings, UserPlus } from 'lucide-vue-next'
 import api from '@/api/client'
-import { 
-  UserPlus, Settings 
-} from 'lucide-vue-next'
 
-const emit = defineEmits(['new-user', 'edit-user'])
+defineEmits(['new-user', 'edit-user'])
 
-const usuariosList = ref<any[]>([])
+const usuarios = ref<any[]>([])
+const busqueda = ref('')
+const rol = ref('todos')
+const estado = ref<'activos' | 'suspendidos' | 'todos'>('activos')
+const orden = ref<'nombre' | 'rol' | 'tarifa' | 'reciente'>('nombre')
+const soloSinTarifa = ref(false)
+
+const filtrosRol = [
+  { id: 'todos', label: 'Todos' },
+  { id: 'mesero', label: 'Meseros' },
+  { id: 'cajero', label: 'Caja' },
+  { id: 'cocina', label: 'Cocina' },
+  { id: 'compras', label: 'Compras' },
+  { id: 'administrador', label: 'Admins' },
+]
+const filtrosEstado = [
+  { id: 'activos' as const, label: 'Activos' },
+  { id: 'suspendidos' as const, label: 'Suspendidos' },
+  { id: 'todos' as const, label: 'Todos' },
+]
+
+const pesos = (v: number | string) => Number(v).toLocaleString('es-MX', { maximumFractionDigits: 2 })
+const horasDelDia = (e: string, s: string) => {
+  const [he, me] = e.split(':').map(Number)
+  const [hs, ms] = s.split(':').map(Number)
+  let min = hs * 60 + ms - (he * 60 + me)
+  if (min <= 0) min += 24 * 60
+  return min / 60
+}
+const horasSemana = (u: any) => u.horario.reduce((s: number, d: any) => s + horasDelDia(d.hora_entrada, d.hora_salida), 0).toFixed(1)
+
+const normaliza = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+const porEstado = (u: any) => estado.value === 'todos' || (estado.value === 'activos') === !!u.activo
+const cuenta = (id: string) => usuarios.value.filter((u) => porEstado(u) && (id === 'todos' || u.rol === id)).length
+const hayEmpleadosSinTarifa = computed(() => usuarios.value.some((u) => u.rol !== 'administrador' && u.activo && !u.pago))
+
+const filtrados = computed(() => {
+  const q = normaliza(busqueda.value.trim())
+  const lista = usuarios.value.filter(
+    (u) =>
+      porEstado(u) &&
+      (rol.value === 'todos' || u.rol === rol.value) &&
+      (!q || normaliza(u.nombre).includes(q)) &&
+      (!soloSinTarifa.value || (u.rol !== 'administrador' && !u.pago)),
+  )
+  const por = {
+    nombre: (a: any, b: any) => a.nombre.localeCompare(b.nombre, 'es'),
+    rol: (a: any, b: any) => a.rol.localeCompare(b.rol) || a.nombre.localeCompare(b.nombre, 'es'),
+    tarifa: (a: any, b: any) => Number(b.pago?.tarifa_hora ?? 0) - Number(a.pago?.tarifa_hora ?? 0),
+    reciente: (a: any, b: any) => b.id - a.id,
+  }[orden.value]
+  return [...lista].sort(por)
+})
 
 const loadUsuarios = async () => {
   try {
-    const res = await api.get('/usuarios/')
-    usuariosList.value = res.data
-    console.log('Usuarios cargados:', res.data)
+    const lista: any[] = (await api.get('/usuarios/')).data
+    let empleados: any[] = []
+    try {
+      empleados = (await api.get('/nomina/empleados')).data
+    } catch {
+      // Solo el administrador ve pagos y horarios.
+    }
+    const porId = new Map(empleados.map((e) => [e.usuario_id, e]))
+    usuarios.value = lista.map((u) => ({ ...u, pago: porId.get(u.id)?.pago ?? null, horario: porId.get(u.id)?.horario ?? [] }))
   } catch (err) {
     console.error('Error cargando usuarios:', err)
   }
 }
 
 onMounted(loadUsuarios)
-
 defineExpose({ loadUsuarios })
 </script>

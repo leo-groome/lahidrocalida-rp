@@ -5,6 +5,7 @@ export interface GastoPayload {
   fecha_gasto?: string | null
   total_manual?: number | null
   turno_id?: number | null
+  concepto_id?: number | null
   descripcion?: string | null
   notas?: string | null
   folio?: string | null
@@ -22,6 +23,7 @@ export function prepararPayloadGasto(input: GastoPayload): GastoPayload {
     fecha_gasto: input.fecha_gasto || new Date().toISOString(),
     total_manual: input.total_manual ?? null,
     turno_id: input.turno_id ?? null,
+    concepto_id: input.concepto_id ?? null,
     descripcion: input.descripcion ?? input.notas ?? null,
     notas: input.notas ?? null,
     folio: input.folio ?? null,

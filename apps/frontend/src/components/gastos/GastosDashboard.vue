@@ -221,6 +221,35 @@
         </div>
       </div>
 
+      <!-- Indirectos: pendientes de pago y total por concepto -->
+      <div v-if="alertasConceptos.length || stats?.por_concepto?.length" class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+        <div v-if="alertasConceptos.length" class="bg-white border border-amber-100 rounded-[2rem] p-8 shadow-sm">
+          <h3 class="text-xs font-black tracking-widest text-amber-600 uppercase mb-6">Pagos pendientes</h3>
+          <ul class="space-y-2">
+            <li v-for="c in alertasConceptos" :key="c.concepto.id" class="flex items-center justify-between text-sm">
+              <span class="font-bold text-slate-700">{{ c.concepto.nombre }}</span>
+              <span class="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg"
+                :class="c.estado === 'vencido' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'">{{ c.estado }}</span>
+            </li>
+          </ul>
+        </div>
+        <div v-if="stats?.por_concepto?.length" class="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm">
+          <h3 class="text-xs font-black tracking-widest text-slate-400 uppercase mb-6">Indirectos por concepto</h3>
+          <table class="w-full text-sm">
+            <thead><tr class="text-[10px] uppercase tracking-widest text-slate-400 text-left">
+              <th class="pb-3">Concepto</th><th class="pb-3 text-right">Pagos</th><th class="pb-3 text-right">Total</th>
+            </tr></thead>
+            <tbody>
+              <tr v-for="c in stats.por_concepto" :key="c.id" class="border-t border-slate-50">
+                <td class="py-2 font-bold text-slate-700">{{ c.nombre }}</td>
+                <td class="py-2 text-right text-slate-500">{{ c.pagos }}</td>
+                <td class="py-2 text-right font-black text-slate-900">${{ formatCurrency(c.total) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Compras por proveedor y por artículo -->
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <div class="bg-white border border-slate-100 rounded-[2rem] p-8 shadow-sm">
@@ -270,6 +299,7 @@ import { ref, onMounted, computed } from 'vue'
 import api from '@/api/client'
 import { parseSafeDate } from '@/utils/dateUtils'
 import { rangoMes } from '@/utils/fecha'
+import { useCatalogosGastosStore } from '@/stores/catalogos-gastos'
 import { 
   TrendingDown, Calendar, SearchX, DollarSign, Clock, 
   Trophy, Tag, Loader2, PieChart, ListStart
@@ -307,9 +337,13 @@ interface GastoAnalytics {
   top_proveedor: { nombre: string; total: number } | null;
   por_categoria: Array<{ categoria: string; total: number }>;
   por_proveedor?: Array<{ id: number; nombre: string; total: number; compras: number }>;
+  por_concepto?: Array<{ id: number; nombre: string; total: number; pagos: number }>;
   por_articulo?: Array<{ id: number; nombre: string; unidad: string; categoria: string | null; cantidad: number; total: number }>;
   timeline: Array<{ fecha: string; total: number }>;
 }
+
+const catalogos = useCatalogosGastosStore()
+const alertasConceptos = computed(() => catalogos.conceptos.filter((c) => c.estado !== 'al_corriente'))
 
 const loading = ref(false)
 const stats = ref<GastoAnalytics | null>(null)
