@@ -17,6 +17,7 @@ from app.deps import require_roles
 from app.models import (
     Articulo,
     CategoriaArticulo,
+    ConceptoGasto,
     Gasto,
     GastoDetalle,
     NominaDetalle,
@@ -31,9 +32,13 @@ from app.schemas import (
     ArticuloResponse,
     CategoriaArticuloCreate,
     CategoriaArticuloResponse,
+    ConceptoGastoCreate,
+    ConceptoGastoResponse,
+    ConceptoPendiente,
     GastoCreate,
     GastoPorArticulo,
     GastoPorCategoria,
+    GastoPorConcepto,
     GastoPorProveedor,
     GastoResponse,
     GastosResumenResponse,
@@ -46,6 +51,7 @@ from app.schemas import (
     ProveedorResponse,
     UsuarioResponse,
 )
+from app.services.conceptos_gasto import estado_concepto
 from app.services.storage_cleanup import programar_borrado
 from app.utils.timezone import get_mexico_now, jornada_de, rango_jornada
 
@@ -81,6 +87,8 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
     if data.metodo_pago not in METODOS_PAGO:
         raise HTTPException(status_code=400, detail="Método de pago inválido")
     if data.tipo_gasto == "nomina":
+        if data.concepto_id is not None:
+            raise HTTPException(status_code=400, detail="Solo un gasto indirecto lleva concepto")
         if data.detalles:
             raise HTTPException(status_code=400, detail="Nómina no lleva detalles de artículos")
         if not data.nomina_detalles:
@@ -90,12 +98,35 @@ def _validate_gasto_inputs(data: GastoCreate) -> None:
     else:
         if data.nomina_detalles:
             raise HTTPException(status_code=400, detail="Solo la nómina lleva empleados")
+        if data.concepto_id is not None and data.tipo_gasto != "indirecto":
+            raise HTTPException(status_code=400, detail="Solo un gasto indirecto lleva concepto")
         # Registro rápido: el proveedor es opcional (compra suelta) y, si hay un
         # total capturado a mano, tampoco se exigen líneas de artículos.
         if not data.detalles and data.total_manual is None:
             raise HTTPException(status_code=400, detail="Captura un total o al menos un artículo")
         if data.total_manual is not None and data.total_manual <= 0 and not data.detalles:
             raise HTTPException(status_code=400, detail="El total debe ser mayor a 0")
+
+
+def _resolve_concepto(
+    db: Session, data: GastoCreate, sucursal_id: int, actual: Optional[int] = None
+) -> Optional[int]:
+    """Valida el concepto del gasto. En update, si el cliente no lo manda se conserva `actual`."""
+    if "concepto_id" not in data.model_fields_set and actual is not None:
+        return actual
+    if data.concepto_id is None:
+        return None
+    concepto = (
+        db.query(ConceptoGasto)
+        .filter(ConceptoGasto.id == data.concepto_id, ConceptoGasto.sucursal_id == sucursal_id)
+        .first()
+    )
+    if concepto is None:
+        raise HTTPException(status_code=404, detail="Concepto no encontrado")
+    # Imprevistos (tubería rota, reparaciones): sin descripción no se sabe qué fue.
+    if concepto.frecuencia == "eventual" and not (data.descripcion or "").strip():
+        raise HTTPException(status_code=400, detail="Describe qué pasó en este gasto")
+    return concepto.id
 
 
 def _build_nomina_detalles(
@@ -370,6 +401,100 @@ def _build_gasto_detalles(
     return detalles, subtotal
 
 
+@router.get("/conceptos", response_model=List[ConceptoGastoResponse])
+def list_conceptos(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    return (
+        db.query(ConceptoGasto)
+        .filter(ConceptoGasto.sucursal_id == current_user.sucursal_id)
+        .order_by(func.lower(ConceptoGasto.nombre).asc())
+        .all()
+    )
+
+
+@router.get("/conceptos/pendientes", response_model=List[ConceptoPendiente])
+def list_conceptos_pendientes(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_active_user),
+):
+    """Conceptos activos con su estado de pago; pendientes/vencidos primero."""
+    conceptos = (
+        db.query(ConceptoGasto)
+        .filter(
+            ConceptoGasto.sucursal_id == current_user.sucursal_id,
+            ConceptoGasto.activo == True,  # noqa: E712
+        )
+        .all()
+    )
+    ultimos = dict(
+        db.query(Gasto.concepto_id, func.max(Gasto.fecha_gasto))
+        .filter(
+            Gasto.sucursal_id == current_user.sucursal_id,
+            Gasto.concepto_id.in_([c.id for c in conceptos]),
+        )
+        .group_by(Gasto.concepto_id)
+        .all()
+    )
+    hoy = jornada_de(get_mexico_now())
+    orden = {"vencido": 0, "pendiente": 1, "al_corriente": 2}
+    items = []
+    for c in conceptos:
+        ultimo = ultimos.get(c.id)
+        estado = estado_concepto(
+            c.frecuencia, c.dia_vencimiento, ultimo, hoy, jornada_de, c.intervalo_dias
+        )
+        items.append(ConceptoPendiente(concepto=c, ultimo_gasto=ultimo, estado=estado))
+    items.sort(key=lambda i: (orden[i.estado], i.concepto.nombre.lower()))
+    return items
+
+
+@router.post("/conceptos", response_model=ConceptoGastoResponse, status_code=201)
+def create_concepto(
+    data: ConceptoGastoCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    concepto = ConceptoGasto(**data.model_dump(), sucursal_id=current_user.sucursal_id)
+    db.add(concepto)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Ya existe un concepto con ese nombre")
+    db.refresh(concepto)
+    return concepto
+
+
+@router.put("/conceptos/{concepto_id}", response_model=ConceptoGastoResponse)
+def update_concepto(
+    concepto_id: int,
+    data: ConceptoGastoCreate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_roles("administrador")),
+):
+    concepto = (
+        db.query(ConceptoGasto)
+        .filter(
+            ConceptoGasto.id == concepto_id,
+            ConceptoGasto.sucursal_id == current_user.sucursal_id,
+        )
+        .first()
+    )
+    if concepto is None:
+        raise HTTPException(status_code=404, detail="Concepto no encontrado")
+    for campo, valor in data.model_dump().items():
+        setattr(concepto, campo, valor)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Ya existe un concepto con ese nombre")
+    db.refresh(concepto)
+    return concepto
+
+
 @router.get("/empleados", response_model=List[UsuarioResponse])
 def list_empleados_nomina(
     db: Session = Depends(get_db),
@@ -465,6 +590,7 @@ def create_gasto(
     detalles: list[GastoDetalle] = []
     nomina_detalles: list[NominaDetalle] = []
     proveedor_id = None
+    concepto_id = None
 
     if data.tipo_gasto == "nomina":
         nomina_detalles, subtotal = _build_nomina_detalles(
@@ -479,6 +605,7 @@ def create_gasto(
             if proveedor.sucursal_id != current_user.sucursal_id:
                 raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
             proveedor_id = proveedor.id
+        concepto_id = _resolve_concepto(db, data, current_user.sucursal_id)
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -500,6 +627,7 @@ def create_gasto(
         notas=data.notas,
         sucursal_id=current_user.sucursal_id,
         turno_id=data.turno_id if data.tipo_gasto != "nomina" else None,
+        concepto_id=concepto_id,
         detalles=detalles,
         nomina_detalles=nomina_detalles,
     )
@@ -571,6 +699,7 @@ def list_gastos(
     query = (
         query.options(
             joinedload(Gasto.proveedor),
+            joinedload(Gasto.concepto),
             joinedload(Gasto.detalles)
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
@@ -737,6 +866,21 @@ def get_gastos_analiticas(
         .all()
     ]
 
+    # 4d. Por concepto indirecto (luz, gas, renta...): no tienen detalle de artículos.
+    por_concepto = [
+        GastoPorConcepto(id=r.id, nombre=r.nombre, total=float(r.total or 0), pagos=r.pagos)
+        for r in base_query.with_entities(
+            ConceptoGasto.id,
+            ConceptoGasto.nombre,
+            func.sum(Gasto.total).label("total"),
+            func.count(Gasto.id).label("pagos"),
+        )
+        .join(ConceptoGasto, Gasto.concepto_id == ConceptoGasto.id)
+        .group_by(ConceptoGasto.id, ConceptoGasto.nombre)
+        .order_by(func.sum(Gasto.total).desc())
+        .all()
+    ]
+
     # 5. Timeline por jornada (05:00→05:00 hora México), agrupado en Python para no
     # depender de funciones de zona horaria del dialecto.
     por_dia: dict = {}
@@ -752,6 +896,7 @@ def get_gastos_analiticas(
         top_proveedor=top_proveedor_obj,
         por_proveedor=por_proveedor,
         por_articulo=por_articulo,
+        por_concepto=por_concepto,
         timeline=timeline,
     )
 
@@ -808,6 +953,7 @@ def get_gasto(
         db.query(Gasto)
         .options(
             joinedload(Gasto.proveedor),
+            joinedload(Gasto.concepto),
             joinedload(Gasto.detalles)
             .joinedload(GastoDetalle.articulo)
             .joinedload(Articulo.categoria),
@@ -844,6 +990,7 @@ def update_gasto(
     detalles: list[GastoDetalle] = []
     nomina_detalles: list[NominaDetalle] = []
     proveedor_id = None
+    concepto_id = None
 
     if data.tipo_gasto == "nomina":
         nomina_detalles, subtotal = _build_nomina_detalles(
@@ -858,6 +1005,7 @@ def update_gasto(
             if proveedor.sucursal_id != current_user.sucursal_id:
                 raise HTTPException(status_code=403, detail="Proveedor no pertenece a tu sucursal")
             proveedor_id = proveedor.id
+        concepto_id = _resolve_concepto(db, data, current_user.sucursal_id, gasto.concepto_id)
         detalles, subtotal = _build_gasto_detalles(data.detalles, db)
         total = _normalize_decimal(data.total_manual) if data.total_manual is not None else subtotal
 
@@ -875,6 +1023,7 @@ def update_gasto(
         gasto.fecha_gasto = data.fecha_gasto
     gasto.notas = data.notas
     gasto.turno_id = data.turno_id if data.tipo_gasto != "nomina" else None
+    gasto.concepto_id = concepto_id
 
     gasto.detalles.clear()
     for detalle in detalles:

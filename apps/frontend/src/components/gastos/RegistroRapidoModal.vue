@@ -10,7 +10,7 @@
       <div class="bg-slate-50 w-full sm:max-w-xl max-h-[92dvh] sm:max-h-[90dvh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
         <header class="flex items-center justify-between gap-3 px-4 py-3 bg-white border-b border-slate-100 flex-shrink-0">
           <div class="min-w-0">
-            <p class="text-xs font-black tracking-widest text-slate-400 uppercase leading-none">Caja</p>
+            <p class="text-xs font-black tracking-widest text-slate-400 uppercase leading-none">{{ caja ? 'Caja' : 'Egresos' }}</p>
             <h2 id="registro-rapido-titulo" class="text-base font-black text-slate-900 tracking-tight">Registrar gasto</h2>
           </div>
           <button
@@ -36,7 +36,9 @@
           <RegistroRapidoForm
             :turno-id="turnoId"
             :bloqueado="sinTurno"
-            forzar-efectivo
+            :forzar-efectivo="caja"
+            :modo-inicial="modoInicial"
+            :concepto-inicial-id="conceptoInicialId"
             @saved="(id) => emit('saved', id)"
           />
         </div>
@@ -50,14 +52,23 @@ import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { AlertTriangle, X } from 'lucide-vue-next'
 import RegistroRapidoForm from '@/components/gastos/RegistroRapidoForm.vue'
 
-const props = defineProps<{ turnoId?: number | null }>()
+const props = withDefaults(
+  defineProps<{
+    turnoId?: number | null
+    /** Desde Caja el gasto sale del efectivo del turno; desde Egresos no. */
+    caja?: boolean
+    modoInicial?: 'insumo' | 'servicio'
+    conceptoInicialId?: number | null
+  }>(),
+  { turnoId: null, caja: true, modoInicial: undefined, conceptoInicialId: null },
+)
 const emit = defineEmits<{
   close: []
   /** Gasto confirmado por el servidor (id del pendiente en cola). */
   saved: [id: string]
 }>()
 
-const sinTurno = computed(() => props.turnoId == null)
+const sinTurno = computed(() => props.caja && props.turnoId == null)
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return

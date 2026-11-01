@@ -2,6 +2,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -10,6 +11,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -192,6 +194,23 @@ class Articulo(Base):
     detalles_gasto = relationship("GastoDetalle", back_populates="articulo")
 
 
+class ConceptoGasto(Base):
+    """Catálogo de gastos indirectos recurrentes (luz, gas, renta...)."""
+
+    __tablename__ = "conceptos_gasto"
+    __table_args__ = (UniqueConstraint("sucursal_id", "nombre", name="uq_concepto_gasto_nombre"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    nombre = Column(String(100), nullable=False)
+    monto_tipico = Column(DECIMAL(10, 2))
+    frecuencia = Column(String(20), nullable=False, server_default="mensual")
+    dia_vencimiento = Column(Integer)
+    # Solo para frecuencia "cada_n_dias" (p. ej. gas cada 21 días).
+    intervalo_dias = Column(Integer)
+    activo = Column(Boolean, nullable=False, default=True, server_default="true")
+
+
 class Gasto(Base):
     __tablename__ = "gastos"
 
@@ -215,11 +234,13 @@ class Gasto(Base):
     notas = Column(Text)
     sucursal_id = Column(Integer, ForeignKey("sucursales.id"))
     turno_id = Column(Integer, ForeignKey("turnos.id"), nullable=True)
+    concepto_id = Column(Integer, ForeignKey("conceptos_gasto.id"), nullable=True, index=True)
 
     # Relaciones
     sucursal = relationship("Sucursal", back_populates="gastos")
     proveedor = relationship("Proveedor", back_populates="gastos")
     turno = relationship("Turno")
+    concepto = relationship("ConceptoGasto")
     detalles = relationship("GastoDetalle", back_populates="gasto", cascade="all, delete-orphan")
     nomina_detalles = relationship(
         "NominaDetalle", back_populates="gasto", cascade="all, delete-orphan"
@@ -302,6 +323,95 @@ class GastoAdjunto(Base):
     created_at = Column(DateTime(timezone=True), default=get_local_datetime, nullable=False)
 
     gasto = relationship("Gasto", back_populates="adjuntos")
+
+
+class EmpleadoPago(Base):
+    """Tarifas de un empleado (insumo del cálculo de nómina): pago por hora y por hora extra."""
+
+    __tablename__ = "empleados_pago"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, unique=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    tarifa_hora = Column(DECIMAL(10, 2), nullable=False)
+    tarifa_hora_extra = Column(DECIMAL(10, 2), nullable=False)
+    # Horas por día a partir de las cuales cada hora cuenta como extra.
+    horas_jornada = Column(DECIMAL(4, 2), nullable=False, server_default="8")
+
+    usuario = relationship("Usuario")
+
+
+class HorarioEmpleado(Base):
+    """Horario laboral esperado: un renglón por día de la semana que trabaja."""
+
+    __tablename__ = "horarios_empleado"
+    __table_args__ = (UniqueConstraint("usuario_id", "dia_semana", name="uq_horario_usuario_dia"),)
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    dia_semana = Column(Integer, nullable=False)  # 0 = lunes ... 6 = domingo
+    hora_entrada = Column(Time, nullable=False)
+    # Si es menor que la entrada, el turno termina al día siguiente (cocina nocturna).
+    hora_salida = Column(Time, nullable=False)
+
+
+class NominaPeriodo(Base):
+    """Semana de nómina (martes a lunes). Borrador editable hasta que se paga."""
+
+    __tablename__ = "nomina_periodos"
+    __table_args__ = (
+        UniqueConstraint("sucursal_id", "fecha_inicio", name="uq_nomina_periodo_sucursal_inicio"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    sucursal_id = Column(Integer, ForeignKey("sucursales.id"), nullable=False)
+    fecha_inicio = Column(Date, nullable=False)
+    fecha_fin = Column(Date, nullable=False)
+    estado = Column(
+        String(10), nullable=False, default="borrador", server_default="borrador"
+    )  # borrador | pagada
+    pagado_en = Column(DateTime(timezone=True))
+    pagado_por_id = Column(Integer, ForeignKey("usuarios.id"))
+
+    lineas = relationship(
+        "NominaLinea",
+        back_populates="periodo",
+        cascade="all, delete-orphan",
+        order_by="NominaLinea.id",
+    )
+
+
+class NominaLinea(Base):
+    """Cálculo de un empleado en un periodo; guarda el desglose como snapshot."""
+
+    __tablename__ = "nomina_lineas"
+    __table_args__ = (UniqueConstraint("periodo_id", "usuario_id", name="uq_nomina_linea_usuario"),)
+
+    id = Column(Integer, primary_key=True)
+    periodo_id = Column(
+        Integer, ForeignKey("nomina_periodos.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    dias_esperados = Column(Integer, nullable=False)
+    dias_trabajados = Column(Integer, nullable=False)
+    faltas = Column(Integer, nullable=False)
+    horas_trabajadas = Column(DECIMAL(6, 2), nullable=False)
+    horas_extra = Column(DECIMAL(5, 2), nullable=False)
+    base = Column(DECIMAL(10, 2), nullable=False)
+    extra_monto = Column(DECIMAL(10, 2), nullable=False)
+    bonos = Column(DECIMAL(10, 2), nullable=False, default=0, server_default="0")
+    descuentos = Column(DECIMAL(10, 2), nullable=False, default=0, server_default="0")
+    total = Column(DECIMAL(10, 2), nullable=False)
+    metodo_pago = Column(String(10), nullable=False, default="efectivo", server_default="efectivo")
+    sale_de_caja = Column(Boolean, nullable=False, default=False, server_default="false")
+    notas = Column(Text)
+    gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="SET NULL"))
+    # El admin corrigió horas a mano: recalcular desde asistencia no las pisa.
+    horas_ajustadas = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    periodo = relationship("NominaPeriodo", back_populates="lineas")
+    usuario = relationship("Usuario")
 
 
 class NominaDetalle(Base):

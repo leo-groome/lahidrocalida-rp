@@ -22,7 +22,7 @@ describe('catálogos compartidos', () => {
     state.get.mockResolvedValue({ data: [{ id: 1, nombre: 'Original' }] })
     const store = useCatalogosGastosStore()
     await Promise.all([store.cargar(), store.cargar(), store.cargar()])
-    expect(state.get).toHaveBeenCalledTimes(4)
+    expect(state.get).toHaveBeenCalledTimes(5)
     expect(store.proveedores[0]!.nombre).toBe('Original')
     state.get.mockResolvedValue({ data: [{ id: 1, nombre: 'Editado' }] })
     window.dispatchEvent(new Event('catalogos-gastos-cambiados'))
