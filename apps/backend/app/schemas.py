@@ -639,6 +639,8 @@ class DiaNomina(BaseModel):
     horas: Decimal
     automatica: bool = False
     abierta: bool = False
+    # Solo en la entrada abierta de hoy: horas si trabaja hasta las 23:59 (no se paga así).
+    horas_proyectadas: Optional[Decimal] = None
 
 
 class LineaNominaResponse(BaseModel):
@@ -666,6 +668,9 @@ class LineaNominaResponse(BaseModel):
     # Registros que el sistema cerró solo a las 00:30: el empleado no checó salida y
     # sus horas (y extras) pueden estar infladas. Conviene revisarlos antes de pagar.
     salidas_automaticas: int = 0
+    # Con la entrada abierta de hoy proyectada hasta las 23:59; None si no hay ninguna.
+    horas_proyectadas: Optional[Decimal] = None
+    total_proyectado: Optional[Decimal] = None
 
 
 class PeriodoNominaResponse(BaseModel):

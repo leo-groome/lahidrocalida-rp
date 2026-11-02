@@ -6,12 +6,12 @@ que cierra); las jornadas siguen el corte operativo de las 05:00.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, time
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Iterable
 
 from app.domain.estados import MAX_HORAS_JORNADA
-from app.utils.timezone import jornada_de, to_mexico_aware
+from app.utils.timezone import MEXICO_TZ, jornada_de, to_mexico_aware
 
 CENTAVOS = Decimal("0.01")
 # Una entrada de menos de esto no cuenta como día trabajado (checada por error).
@@ -50,6 +50,32 @@ def horas_por_jornada(
         dia = jornada_de(entrada)
         horas[dia] = horas.get(dia, Decimal(0)) + h
     return horas
+
+
+def horas_proyectadas(entrada: datetime) -> Decimal:
+    """Horas de una entrada abierta si trabaja hasta las 23:59 de su día (proyección, no pago)."""
+    entrada = to_mexico_aware(entrada)
+    fin = datetime.combine(entrada.date(), time(23, 59), tzinfo=MEXICO_TZ)
+    h = Decimal(str((fin - entrada).total_seconds() / 3600))
+    return min(max(h, Decimal(0)), Decimal(MAX_HORAS_JORNADA))
+
+
+def proyeccion_abiertas(
+    cerrados: Iterable[tuple], abiertas: Iterable[datetime], horas_jornada: Decimal
+) -> tuple[Decimal, Decimal]:
+    """(horas, horas extra) que suma la semana al proyectar las entradas abiertas hasta 23:59.
+
+    Es el delta contra lo ya confirmado: se aplica igual a líneas calculadas y a las que el
+    admin ajustó a mano. `cerrados`: (fecha_entrada, fecha_salida); `abiertas`: fecha_entrada.
+    """
+    confirmado = horas_por_jornada(cerrados)
+    _, extra0, horas0 = dias_y_extras(confirmado, horas_jornada)
+    proyectado = dict(confirmado)
+    for entrada in abiertas:
+        dia = jornada_de(entrada)
+        proyectado[dia] = proyectado.get(dia, Decimal(0)) + horas_proyectadas(entrada)
+    _, extra1, horas1 = dias_y_extras(proyectado, horas_jornada)
+    return horas1 - horas0, extra1 - extra0
 
 
 def dias_y_extras(

@@ -18,6 +18,8 @@ from app.services.nomina import (
     calcular_montos,
     dias_y_extras,
     horas_por_jornada,
+    horas_proyectadas,
+    proyeccion_abiertas,
     total_linea,
 )
 from app.utils.timezone import MEXICO_TZ
@@ -53,6 +55,23 @@ def test_horas_extra_en_bloques_de_cuarto_y_jornada_minima():
 def test_total_no_baja_de_cero():
     m = calcular_montos(REGLAS, Decimal(8), Decimal(0))
     assert total_linea(m, Decimal(0), Decimal(9999)) == Decimal(0)
+
+
+def test_proyecta_entrada_abierta_hasta_las_2359():
+    h = horas_proyectadas(_dt(15, 15))
+    assert Decimal("8.98") < h < Decimal("9")
+
+
+def test_proyeccion_suma_horas_y_extras_sobre_lo_confirmado():
+    cerrados = [(_dt(13, 8), _dt(13, 16))]  # 8 h confirmadas, sin extras
+    dh, de = proyeccion_abiertas(cerrados, [_dt(15, 15)], Decimal(8))
+    assert Decimal("8.98") <= dh < Decimal("9")
+    assert de == Decimal("0.75")  # 8.98 h - 8 → bloques de 0.25 hacia abajo
+
+
+def test_proyeccion_tope_de_jornada_y_sin_abiertas():
+    assert proyeccion_abiertas([], [], Decimal(8)) == (Decimal(0), Decimal(0))
+    assert horas_proyectadas(_dt(15, 5)) <= Decimal(16)
 
 
 # ---- endpoints -------------------------------------------------------------------------------
