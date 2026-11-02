@@ -43,6 +43,8 @@ from app.services.nomina import (
     dias_y_extras,
     faltas,
     horas_por_jornada,
+    horas_proyectadas,
+    proyeccion_abiertas,
     total_linea,
 )
 from app.utils.timezone import (
@@ -294,6 +296,39 @@ def _bloqueo(ln: NominaLinea, ultimo: date, hoy: date, sin_salida: int) -> str |
     return None
 
 
+def _proyecciones(
+    db: Session,
+    periodo: NominaPeriodo,
+    lineas: list[NominaLinea],
+    cerrados: dict[int, list[tuple]],
+    abiertas: dict[int, list],
+) -> dict[int, tuple[Decimal, Decimal]]:
+    """{usuario_id: (horas, total)} si trabaja hasta las 23:59 de hoy. Solo informativo:
+    no se guarda ni desbloquea el pago."""
+    if periodo.estado != "borrador" or not abiertas:
+        return {}
+    pagos = {
+        p.usuario_id: p
+        for p in db.query(EmpleadoPago).filter(
+            EmpleadoPago.usuario_id.in_(abiertas), EmpleadoPago.sucursal_id == periodo.sucursal_id
+        )
+    }
+    resultado: dict[int, tuple[Decimal, Decimal]] = {}
+    for ln in lineas:
+        pago = pagos.get(ln.usuario_id)
+        if ln.gasto_id is not None or pago is None or ln.usuario_id not in abiertas:
+            continue
+        reglas = _reglas(pago)
+        d_horas, d_extra = proyeccion_abiertas(
+            cerrados.get(ln.usuario_id, []), abiertas[ln.usuario_id], reglas.horas_jornada
+        )
+        horas = Decimal(ln.horas_trabajadas) + d_horas
+        montos = calcular_montos(reglas, horas, Decimal(ln.horas_extra) + d_extra)
+        total = total_linea(montos, Decimal(ln.bonos), Decimal(ln.descuentos))
+        resultado[ln.usuario_id] = (horas.quantize(Decimal("0.01")), total)
+    return resultado
+
+
 def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
     sucursal_id = periodo.sucursal_id
     con_linea = {ln.usuario_id for ln in periodo.lineas}
@@ -328,6 +363,9 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
     )
     sin_salida = _sin_salida_por_usuario(db, sucursal_id, periodo.fecha_inicio, periodo.fecha_fin)
     dias_por_usuario: dict[int, list[DiaNomina]] = {}
+    hoy = jornada_actual()
+    cerrados: dict[int, list[tuple]] = {}
+    abiertas_hoy: dict[int, list] = {}
     for reg in (
         db.query(RegistroAsistencia)
         .filter(
@@ -342,6 +380,15 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
         if reg.fecha_salida is not None:
             segundos = (to_mexico_aware(reg.fecha_salida) - entrada).total_seconds()
             horas = min(max(Decimal(str(segundos / 3600)), Decimal(0)), Decimal(MAX_HORAS_JORNADA))
+        proyectada = None
+        if not reg.requiere_revision:
+            if reg.fecha_salida is not None:
+                cerrados.setdefault(reg.usuario_id, []).append(
+                    (reg.fecha_entrada, reg.fecha_salida)
+                )
+            elif jornada_de(entrada) == hoy:
+                proyectada = horas_proyectadas(entrada).quantize(Decimal("0.01"))
+                abiertas_hoy.setdefault(reg.usuario_id, []).append(reg.fecha_entrada)
         dias_por_usuario.setdefault(reg.usuario_id, []).append(
             DiaNomina(
                 fecha=jornada_de(entrada),
@@ -350,10 +397,11 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
                 horas=horas.quantize(Decimal("0.01")),
                 automatica=bool(reg.cierre_automatico),
                 abierta=reg.fecha_salida is None,
+                horas_proyectadas=proyectada,
             )
         )
     dias_horario = _dias_horario(db, ids)
-    hoy = jornada_actual()
+    proyecciones = _proyecciones(db, periodo, lineas, cerrados, abiertas_hoy)
     return PeriodoNominaResponse(
         id=periodo.id,
         fecha_inicio=periodo.fecha_inicio,
@@ -385,6 +433,8 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
                 ultimo_dia=(ultimo := _ultimo_dia(periodo, dias_horario.get(ln.usuario_id, set()))),
                 bloqueo=_bloqueo(ln, ultimo, hoy, sin_salida.get(ln.usuario_id, 0)),
                 salidas_automaticas=automaticas.get(ln.usuario_id, 0),
+                horas_proyectadas=proyecciones.get(ln.usuario_id, (None, None))[0],
+                total_proyectado=proyecciones.get(ln.usuario_id, (None, None))[1],
             )
             for ln in lineas
         ],

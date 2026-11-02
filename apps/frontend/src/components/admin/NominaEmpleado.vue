@@ -40,7 +40,10 @@
                 <span v-else class="text-amber-700 font-bold">En turno</span>
                 <span v-if="d.automatica" class="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="No checó salida: el sistema la cerró a las 00:30">Automática</span>
               </td>
-              <td class="px-4 py-2 text-sm font-black text-[#00126D] text-right tabular-nums">{{ d.abierta ? '—' : n(d.horas) }}</td>
+              <td class="px-4 py-2 text-sm font-black text-[#00126D] text-right tabular-nums">
+                <span v-if="d.horas_proyectadas" class="text-amber-700" title="Proyectado hasta las 23:59; aún no se paga">~{{ n(d.horas_proyectadas) }} <span class="text-[10px] uppercase">proy.</span></span>
+                <template v-else>{{ d.abierta ? '—' : n(d.horas) }}</template>
+              </td>
             </tr>
             <tr v-if="!ln.dias.length"><td colspan="4" class="px-4 py-6 text-center text-sm font-bold text-slate-400">Sin checadas esta semana</td></tr>
           </tbody>
@@ -63,6 +66,9 @@
           Horas normales {{ dinero(ln.base) }} · Extras {{ dinero(ln.extra_monto) }} ({{ n(ln.horas_extra) }} h)
           <template v-if="Number(ln.bonos)"> · Bonos {{ dinero(ln.bonos) }}</template>
           <template v-if="Number(ln.descuentos)"> · Descuentos −{{ dinero(ln.descuentos) }}</template>
+        </p>
+        <p v-if="ln.total_proyectado" class="text-xs font-bold text-amber-700 tabular-nums border-t border-[#00126D]/10 pt-1" data-testid="total-proyectado">
+          Proyectado al cierre de hoy (23:59): {{ n(ln.horas_proyectadas ?? '0') }} h · {{ dinero(ln.total_proyectado) }}
         </p>
       </div>
       <p v-if="!ln.pagada && Number(ln.total) === 0 && ln.dias_trabajados > 0" class="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700" role="alert">
@@ -130,7 +136,7 @@ import { useAdminPin } from '@/composables/useAdminPin'
 import NipKeypad from '@/components/NipKeypad.vue'
 import { rangoSemana, sumarDias } from '@/utils/fecha'
 
-interface DiaNomina { fecha: string; entrada: string; salida: string | null; horas: string; automatica: boolean; abierta: boolean }
+interface DiaNomina { fecha: string; entrada: string; salida: string | null; horas: string; automatica: boolean; abierta: boolean; horas_proyectadas: string | null }
 interface Linea {
   usuario_id: number; nombre: string
   dias_esperados: number; dias_trabajados: number; faltas: number
@@ -138,6 +144,7 @@ interface Linea {
   base: string; extra_monto: string; bonos: string; descuentos: string; total: string
   metodo_pago: 'efectivo' | 'tarjeta'; sale_de_caja: boolean; notas: string | null; pagada: boolean
   salidas_automaticas: number; ultimo_dia: string; bloqueo: string | null; dias: DiaNomina[]
+  horas_proyectadas: string | null; total_proyectado: string | null
 }
 interface Periodo { id: number; estado: 'borrador' | 'pagada'; lineas: Linea[] }
 
