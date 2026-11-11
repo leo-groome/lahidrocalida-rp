@@ -31,7 +31,7 @@ from app.schemas import (
     UsuarioResponse,
 )
 from app.services.jornada import HORA_SALIDA_AUTOMATICA, reconciliar_jornada
-from app.utils.timezone import MEXICO_TZ, get_mexico_now, jornada_de
+from app.utils.timezone import MEXICO_TZ, get_mexico_now, jornada_de, rango_jornada
 
 router = APIRouter(prefix="/auth", tags=["autenticación"])
 
@@ -139,7 +139,12 @@ async def registrar_asistencia(
     el mismo oráculo de fuerza-bruta que /auth/login-simple, y además escribe.
     """
     rl_keys = await enforce_login_rate_limit(request, str(data.usuario_id))
-    user = db.query(Usuario).filter(Usuario.id == data.usuario_id, Usuario.activo == True).first()
+    user = (
+        db.query(Usuario)
+        .filter(Usuario.id == data.usuario_id, Usuario.activo == True)
+        .with_for_update()
+        .first()
+    )
 
     if not user:
         await register_login_failure(rl_keys)
@@ -185,6 +190,21 @@ async def registrar_asistencia(
     # estaba intentando salir — no se abre una entrada fantasma, se devuelve esa salida.
     salida_de_esta_noche = None
     if registro_abierto is None:
+        inicio_jornada, fin_jornada = rango_jornada(jornada_actual)
+        cierre_nomina = (
+            db.query(RegistroAsistencia)
+            .filter(
+                RegistroAsistencia.usuario_id == data.usuario_id,
+                RegistroAsistencia.fecha_entrada >= inicio_jornada,
+                RegistroAsistencia.fecha_entrada < fin_jornada,
+                RegistroAsistencia.cierre_por_nomina_en.isnot(None),
+            )
+            .first()
+        )
+        if cierre_nomina is not None:
+            raise HTTPException(
+                status_code=409, detail="Tu asistencia ya fue cerrada al pagar la nómina"
+            )
         corte_hoy = datetime.combine(ahora.date(), HORA_SALIDA_AUTOMATICA, tzinfo=MEXICO_TZ)
         if ahora >= corte_hoy and jornada_de(ahora) < ahora.date():
             salida_de_esta_noche = (

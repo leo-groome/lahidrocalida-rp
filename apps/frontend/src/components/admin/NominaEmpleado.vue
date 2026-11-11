@@ -39,6 +39,7 @@
                 <template v-if="d.salida">{{ hora(d.salida) }}</template>
                 <span v-else class="text-amber-700 font-bold">En turno</span>
                 <span v-if="d.automatica" class="ml-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title="No checó salida: el sistema la cerró a las 00:30">Automática</span>
+                <span v-if="d.cierre_por_nomina" class="ml-1 text-xs text-blue-700">Cerrada al pagar</span>
               </td>
               <td class="px-4 py-2 text-sm font-black text-[#00126D] text-right tabular-nums">
                 <span v-if="d.horas_proyectadas" class="text-amber-700" title="Proyectado hasta las 23:59; aún no se paga">~{{ n(d.horas_proyectadas) }} <span class="text-[10px] uppercase">proy.</span></span>
@@ -50,6 +51,16 @@
         </table>
       </div>
 
+      <div class="rounded-2xl border border-slate-200 p-4 text-sm space-y-2">
+        <h4 class="font-black">Desglose por jornada</h4>
+        <div v-for="d in desgloseDias" :key="d.fecha" class="flex flex-wrap justify-between gap-2 tabular-nums">
+          <span class="capitalize">{{ dia(d.fecha) }} <span v-if="d.proyectado" class="text-amber-700">(hasta 23:59, estimado)</span></span>
+          <span>{{ n(d.horas) }} h · {{ n(d.normales) }} normales · {{ n(d.extra) }} extra</span>
+        </div>
+        <p class="text-slate-600">Jornada {{ n(ln.horas_jornada ?? 0) }} h · Normal {{ dinero(ln.tarifa_hora ?? 0) }}/h · Extra {{ dinero(ln.tarifa_hora_extra ?? 0) }}/h</p>
+        <p class="text-slate-500 text-xs">Extras en bloques completos de 15 minutos. Los ajustes manuales pueden diferir del desglose de checadas.</p>
+      </div>
+
       <p v-if="ln.salidas_automaticas > 0" class="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-bold text-amber-800" role="alert">
         ⚠ {{ ln.salidas_automaticas }} salida(s) la cerró el sistema a las 00:30 porque no checó. Las horas pueden venir infladas: corrígelas abajo.
       </p>
@@ -57,18 +68,18 @@
       <!-- Cálculo -->
       <div class="rounded-2xl bg-[#00126D]/5 border border-[#00126D]/10 p-4 space-y-1">
         <div class="flex items-baseline justify-between">
-          <span class="text-xs font-black text-slate-400 uppercase tracking-widest">A pagar</span>
-          <span class="text-3xl font-black text-slate-900 tabular-nums" data-testid="total-linea">{{ dinero(ln.total) }}</span>
+          <span class="text-xs font-black text-slate-400 uppercase tracking-widest">{{ ln.pagada ? 'Pagado' : 'A pagar' }}</span>
+          <span class="text-3xl font-black text-slate-900 tabular-nums" data-testid="total-linea">{{ dinero(ln.total_proyectado ?? ln.total) }}</span>
         </div>
         <p class="text-xs font-bold text-slate-500 tabular-nums">
-          {{ n(ln.horas_trabajadas) }} h · {{ ln.dias_trabajados }} de {{ ln.dias_esperados }} días
-          <span v-if="ln.faltas > 0" class="text-rose-600">({{ ln.faltas }} falta(s))</span><br>
+          {{ n(ln.horas_trabajadas) }} h · {{ ln.dias_trabajados }} de {{ ln.dias_esperados }} días{{ ln.horas_proyectadas != null ? ' confirmados; turno abierto pendiente' : '' }}
+          <span v-if="ln.faltas > 0 && ln.horas_proyectadas == null" class="text-rose-600">({{ ln.faltas }} falta(s))</span><br>
           Horas normales {{ dinero(ln.base) }} · Extras {{ dinero(ln.extra_monto) }} ({{ n(ln.horas_extra) }} h)
           <template v-if="Number(ln.bonos)"> · Bonos {{ dinero(ln.bonos) }}</template>
           <template v-if="Number(ln.descuentos)"> · Descuentos −{{ dinero(ln.descuentos) }}</template>
         </p>
         <p v-if="ln.total_proyectado" class="text-xs font-bold text-amber-700 tabular-nums border-t border-[#00126D]/10 pt-1" data-testid="total-proyectado">
-          Proyectado al cierre de hoy (23:59): {{ n(ln.horas_proyectadas ?? '0') }} h · {{ dinero(ln.total_proyectado) }}
+          Confirmado: {{ dinero(ln.total) }}. Cierre de nómina a las 23:59, con pago hasta las 12:00 a. m.: {{ n(ln.horas_proyectadas ?? '0') }} h · {{ dinero(ln.total_proyectado) }}. Al pagar se cerrará la asistencia.
         </p>
       </div>
       <p v-if="!ln.pagada && Number(ln.total) === 0 && ln.dias_trabajados > 0" class="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700" role="alert">
@@ -107,8 +118,8 @@
             <input type="checkbox" :checked="ln.sale_de_caja" @change="editar({ sale_de_caja: ($event.target as HTMLInputElement).checked })" class="h-5 w-5"> Sale de la caja
           </label>
         </div>
-        <button type="button" @click="pagar" :disabled="trabajando || !!ln.bloqueo || Number(ln.total) <= 0" class="w-full min-h-12 bg-[#00126D] text-white font-black rounded-xl disabled:opacity-40 active:scale-[0.99]" data-testid="pagar-empleado">
-          {{ trabajando ? 'Procesando…' : `Pagar nómina · ${dinero(ln.total)}` }}
+        <button type="button" @click="pagar" :disabled="trabajando || !!ln.bloqueo || Number(ln.total_proyectado ?? ln.total) <= 0" class="w-full min-h-12 bg-[#00126D] text-white font-black rounded-xl disabled:opacity-40 active:scale-[0.99]" data-testid="pagar-empleado">
+          {{ trabajando ? 'Procesando…' : `Pagar nómina · ${dinero(ln.total_proyectado ?? ln.total)}` }}
         </button>
         <p v-if="ln.bloqueo" class="text-xs font-bold text-amber-700">{{ ln.bloqueo }}</p>
       </div>
@@ -136,7 +147,7 @@ import { useAdminPin } from '@/composables/useAdminPin'
 import NipKeypad from '@/components/NipKeypad.vue'
 import { rangoSemana, sumarDias } from '@/utils/fecha'
 
-interface DiaNomina { fecha: string; entrada: string; salida: string | null; horas: string; automatica: boolean; abierta: boolean; horas_proyectadas: string | null }
+interface DiaNomina { fecha: string; entrada: string; salida: string | null; horas: string; automatica: boolean; abierta: boolean; horas_proyectadas: string | null; cierre_por_nomina: boolean }
 interface Linea {
   usuario_id: number; nombre: string
   dias_esperados: number; dias_trabajados: number; faltas: number
@@ -145,6 +156,8 @@ interface Linea {
   metodo_pago: 'efectivo' | 'tarjeta'; sale_de_caja: boolean; notas: string | null; pagada: boolean
   salidas_automaticas: number; ultimo_dia: string; bloqueo: string | null; dias: DiaNomina[]
   horas_proyectadas: string | null; total_proyectado: string | null
+  tarifa_hora: string | null; tarifa_hora_extra: string | null; horas_jornada: string | null
+  desglose_jornadas: { fecha: string; horas: string; normales: string; extra: string; proyectado: boolean }[]
 }
 interface Periodo { id: number; estado: 'borrador' | 'pagada'; lineas: Linea[] }
 
@@ -171,6 +184,7 @@ const error = ref('')
 const pin = useAdminPin('Pagar nómina', 'Ingresa el PIN de un administrador para registrar el pago')
 
 const ln = computed(() => periodo.value?.lineas.find((l) => l.usuario_id === props.usuarioId) ?? null)
+const desgloseDias = computed(() => ln.value?.desglose_jornadas ?? [])
 const inicio = computed(() => rangoSemana(Date.now(), offset.value).inicio)
 const etiquetaSemana = computed(() => {
   const fmt = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', timeZone: 'UTC' })

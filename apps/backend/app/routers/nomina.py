@@ -1,6 +1,6 @@
 """Configuración de sueldo y horario por empleado (base del cálculo de nómina)."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import List
 
@@ -25,6 +25,7 @@ from app.models import (
     get_local_datetime,
 )
 from app.schemas import (
+    DesgloseJornadaNomina,
     DiaNomina,
     EmpleadoNominaResponse,
     EmpleadoPagoResponse,
@@ -40,14 +41,17 @@ from app.schemas import (
 from app.services.nomina import (
     Reglas,
     calcular_montos,
+    desglose_jornada,
     dias_y_extras,
     faltas,
     horas_por_jornada,
     horas_proyectadas,
     proyeccion_abiertas,
+    salida_para_nomina,
     total_linea,
 )
 from app.utils.timezone import (
+    MEXICO_TZ,
     jornada_actual,
     jornada_de,
     rango_jornadas,
@@ -244,10 +248,11 @@ def _recalcular(db: Session, periodo: NominaPeriodo, forzar: bool = False) -> No
     ids = [u.id for u in empleados]
     desde, hasta = rango_jornadas(periodo.fecha_inicio, periodo.fecha_fin)
     registros: dict[int, list[tuple]] = {}
-    for uid, entrada, salida in db.query(
+    for uid, entrada, salida, cierre_nomina in db.query(
         RegistroAsistencia.usuario_id,
         RegistroAsistencia.fecha_entrada,
         RegistroAsistencia.fecha_salida,
+        RegistroAsistencia.cierre_por_nomina_en,
     ).filter(
         RegistroAsistencia.usuario_id.in_(ids),
         RegistroAsistencia.fecha_salida.isnot(None),
@@ -255,7 +260,9 @@ def _recalcular(db: Session, periodo: NominaPeriodo, forzar: bool = False) -> No
         RegistroAsistencia.fecha_entrada >= desde,
         RegistroAsistencia.fecha_entrada < hasta,
     ):
-        registros.setdefault(uid, []).append((entrada, salida))
+        registros.setdefault(uid, []).append(
+            (entrada, salida_para_nomina(salida, cierre_nomina is not None))
+        )
     dias_horario = _dias_horario(db, ids)
     existentes = {ln.usuario_id: ln for ln in periodo.lineas}
     for u in empleados:
@@ -366,6 +373,12 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
     hoy = jornada_actual()
     cerrados: dict[int, list[tuple]] = {}
     abiertas_hoy: dict[int, list] = {}
+    pagos_por_usuario = {
+        p.usuario_id: p
+        for p in db.query(EmpleadoPago).filter(
+            EmpleadoPago.usuario_id.in_(ids), EmpleadoPago.sucursal_id == sucursal_id
+        )
+    }
     for reg in (
         db.query(RegistroAsistencia)
         .filter(
@@ -378,15 +391,23 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
         entrada = to_mexico_aware(reg.fecha_entrada)
         horas = Decimal(0)
         if reg.fecha_salida is not None:
-            segundos = (to_mexico_aware(reg.fecha_salida) - entrada).total_seconds()
+            salida_calculo = salida_para_nomina(
+                to_mexico_aware(reg.fecha_salida), reg.cierre_por_nomina_en is not None
+            )
+            segundos = (salida_calculo - entrada).total_seconds()
             horas = min(max(Decimal(str(segundos / 3600)), Decimal(0)), Decimal(MAX_HORAS_JORNADA))
         proyectada = None
         if not reg.requiere_revision:
             if reg.fecha_salida is not None:
                 cerrados.setdefault(reg.usuario_id, []).append(
-                    (reg.fecha_entrada, reg.fecha_salida)
+                    (
+                        reg.fecha_entrada,
+                        salida_para_nomina(reg.fecha_salida, reg.cierre_por_nomina_en is not None),
+                    )
                 )
-            elif jornada_de(entrada) == hoy:
+            elif jornada_de(entrada) == hoy and entrada < datetime.combine(
+                hoy, time(23, 59), tzinfo=MEXICO_TZ
+            ):
                 proyectada = horas_proyectadas(entrada).quantize(Decimal("0.01"))
                 abiertas_hoy.setdefault(reg.usuario_id, []).append(reg.fecha_entrada)
         dias_por_usuario.setdefault(reg.usuario_id, []).append(
@@ -398,10 +419,39 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
                 automatica=bool(reg.cierre_automatico),
                 abierta=reg.fecha_salida is None,
                 horas_proyectadas=proyectada,
+                cierre_por_nomina=reg.cierre_por_nomina_en is not None,
             )
         )
     dias_horario = _dias_horario(db, ids)
     proyecciones = _proyecciones(db, periodo, lineas, cerrados, abiertas_hoy)
+    desglose_por_usuario = {}
+    for ln in lineas:
+        pago = pagos_por_usuario.get(ln.usuario_id)
+        limite = (
+            ln.jornada_pagada
+            if ln.jornada_pagada is not None
+            else (pago.horas_jornada if pago else None)
+        )
+        if limite is None:
+            continue
+        dias = horas_por_jornada(cerrados.get(ln.usuario_id, []))
+        proyectados = set()
+        for entrada in abiertas_hoy.get(ln.usuario_id, []):
+            dia = jornada_de(entrada)
+            dias[dia] = dias.get(dia, Decimal(0)) + horas_proyectadas(entrada)
+            proyectados.add(dia)
+        desglose_por_usuario[ln.usuario_id] = []
+        for dia, horas in sorted(dias.items()):
+            normales, extra = desglose_jornada(horas, Decimal(limite))
+            desglose_por_usuario[ln.usuario_id].append(
+                DesgloseJornadaNomina(
+                    fecha=dia,
+                    horas=horas.quantize(Decimal("0.01")),
+                    normales=normales.quantize(Decimal("0.01")),
+                    extra=extra,
+                    proyectado=dia in proyectados,
+                )
+            )
     return PeriodoNominaResponse(
         id=periodo.id,
         fecha_inicio=periodo.fecha_inicio,
@@ -430,11 +480,38 @@ def _respuesta(db: Session, periodo: NominaPeriodo) -> PeriodoNominaResponse:
                 notas=ln.notas,
                 pagada=ln.gasto_id is not None,
                 dias=dias_por_usuario.get(ln.usuario_id, []),
+                desglose_jornadas=desglose_por_usuario.get(ln.usuario_id, []),
                 ultimo_dia=(ultimo := _ultimo_dia(periodo, dias_horario.get(ln.usuario_id, set()))),
-                bloqueo=_bloqueo(ln, ultimo, hoy, sin_salida.get(ln.usuario_id, 0)),
+                bloqueo=_bloqueo(
+                    ln,
+                    ultimo,
+                    hoy,
+                    sin_salida.get(ln.usuario_id, 0) - len(abiertas_hoy.get(ln.usuario_id, [])),
+                ),
                 salidas_automaticas=automaticas.get(ln.usuario_id, 0),
                 horas_proyectadas=proyecciones.get(ln.usuario_id, (None, None))[0],
                 total_proyectado=proyecciones.get(ln.usuario_id, (None, None))[1],
+                tarifa_hora=ln.tarifa_hora_pagada
+                if ln.tarifa_hora_pagada is not None
+                else (
+                    pagos_por_usuario[ln.usuario_id].tarifa_hora
+                    if ln.usuario_id in pagos_por_usuario
+                    else None
+                ),
+                tarifa_hora_extra=ln.tarifa_extra_pagada
+                if ln.tarifa_extra_pagada is not None
+                else (
+                    pagos_por_usuario[ln.usuario_id].tarifa_hora_extra
+                    if ln.usuario_id in pagos_por_usuario
+                    else None
+                ),
+                horas_jornada=ln.jornada_pagada
+                if ln.jornada_pagada is not None
+                else (
+                    pagos_por_usuario[ln.usuario_id].horas_jornada
+                    if ln.usuario_id in pagos_por_usuario
+                    else None
+                ),
             )
             for ln in lineas
         ],
@@ -567,6 +644,25 @@ async def pagar_periodo(
     if periodo.estado == "pagada":
         return _respuesta(db, periodo)
     admin = await verificar_pin_admin(db, data.pin_autorizacion, request, current_user)
+    db.query(Usuario).filter(
+        Usuario.sucursal_id == periodo.sucursal_id,
+        Usuario.id.in_([ln.usuario_id for ln in periodo.lineas]),
+    ).order_by(Usuario.id).with_for_update().all()
+    # Serialize against clock-out and concurrent payments before computing amounts.
+    desde, hasta = rango_jornadas(periodo.fecha_inicio, periodo.fecha_fin)
+    abiertas = (
+        db.query(RegistroAsistencia)
+        .join(Usuario)
+        .filter(
+            Usuario.sucursal_id == periodo.sucursal_id,
+            RegistroAsistencia.fecha_entrada >= desde,
+            RegistroAsistencia.fecha_entrada < hasta,
+            RegistroAsistencia.fecha_salida.is_(None),
+        )
+        .with_for_update()
+        .all()
+    )
+    _recalcular(db, periodo)
     respuesta = _respuesta(db, periodo)
     bloqueos = {ln.usuario_id: ln.bloqueo for ln in respuesta.lineas}
     elegidas = [
@@ -582,7 +678,18 @@ async def pagar_periodo(
         )
         if bloqueado:
             raise HTTPException(status_code=409, detail=bloqueado)
-    a_pagar = [ln for ln in elegidas if Decimal(ln.total) > 0 and bloqueos[ln.usuario_id] is None]
+    vista = {ln.usuario_id: ln for ln in respuesta.lineas}
+    a_pagar = [
+        ln
+        for ln in elegidas
+        if Decimal(
+            vista[ln.usuario_id].total_proyectado
+            if vista[ln.usuario_id].total_proyectado is not None
+            else ln.total
+        )
+        > 0
+        and bloqueos[ln.usuario_id] is None
+    ]
     if not a_pagar:
         hay_bloqueados = any(Decimal(ln.total) > 0 and bloqueos[ln.usuario_id] for ln in elegidas)
         raise HTTPException(
@@ -596,8 +703,58 @@ async def pagar_periodo(
             raise HTTPException(
                 status_code=409, detail="Inicia un turno para pagar nómina desde la caja"
             )
+    seleccion = {ln.usuario_id: ln for ln in a_pagar}
+    for registro in abiertas:
+        linea = seleccion.get(registro.usuario_id)
+        if linea is None:
+            continue
+        entrada = to_mexico_aware(registro.fecha_entrada)
+        fin = datetime.combine(jornada_actual(), time(23, 59), tzinfo=MEXICO_TZ)
+        if registro.requiere_revision or jornada_de(entrada) != jornada_actual() or entrada >= fin:
+            raise HTTPException(
+                status_code=409, detail="La asistencia abierta requiere revisión antes de pagar"
+            )
+        if linea.horas_ajustadas:
+            pago = db.query(EmpleadoPago).filter(EmpleadoPago.usuario_id == linea.usuario_id).one()
+            cerrados = (
+                db.query(
+                    RegistroAsistencia.fecha_entrada,
+                    RegistroAsistencia.fecha_salida,
+                    RegistroAsistencia.cierre_por_nomina_en,
+                )
+                .filter(
+                    RegistroAsistencia.usuario_id == linea.usuario_id,
+                    RegistroAsistencia.fecha_entrada >= desde,
+                    RegistroAsistencia.fecha_entrada < hasta,
+                    RegistroAsistencia.fecha_salida.isnot(None),
+                    RegistroAsistencia.requiere_revision.is_(False),
+                )
+                .all()
+            )
+            registros_cerrados = [
+                (inicio, salida_para_nomina(salida, cierre is not None))
+                for inicio, salida, cierre in cerrados
+            ]
+            dh, de = proyeccion_abiertas(registros_cerrados, [entrada], Decimal(pago.horas_jornada))
+            linea.horas_trabajadas = Decimal(linea.horas_trabajadas) + dh
+            linea.horas_extra = Decimal(linea.horas_extra) + de
+        registro.fecha_salida = fin
+        registro.cierre_por_nomina_en = get_local_datetime()
+    db.flush()
+    _recalcular(db, periodo)
     grupos: dict[tuple[str, bool], list[NominaLinea]] = {}
     for ln in a_pagar:
+        pago = (
+            db.query(EmpleadoPago)
+            .filter(
+                EmpleadoPago.usuario_id == ln.usuario_id,
+                EmpleadoPago.sucursal_id == periodo.sucursal_id,
+            )
+            .one()
+        )
+        ln.tarifa_hora_pagada = pago.tarifa_hora
+        ln.tarifa_extra_pagada = pago.tarifa_hora_extra
+        ln.jornada_pagada = pago.horas_jornada
         grupos.setdefault((ln.metodo_pago, ln.sale_de_caja), []).append(ln)
     descripcion = f"Nómina {periodo.fecha_inicio:%d/%m} al {periodo.fecha_fin:%d/%m}"
     for (metodo, de_caja), lineas in grupos.items():

@@ -641,6 +641,15 @@ class DiaNomina(BaseModel):
     abierta: bool = False
     # Solo en la entrada abierta de hoy: horas si trabaja hasta las 23:59 (no se paga así).
     horas_proyectadas: Optional[Decimal] = None
+    cierre_por_nomina: bool = False
+
+
+class DesgloseJornadaNomina(BaseModel):
+    fecha: date
+    horas: Decimal
+    normales: Decimal
+    extra: Decimal
+    proyectado: bool
 
 
 class LineaNominaResponse(BaseModel):
@@ -663,6 +672,7 @@ class LineaNominaResponse(BaseModel):
     # Último día de la semana que le toca trabajar (se le paga ese día o después).
     ultimo_dia: date
     dias: List[DiaNomina] = []
+    desglose_jornadas: List[DesgloseJornadaNomina] = []
     # None = se puede pagar ya; si no, por qué todavía no.
     bloqueo: Optional[str] = None
     # Registros que el sistema cerró solo a las 00:30: el empleado no checó salida y
@@ -671,6 +681,9 @@ class LineaNominaResponse(BaseModel):
     # Con la entrada abierta de hoy proyectada hasta las 23:59; None si no hay ninguna.
     horas_proyectadas: Optional[Decimal] = None
     total_proyectado: Optional[Decimal] = None
+    tarifa_hora: Optional[Decimal] = None
+    tarifa_hora_extra: Optional[Decimal] = None
+    horas_jornada: Optional[Decimal] = None
 
 
 class PeriodoNominaResponse(BaseModel):

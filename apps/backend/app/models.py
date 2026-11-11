@@ -409,6 +409,9 @@ class NominaLinea(Base):
     gasto_id = Column(Integer, ForeignKey("gastos.id", ondelete="SET NULL"))
     # El admin corrigió horas a mano: recalcular desde asistencia no las pisa.
     horas_ajustadas = Column(Boolean, nullable=False, default=False, server_default="false")
+    tarifa_hora_pagada = Column(DECIMAL(10, 2), nullable=True)
+    tarifa_extra_pagada = Column(DECIMAL(10, 2), nullable=True)
+    jornada_pagada = Column(DECIMAL(5, 2), nullable=True)
 
     periodo = relationship("NominaPeriodo", back_populates="lineas")
     usuario = relationship("Usuario")
@@ -519,6 +522,7 @@ class RegistroAsistencia(Base):
     # Estimado por reconciliar_jornada (entrada + MAX_HORAS_JORNADA, acotado al
     # fin de la jornada de entrada). Nunca se usa como fecha_salida real.
     fecha_salida_estimada = Column(DateTime(timezone=True), nullable=True)
+    cierre_por_nomina_en = Column(DateTime(timezone=True), nullable=True)
 
     # Relaciones
     usuario = relationship("Usuario", back_populates="registros_asistencia")
