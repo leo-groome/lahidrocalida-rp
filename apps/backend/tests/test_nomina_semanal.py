@@ -16,10 +16,12 @@ from app.models import (
 from app.services.nomina import (
     Reglas,
     calcular_montos,
+    desglose_jornada,
     dias_y_extras,
     horas_por_jornada,
     horas_proyectadas,
     proyeccion_abiertas,
+    salida_para_nomina,
     total_linea,
 )
 from app.utils.timezone import MEXICO_TZ
@@ -42,6 +44,14 @@ def test_horas_normales_y_extras_a_su_tarifa():
     assert (m.base, m.extra_monto) == (Decimal("1920.00"), Decimal("160.00"))
 
 
+def test_desglose_diario_conserva_bloques_de_quince_minutos():
+    assert desglose_jornada(Decimal(8) + Decimal(20) / 60, Decimal(8)) == (
+        Decimal(8) + Decimal(5) / 60,
+        Decimal("0.25"),
+    )
+    assert desglose_jornada(Decimal("0.5"), Decimal(8)) == (Decimal(0), Decimal(0))
+
+
 def test_horas_extra_en_bloques_de_cuarto_y_jornada_minima():
     horas = horas_por_jornada(
         [(_dt(13, 8), _dt(13, 16, 7)), (_dt(14, 8), _dt(14, 17, 40)), (_dt(15, 8), _dt(15, 8, 30))]
@@ -59,19 +69,110 @@ def test_total_no_baja_de_cero():
 
 def test_proyecta_entrada_abierta_hasta_las_2359():
     h = horas_proyectadas(_dt(15, 15))
-    assert Decimal("8.98") < h < Decimal("9")
+    assert h == Decimal("9")
+
+
+def test_solo_cierre_por_nomina_incluye_ultimo_minuto():
+    entrada, salida = _dt(15, 13), _dt(15, 23, 59)
+    assert dias_y_extras(
+        horas_por_jornada([(entrada, salida_para_nomina(salida, True))]), Decimal(8)
+    )[1] == Decimal(3)
+    assert dias_y_extras(
+        horas_por_jornada([(entrada, salida_para_nomina(salida, False))]), Decimal(8)
+    )[1] == Decimal("2.75")
 
 
 def test_proyeccion_suma_horas_y_extras_sobre_lo_confirmado():
     cerrados = [(_dt(13, 8), _dt(13, 16))]  # 8 h confirmadas, sin extras
     dh, de = proyeccion_abiertas(cerrados, [_dt(15, 15)], Decimal(8))
-    assert Decimal("8.98") <= dh < Decimal("9")
-    assert de == Decimal("0.75")  # 8.98 h - 8 → bloques de 0.25 hacia abajo
+    assert dh == Decimal("9")
+    assert de == Decimal("1")
 
 
 def test_proyeccion_tope_de_jornada_y_sin_abiertas():
     assert proyeccion_abiertas([], [], Decimal(8)) == (Decimal(0), Decimal(0))
     assert horas_proyectadas(_dt(15, 5)) <= Decimal(16)
+
+
+def test_pagar_cierra_abierta_y_respeta_salida_real(
+    como_rol, seed, db_session, admin_pin, monkeypatch
+):
+    monkeypatch.setattr("app.routers.nomina.jornada_actual", lambda: date(2026, 10, 18))
+    ana = _empleado(db_session, seed, "Ana")
+    _asistencia(db_session, ana, dias=(13,))
+    abierta = RegistroAsistencia(usuario_id=ana.id, fecha_entrada=_dt(18, 15))
+    db_session.add(abierta)
+    db_session.commit()
+    admin = como_rol("administrador")
+    p = _abrir(admin)
+    linea = p["lineas"][0]
+    assert linea["bloqueo"] is None
+    previsto = Decimal(linea["total_proyectado"])
+    r = admin.post(
+        f"/nomina/periodos/{p['id']}/pagar",
+        json={"pin_autorizacion": admin_pin["pin"], "usuario_ids": [ana.id]},
+    )
+    assert r.status_code == 200, r.text
+    assert Decimal(r.json()["lineas"][0]["total"]) == previsto
+    db_session.refresh(abierta)
+    assert abierta.fecha_salida.replace(tzinfo=None) == _dt(18, 23, 59).replace(tzinfo=None)
+    assert abierta.cierre_por_nomina_en is not None
+    assert (
+        db_session.query(RegistroAsistencia)
+        .filter_by(usuario_id=ana.id)
+        .order_by(RegistroAsistencia.fecha_entrada)
+        .first()
+        .fecha_salida.hour
+        == 16
+    )
+    assert (
+        admin.post(
+            f"/nomina/periodos/{p['id']}/pagar",
+            json={"pin_autorizacion": admin_pin["pin"], "usuario_ids": [ana.id]},
+        ).status_code
+        == 200
+    )
+    assert db_session.query(Gasto).filter_by(tipo_gasto="nomina").count() == 1
+
+
+def test_pago_fallido_no_cierra_asistencia(como_rol, seed, db_session, admin_pin, monkeypatch):
+    monkeypatch.setattr("app.routers.nomina.jornada_actual", lambda: date(2026, 10, 18))
+    ana = _empleado(db_session, seed, "Ana")
+    abierta = RegistroAsistencia(usuario_id=ana.id, fecha_entrada=_dt(18, 15))
+    db_session.add(abierta)
+    db_session.commit()
+    admin = como_rol("administrador")
+    p = _abrir(admin)
+    r = admin.post(
+        f"/nomina/periodos/{p['id']}/pagar",
+        json={"pin_autorizacion": "0000", "usuario_ids": [ana.id]},
+    )
+    assert r.status_code == 403
+    db_session.refresh(abierta)
+    assert abierta.fecha_salida is None and abierta.cierre_por_nomina_en is None
+
+
+def test_checado_posterior_a_cierre_por_nomina_no_abre_otra_entrada(
+    como_rol, seed, db_session, monkeypatch
+):
+    ana = _empleado(db_session, seed, "Ana")
+    db_session.add(
+        RegistroAsistencia(
+            usuario_id=ana.id,
+            fecha_entrada=_dt(18, 15),
+            fecha_salida=_dt(18, 23, 59),
+            cierre_por_nomina_en=_dt(18, 23, 10),
+        )
+    )
+    db_session.commit()
+    monkeypatch.setattr("app.routers.auth.get_mexico_now", lambda: _dt(18, 23, 30))
+    monkeypatch.setattr("app.routers.auth.reconciliar_jornada", lambda *args: None)
+    monkeypatch.setattr("app.routers.auth.verify_password", lambda *args: True)
+    r = como_rol("administrador").post(
+        "/auth/asistencia", json={"usuario_id": ana.id, "pin": "1234"}
+    )
+    assert r.status_code == 409
+    assert db_session.query(RegistroAsistencia).filter_by(usuario_id=ana.id).count() == 1
 
 
 # ---- endpoints -------------------------------------------------------------------------------

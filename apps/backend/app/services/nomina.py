@@ -6,7 +6,7 @@ que cierra); las jornadas siguen el corte operativo de las 05:00.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 from typing import Iterable
 
@@ -53,11 +53,16 @@ def horas_por_jornada(
 
 
 def horas_proyectadas(entrada: datetime) -> Decimal:
-    """Horas de una entrada abierta si trabaja hasta las 23:59 de su día (proyección, no pago)."""
+    """Horas hasta medianoche para una salida de nómina registrada a las 23:59."""
     entrada = to_mexico_aware(entrada)
-    fin = datetime.combine(entrada.date(), time(23, 59), tzinfo=MEXICO_TZ)
+    fin = datetime.combine(jornada_de(entrada) + timedelta(days=1), time.min, tzinfo=MEXICO_TZ)
     h = Decimal(str((fin - entrada).total_seconds() / 3600))
     return min(max(h, Decimal(0)), Decimal(MAX_HORAS_JORNADA))
+
+
+def salida_para_nomina(salida: datetime, cierre_por_nomina: bool) -> datetime:
+    """Incluye el último minuto solo en cierres de asistencia por nómina."""
+    return salida + timedelta(minutes=1) if cierre_por_nomina else salida
 
 
 def proyeccion_abiertas(
@@ -85,10 +90,19 @@ def dias_y_extras(
     trabajados = {d: h for d, h in horas_dia.items() if h >= MIN_HORAS_DIA}
     extra = Decimal(0)
     for h in trabajados.values():
-        exceso = max(Decimal(0), h - horas_jornada)
-        extra += (exceso / BLOQUE_EXTRA).to_integral_value(rounding=ROUND_FLOOR) * BLOQUE_EXTRA
+        _, extra_dia = desglose_jornada(h, horas_jornada)
+        extra += extra_dia
     total = sum(trabajados.values(), Decimal(0))
     return len(trabajados), extra, _q(total)
+
+
+def desglose_jornada(horas: Decimal, horas_jornada: Decimal) -> tuple[Decimal, Decimal]:
+    """Devuelve horas normales y extras pagables para una jornada."""
+    if horas < MIN_HORAS_DIA:
+        return Decimal(0), Decimal(0)
+    exceso = max(Decimal(0), horas - horas_jornada)
+    extra = (exceso / BLOQUE_EXTRA).to_integral_value(rounding=ROUND_FLOOR) * BLOQUE_EXTRA
+    return horas - extra, extra
 
 
 def calcular_montos(reglas: Reglas, horas_trabajadas: Decimal, horas_extra: Decimal) -> Montos:
