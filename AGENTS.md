@@ -1,8 +1,10 @@
 # AGENTS.md - Development Guidelines for AI Agents like Gemini, ChatGPT, etc.
 
+> **Vigencia:** las reglas operativas de esta sección y de [docs/BRANCHING.md](docs/BRANCHING.md) prevalecen sobre instrucciones históricas más abajo. Verifica rutas y comandos contra el código.
+>
 > **Contexto primero:** lee [docs/ESTADO_ACTUAL.md](docs/ESTADO_ACTUAL.md) para saber cómo funciona
 > el sistema hoy, [docs/PLAN_V2.md](docs/PLAN_V2.md) para lo que se está construyendo, y
-> [docs/SPRINTS.md](docs/SPRINTS.md) para saber en qué sprint va el trabajo y qué tarea sigue. Este
+> [docs/SPRINTS.md](docs/SPRINTS.md) como registro histórico. Linear es el tablero operativo para elegir trabajo. Este
 > archivo cubre solo convenciones y comandos.
 
 ## 🚀 Build, Lint & Test Commands
@@ -36,8 +38,7 @@ curl http://localhost:8000/health/database
 - Auto-generated docs: `http://localhost:8000/docs`
 - Alternative docs: `http://localhost:8000/redoc`
 
-**Tests:** `pytest` está configurado; los tests viven en `apps/backend/tests/`. La cobertura hoy es
-mínima (un solo archivo), pero el framework existe y todo lo nuevo debe traer test.
+**Tests:** `pytest` está configurado; los tests viven en `apps/backend/tests/`. El repositorio contiene pruebas de backend; todo lo nuevo debe traer pruebas apropiadas.
 ```bash
 cd apps/backend
 uv run pytest                                   # toda la suite
@@ -49,7 +50,7 @@ Endpoints se prueban con `httpx.AsyncClient`. Mínimo por cambio: happy path + u
 
 **Environment Setup:**
 ```bash
-cd frontend/pos-system
+cd apps/frontend
 # Preferred: pnpm (project standard)
 # If pnpm is not available on the machine:
 # corepack enable
@@ -74,9 +75,9 @@ pnpm run preview           # Preview production build
 
 **Type Checking:**
 ```bash
-# No dedicated type check script
-# Types checked during build
-pnpm run build  # Includes TypeScript compilation
+# Typecheck y build son pasos separados
+pnpm exec vue-tsc -b
+pnpm run build
 ```
 
 ## 📝 Code Style Guidelines
@@ -153,7 +154,7 @@ VITE_API_URL=http://localhost:8000
 
 - `pytest` configurado en el backend (`apps/backend/tests/`). Cobertura actual mínima — todo lo nuevo
   debe traer test de happy path + al menos un caso de error.
-- Frontend sin framework de tests todavía. Recomendado: Vitest / Playwright.
+- Frontend usa Vitest; complementar con pruebas de interfaz cuando corresponda.
 - Testing manual complementario vía API y UI.
 - Scripts de utilería en `apps/print-service/scripts/` (se corren individualmente).
 - Frontend UI Guidelines:
@@ -181,7 +182,7 @@ VITE_API_URL=http://localhost:8000
 ### Inicio Rápido
 ```batch
 # 1. Instalar
-cd print_service
+cd apps/print-service
 install.bat
 
 # 2. Iniciar servicio
@@ -203,7 +204,7 @@ scripts/status.bat             # Estado del sistema
 
 ### Estructura del Sistema
 ```
-print_service/
+apps/print-service/
 ├── config/           # Configuración específica
 ├── core/             # Lógica principal
 │   ├── printer_manager.py     # Gestión impresora
@@ -442,3 +443,18 @@ Funciona en login, asistencia, turnos y autorizaciones de administrador en Caja.
 **🖨️ Actualización Enero 2025:** Sistema de impresión automática implementado con soporte completo para impresora térmica Easytime SP-POS891ED. Ver sección "Sistema de Impresión Automática" para detalles completos.
 
 *No Cursor rules (`/.cursor/rules/`) or Copilot instructions (`/.github/copilot‑instructions.md`) are present in this repository.*
+
+
+## Linear y flujo de trabajo
+
+El proyecto está identificado en `.linear.yaml` (equipo VAL). Linear es la fuente de verdad del estado de los tickets. Antes de trabajar, consulta el ticket y sus criterios, contrástalos con el código y las pruebas; busca duplicados en el proyecto con `linear issues list --project <UUID> --limit 250 --output json`. Si la consulta es parcial o falla, indícalo sin inventar resultados. No guardes credenciales en el repositorio.
+
+Cada tarea debe tener ticket. El usuario autorizó crear y actualizar tickets y estados como parte del trabajo: busca antes de crear. Usa estados existentes del equipo: `In Progress` al iniciar, `In Review` al abrir PR y `Done` tras llegar a `main` y completar la verificación aplicable. Enlaza PR, evidencia y desviaciones; no cierres trabajo ajeno sin comprobarlo. Si no hay PR o despliegue aplicable, registra cómo se verificó el resultado. Actualiza los documentos afectados en el mismo cambio.
+
+Flujo objetivo: rama `feature/`, `fix/`, `docs/` o `chore/` desde `develop` → PR a `develop` → PR de promoción a `main`. No hay rama QA permanente. No hagas commits directos en ramas permanentes. Revisa [docs/BRANCHING.md](docs/BRANCHING.md) y ejecuta los checks pertinentes antes de solicitar revisión. La promoción a producción requiere autorización; no asumas que el merge a `main` es inocuo.
+
+**Transición:** `develop` todavía no existe en el remoto al 2026-11-25. No la crees desde un checkout con trabajo sin integrar. Verifica el `main` remoto y la configuración de deploy antes de activarla; hasta entonces documenta la excepción de cualquier trabajo en curso.
+
+## Comandos vigentes
+
+Backend: `cd apps/backend`, `uv sync --frozen --extra dev`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run pytest`. Migraciones con `uv run alembic upgrade head`, sobre una base apropiada. Frontend desde la raíz: `pnpm install --frozen-lockfile`, `pnpm --filter frontend exec vue-tsc -b`, `pnpm --filter frontend test`, `pnpm --filter frontend build`. El build por sí solo no hace el typecheck. CI usa SQLite para la suite general y PostgreSQL para migraciones y una prueba específica de concurrencia.

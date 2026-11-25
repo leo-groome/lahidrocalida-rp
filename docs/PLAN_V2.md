@@ -1,5 +1,7 @@
 # La Hidrocálida v2 — Inventario, Control y Métricas
 
+> **Nota de vigencia (2026-11-25):** Este documento es un plan histórico: sus afirmaciones de avance no son el estado actual. Linear es el tablero operativo; confirma cada pendiente contra código y pruebas.
+
 **Estado:** plan aprobado, **nada implementado**.
 **Base:** rama `flujo-mesero`, commit `09bb815`.
 **Estado actual del sistema:** [ESTADO_ACTUAL.md](./ESTADO_ACTUAL.md).

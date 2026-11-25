@@ -11,8 +11,9 @@ En producción: https://lahidrocalida.vercel.app
   modelo de datos, endpoints, roles, flujo operativo y deuda técnica conocida.
 - **[docs/PLAN_V2.md](docs/PLAN_V2.md)** — el plan de la siguiente versión: inventario,
   aprobaciones con PIN de admin, métricas de cocina y propinas, IVA, sesiones por jornada.
-- **[docs/SPRINTS.md](docs/SPRINTS.md)** — tablero de avance: qué sprint está en curso, qué tareas
-  faltan, qué se decidió por el camino. Empieza aquí si vas a trabajar en el plan v2.
+- **[docs/SPRINTS.md](docs/SPRINTS.md)** — historial de sprints y decisiones. Linear es el tablero operativo.
+- **[docs/LINEA_BASE.md](docs/LINEA_BASE.md)** — estado verificado y límites de la revisión.
+- **[docs/BRANCHING.md](docs/BRANCHING.md)** — flujo de ramas y promoción.
 - **[AGENTS.md](AGENTS.md)** — convenciones de código y flujo de contribución.
 
 ## Levantar el proyecto
@@ -22,7 +23,7 @@ Requisitos: Python 3.12, Node 20+, `uv`, `pnpm`, y una `DATABASE_URL` de Postgre
 ### Backend
 
 ```bash
-cd backend
+cd apps/backend
 cp .env.example .env          # editar DATABASE_URL y SECRET_KEY
 uv sync
 uv run alembic upgrade head
@@ -31,13 +32,12 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Docs de la API en http://localhost:8000/docs · health en `/health`.
 
-> El esquema hoy se completa con `Base.metadata.create_all()` al arrancar; las migraciones de
-> Alembic por sí solas **no** reconstruyen una base vacía. Se arregla en el Bloque 0 del plan v2.
+> El arranque Docker ejecuta `alembic upgrade head`; revisa la base de destino antes de migrar.
 
 ### Frontend
 
 ```bash
-cd frontend/pos-system
+cd apps/frontend
 cp .env.example .env          # editar VITE_API_URL
 pnpm install
 pnpm dev                      # http://localhost:5173
@@ -46,14 +46,14 @@ pnpm dev                      # http://localhost:5173
 ### Servicio de impresión (opcional, solo Windows)
 
 ```batch
-cd print_service
+cd apps/print-service
 install.bat
 start_service.bat             # escucha en localhost:3001
 ```
 
 ## Variables de entorno
 
-**`backend/.env`**
+**`apps/backend/.env`**
 
 ```env
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
@@ -62,7 +62,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 TIMEZONE=America/Mexico_City
 ```
 
-**`frontend/pos-system/.env`**
+**`apps/frontend/.env`**
 
 ```env
 VITE_API_URL=http://localhost:8000
@@ -73,11 +73,10 @@ Nunca commitear `.env`. Los secretos van solo por variables de entorno.
 ## Tests
 
 ```bash
-cd backend && uv run pytest
+cd apps/backend && uv run pytest
 ```
 
-Hoy la cobertura es casi nula (un solo archivo en `backend/tests/`). El plan v2 define el mínimo
-por bloque.
+El frontend usa Vitest: `pnpm --filter frontend test`. El typecheck se ejecuta por separado con `pnpm --filter frontend exec vue-tsc -b`.
 
 ## Referencia rápida
 

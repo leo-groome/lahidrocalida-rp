@@ -1,5 +1,7 @@
 # La Hidrocálida POS — Estado actual del sistema
 
+> **Nota de vigencia (2026-11-25):** Esta fotografía contiene información histórica y no ha sido conciliada íntegramente con el código actual. Para la línea base comprobada y sus límites, consulta [LINEA_BASE.md](LINEA_BASE.md).
+
 **Última revisión:** 2026-08-25 · rama `v2/sprint-3-jornada` · **Sprint 1 "Fundaciones" (🟢), Sprint 2 "Fiabilidad de pedidos" (🟢) y Sprint 3 "Jornada y sesiones" (🟢) completos** (ver detalle y notas de cierre en [SPRINTS.md](./SPRINTS.md)). Deuda pendiente para triage: `ACCESS_TOKEN_EXPIRE_MINUTES=1440` sin refresh token; JWT en `localStorage` del frontend (expuesto a XSS); CI de backend corre sobre SQLite in-memory, no Postgres (env vars muertas); comentario desactualizado en `models.py:95` y falta `CheckConstraint` en `pedidos.estado`; `pedidos.py` mezcla endpoints `async def` con queries síncronas de SQLAlchemy (migración a AsyncSession/asyncpg, fuera de alcance de S2).
 
 Este documento describe **cómo funciona el sistema hoy**, con sus defectos incluidos. Lo que se va
