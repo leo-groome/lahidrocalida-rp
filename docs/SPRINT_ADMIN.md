@@ -1,5 +1,7 @@
 # SA — Panel de administración útil
 
+> **Nota de vigencia (2026-11-25):** Este documento conserva auditoría, decisiones y avance histórico. Sus pendientes y verificaciones de producción requieren confirmación antes de considerarse vigentes.
+
 **Rama base:** `main` · **Abierto:** 2026-10-17 · **Estado:** 🔵 en curso
 
 Documento vivo de un sprint que se trabaja en varias sesiones. Objetivo: que el panel de admin

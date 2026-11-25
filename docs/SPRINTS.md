@@ -1,5 +1,7 @@
 # La Hidrocálida v2 — Tablero de sprints
 
+> **Nota de vigencia (2026-11-25):** Este documento conserva el historial de sprints y decisiones. Linear es el tablero operativo; no uses las casillas históricas como estado vigente sin contrastarlas.
+
 **Rama base:** `main` (antes `flujo-mesero`, promovida el 2026-08-24) · **Última actualización:** 2026-08-24 (S0 cerrado + monorepo migrado)
 
 Documento vivo. El alcance y el *por qué* de cada bloque están en [PLAN_V2.md](./PLAN_V2.md); la
